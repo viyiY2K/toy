@@ -155,14 +155,11 @@ export function App() {
           />
         </nav>
         <div className="sidebar-footer">
-          <button className="btn ghost sm" disabled style={{ padding: '4px 0' }}>
-            Phase 1 数据层
-          </button>
           {snapshot && (
-            <div style={{ marginTop: 10, fontSize: 11, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 11, lineHeight: 1.6 }}>
               <div><span style={{ color: 'var(--ink-2)' }}>{snapshot.taskViews.appDate}</span></div>
               <div>
-                {snapshot.taskViews.settings.focusMinutes}–{snapshot.taskViews.settings.shortBreakMinutes} · 长休 {snapshot.taskViews.settings.longBreakMinutes}
+                专注 {snapshot.taskViews.settings.focusMinutes} · 短休 {snapshot.taskViews.settings.shortBreakMinutes} · 长休 {snapshot.taskViews.settings.longBreakMinutes}
               </div>
             </div>
           )}

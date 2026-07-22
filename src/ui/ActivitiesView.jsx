@@ -671,10 +671,6 @@ export function ActivitiesView({ views, runCommand, busy }) {
         </div>
       </div>
 
-      <div style={{ marginTop: 14, fontSize: 12, color: 'var(--muted-2)', textAlign: 'center' }}>
-        顶层任务保持原有拖动排序；子任务使用行内箭头在同一母任务内排序，详情中可调整层级与备注。
-      </div>
-
       {archiveBatchTasks.length > 0 && (
         <div className="completed-section">
           <div className="section-h">
