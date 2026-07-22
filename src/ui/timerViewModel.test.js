@@ -15,6 +15,7 @@ import {
   remainingSeconds,
   isRecoveryRequiredSession,
   shouldDetectAppReopened,
+  shouldOfferTaskCompletionCheck,
   shouldRecoverAfterHidden,
   shouldPromptOnReturn,
   timerDisplayTask,
@@ -51,6 +52,26 @@ describe('S13c timer view model', () => {
     expect(timerSubtasks(taskViews, { id: 'parent' })).toEqual([active, completed]);
     expect(timerSubtasks(taskViews, { id: 'without-children' })).toEqual([]);
     expect(timerSubtasks(taskViews, null)).toEqual([]);
+  });
+
+  it('offers Task completion confirmation when valid focus count reaches the current estimate', () => {
+    const taskViews = {
+      completedValidFocusCountByTaskId: { planning: 1, larger: 1, split: 3, done: 1 },
+    };
+
+    expect(shouldOfferTaskCompletionCheck(taskViews, {
+      id: 'planning', status: 'active', estimatedPomodoros: 1,
+    })).toBe(true);
+    expect(shouldOfferTaskCompletionCheck(taskViews, {
+      id: 'larger', status: 'active', estimatedPomodoros: 2,
+    })).toBe(false);
+    expect(shouldOfferTaskCompletionCheck(taskViews, {
+      id: 'split', status: 'splitNeeded', estimatedPomodoros: 3,
+    })).toBe(true);
+    expect(shouldOfferTaskCompletionCheck(taskViews, {
+      id: 'done', status: 'completed', estimatedPomodoros: 1,
+    })).toBe(false);
+    expect(shouldOfferTaskCompletionCheck(taskViews, null)).toBe(false);
   });
 
   it('uses the global completed-focus cadence for the next standard break', () => {

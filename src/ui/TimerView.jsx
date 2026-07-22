@@ -26,6 +26,7 @@ import {
   recoveryRestChoices,
   recoveryTaskChoices,
   remainingSeconds,
+  shouldOfferTaskCompletionCheck,
   canUseActiveBreakExit,
   canUsePendingBreakExits,
   timerDisplayTask,
@@ -627,6 +628,11 @@ export function TimerView({
           ? { id: pendingEnergyPrompt.taskId, title: pendingEnergyPrompt.taskTitle }
           : null);
     const completedTaskSubtasks = timerSubtasks(taskViews, completedTask);
+    const completionCheckDue = pendingEnergyPrompt.source === 'afterFocus'
+      && shouldOfferTaskCompletionCheck(taskViews, completedTask);
+    const completedTaskFocusCount = completedTask === null
+      ? 0
+      : taskViews.completedValidFocusCountByTaskId[completedTask.id] ?? 0;
     return (
       <div>
         <div className="main-head">
@@ -635,7 +641,7 @@ export function TimerView({
         <div className="timer-stage">
           <div className="timer-main">
             <div className="timer-task">
-              <div className="label">刚完成的任务</div>
+              <div className="label">本次专注任务</div>
               <div className="name">{completedTask?.title ?? '计时完成'}</div>
             </div>
             <TimerCircle
@@ -647,6 +653,30 @@ export function TimerView({
             />
           </div>
           <aside className="timer-aside">
+            {completionCheckDue && (
+              <div className="card" style={{ padding: 18 }}>
+                <div className="section-h" style={{ marginBottom: 10 }}>
+                  <h3>任务完成确认</h3>
+                  <span className="count">
+                    {completedTaskFocusCount} / {completedTask.estimatedPomodoros}
+                  </span>
+                </div>
+                <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
+                  已达到当前预估番茄数。如果任务已经做完，请在这里确认。
+                </p>
+                <button
+                  className="btn primary"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  disabled={busy}
+                  onClick={() => command((time) => completeTaskFromPomodoro({
+                    ...time,
+                    sessionId: pendingEnergyPrompt.sessionId,
+                  }))}
+                >
+                  <Icon name="check" size={13}/> 确认完成任务
+                </button>
+              </div>
+            )}
             <EnergyPrompt
               key={`${pendingEnergyPrompt.source}:${pendingEnergyPrompt.sessionId}`}
               title={title}
@@ -679,6 +709,13 @@ export function TimerView({
     );
     const choices = enabledRestSuggestions(taskViews.settings, breakType);
     const suggestion = choices[0] ?? null;
+    const completionCheckDue = shouldOfferTaskCompletionCheck(
+      taskViews,
+      snapshot.pendingBreakTask,
+    );
+    const pendingTaskFocusCount = snapshot.pendingBreakTask === null
+      ? 0
+      : taskViews.completedValidFocusCountByTaskId[snapshot.pendingBreakTask.id] ?? 0;
     return (
       <div>
         <div className="main-head">
@@ -701,6 +738,20 @@ export function TimerView({
                 </div>
                 <Icon name="coffee" size={20}/>
               </div>
+              {completionCheckDue && (
+                <button
+                  className="btn primary"
+                  style={{ width: '100%', justifyContent: 'center', marginBottom: 8 }}
+                  disabled={busy}
+                  onClick={() => command((time) => completeTaskFromPomodoro({
+                    ...time, sessionId: snapshot.pendingBreakFocus.id,
+                  }))}
+                >
+                  <Icon name="check" size={13}/>
+                  已完成 {pendingTaskFocusCount} / {snapshot.pendingBreakTask.estimatedPomodoros}
+                  · 确认完成任务
+                </button>
+              )}
               <button
                 className="btn primary"
                 style={{ width: '100%', justifyContent: 'center' }}
@@ -742,6 +793,7 @@ export function TimerView({
               </div>
               {snapshot.pendingBreakTask
                 && snapshot.pendingBreakTask.status !== 'completed'
+                && !completionCheckDue
                 && (
                   <button
                     className="btn ghost"

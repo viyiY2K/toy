@@ -23,6 +23,15 @@ export function timerSubtasks(taskViews, displayTask) {
   return taskViews.subtasksByParentId[displayTask.id] ?? [];
 }
 
+export function shouldOfferTaskCompletionCheck(taskViews, task) {
+  if (
+    task === null
+    || (task.status !== 'active' && task.status !== 'splitNeeded')
+  ) return false;
+  const completedFocusCount = taskViews.completedValidFocusCountByTaskId[task.id] ?? 0;
+  return completedFocusCount >= task.estimatedPomodoros;
+}
+
 export function nextStandardBreakType(completedFocusCount, longBreakEvery) {
   return completedFocusCount > 0 && completedFocusCount % longBreakEvery === 0
     ? 'longBreak'
