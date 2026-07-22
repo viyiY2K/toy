@@ -1255,7 +1255,7 @@ input[type="checkbox"]:checked::before {
 }
 .timer-task .label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .timer-task .name {
-  font-family: "Instrument Serif", serif;
+  font-family: "Instrument Serif", "Songti SC", serif;
   font-size: 28px;
   font-weight: 400;
   letter-spacing: -0.01em;
@@ -2265,9 +2265,7 @@ select:focus-visible {
 }
 
 .main-head h1,
-.modal h2,
-.timer-task .name,
-.rest-suggest .name {
+.modal h2 {
   font-family: "Instrument Sans", "PingFang SC", "Hiragino Sans GB", sans-serif;
 }
 
@@ -2548,12 +2546,6 @@ select:focus-visible {
 }
 
 .timer-task { margin-bottom: 20px; }
-
-.timer-task .name {
-  font-family: "Instrument Serif", "Songti SC", serif;
-  font-size: 28px;
-  font-weight: 400;
-}
 
 .timer-circle {
   flex: 0 0 auto;
