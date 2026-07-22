@@ -2037,10 +2037,10 @@ input[type="checkbox"]:checked::before {
 .stats-bar-pair .standard { background: var(--accent); }
 .stats-bar-pair .cycle { background: var(--ink-2); }
 .stats-bar-day > span {
-  overflow: hidden;
+  overflow: visible;
   color: var(--muted-2);
   font-family: "JetBrains Mono", monospace;
-  font-size: 8px;
+  font-size: 10px;
   text-align: center;
   white-space: nowrap;
 }
@@ -2085,7 +2085,7 @@ input[type="checkbox"]:checked::before {
   justify-content: space-between;
   color: var(--muted-2);
   font-family: "JetBrains Mono", monospace;
-  font-size: 9px;
+  font-size: 10px;
 }
 .stats-chart-empty {
   padding: 28px 10px;
@@ -2142,7 +2142,7 @@ input[type="checkbox"]:checked::before {
   background: var(--line-2);
 }
 .stats-budget-days > div { display: grid; gap: 2px; padding: 9px; background: var(--paper); }
-.stats-budget-days span { color: var(--muted); font-family: "JetBrains Mono", monospace; font-size: 9px; }
+.stats-budget-days span { color: var(--muted); font-family: "JetBrains Mono", monospace; font-size: 10px; }
 .stats-budget-days strong { font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 400; }
 .stats-budget-days small { color: var(--muted-2); }
 
@@ -2660,7 +2660,7 @@ select:focus-visible {
   border: 1px solid var(--muted-2);
   border-radius: 4px;
   color: var(--paper);
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1;
 }
 .timer-subtask-item.is-completed { color: var(--muted-2); }

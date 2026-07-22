@@ -76,17 +76,24 @@ function LineChart({ values, labels, emptyLabel, ariaLabel, min = null, max = nu
 function DailyBars({ days }) {
   const maximum = Math.max(1, ...days.map(({ focus, completeCycles }) =>
     Math.max(focus.validPomodoros, completeCycles)));
+  // Every date fits fine at day/week granularity, but a month view packs
+  // ~30 columns into one row — showing a label under each one collides into
+  // an unreadable strip, so thin them out to roughly 8 evenly spaced labels.
+  const labelStep = Math.max(1, Math.ceil(days.length / 8));
   return (
     <div className="stats-bars" aria-label="每日有效番茄与完整循环趋势">
-      {days.map((day) => (
-        <div className="stats-bar-day" key={day.appDate} title={`${day.appDate}：${day.focus.validPomodoros} 个有效番茄，${day.completeCycles} 个完整循环`}>
-          <div className="stats-bar-pair">
-            <i className="standard" style={{ height: `${(day.focus.validPomodoros / maximum) * 100}%` }}/>
-            <i className="cycle" style={{ height: `${(day.completeCycles / maximum) * 100}%` }}/>
+      {days.map((day, index) => {
+        const showLabel = index % labelStep === 0 || index === days.length - 1;
+        return (
+          <div className="stats-bar-day" key={day.appDate} title={`${day.appDate}：${day.focus.validPomodoros} 个有效番茄，${day.completeCycles} 个完整循环`}>
+            <div className="stats-bar-pair">
+              <i className="standard" style={{ height: `${(day.focus.validPomodoros / maximum) * 100}%` }}/>
+              <i className="cycle" style={{ height: `${(day.completeCycles / maximum) * 100}%` }}/>
+            </div>
+            <span>{showLabel ? day.appDate.slice(5) : ' '}</span>
           </div>
-          <span>{day.appDate.slice(5)}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
