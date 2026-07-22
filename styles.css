@@ -690,6 +690,16 @@ input[type="checkbox"]:checked::before {
   color: var(--muted);
 }
 .atr-actions .icon-btn:hover { color: var(--accent-ink); }
+
+/* No hover capability (touch) means opacity:0 is a dead end — nothing
+   ever triggers :hover to reveal these, so they must default visible. */
+@media (hover: none) {
+  .atr-actions { opacity: 0.7; }
+}
+@media (pointer: coarse) {
+  .atr-actions { gap: 2px; }
+  .atr-actions .icon-btn { width: 36px; height: 36px; }
+}
 .activity-drop-line {
   height: 2px;
   background: var(--accent);
