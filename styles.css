@@ -2536,12 +2536,16 @@ select:focus-visible {
 .bar10-seg.on { background: var(--accent); }
 
 .timer-stage {
-  grid-template-columns: minmax(0, 1fr) 310px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: clamp(28px, 4vw, 56px);
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
 }
 
 .timer-main {
-  min-height: 580px;
+  min-width: 0;
+  min-height: 600px;
   padding: 34px 0;
   justify-content: center;
 }
@@ -2549,30 +2553,124 @@ select:focus-visible {
 .timer-task { margin-bottom: 20px; }
 
 .timer-task .name {
+  font-family: "Instrument Serif", "Songti SC", serif;
   font-size: 28px;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .timer-circle {
-  width: min(380px, 42vw);
-  height: min(380px, 42vw);
+  flex: 0 0 auto;
+  width: min(420px, 100%);
+  height: auto;
+  aspect-ratio: 1;
+  padding: 0;
   border-radius: 50%;
+  color: inherit;
   background:
     radial-gradient(circle, rgba(255, 253, 248, .9) 0 55%, transparent 56%),
     radial-gradient(circle, rgba(188, 91, 64, .055), transparent 69%);
+}
+
+.timer-circle svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.timer-readout {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .timer-readout .digits {
   color: var(--ink);
   font-size: clamp(58px, 7vw, 76px);
   font-weight: 300;
+  line-height: 1;
 }
 
 .timer-readout .mode { color: var(--accent-ink); }
+.timer-readout .hint {
+  margin-top: 14px;
+  color: var(--muted-2);
+  font-size: 11px;
+  letter-spacing: .1em;
+}
+
+.timer-circle-action { cursor: pointer; }
+.timer-circle-action:disabled { opacity: 1; cursor: not-allowed; }
+.timer-circle-action:not(:disabled):hover { transform: scale(1.008); }
+.timer-circle-action.is-blocked svg circle:last-child { opacity: .18; }
+.timer-circle.is-complete svg circle:last-child { stroke: var(--success); }
+.timer-circle.is-complete .timer-readout .mode { color: var(--success); }
+
+.timer-round-dots { margin-top: 20px; }
 .timer-aside { gap: 18px; }
 
 .timer-aside .card {
   background: rgba(251, 248, 240, .82);
+}
+
+.timer-side-actions .side-action { height: 74px; }
+
+.timer-triage-card,
+.timer-subtasks-card { padding: 16px; }
+
+.timer-triage-card .card-title,
+.timer-subtasks-card .card-title { margin-bottom: 12px; }
+
+.timer-triage-card .triage-capture-form {
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 7px;
+}
+
+.timer-triage-card .triage-capture-form .btn {
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+.timer-triage-help {
+  margin-top: 8px;
+  color: var(--muted-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.timer-subtasks-list { display: grid; gap: 2px; }
+.timer-subtask-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 30px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.timer-subtask-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--muted-2);
+  border-radius: 4px;
+  color: var(--paper);
+  font-size: 9px;
+  line-height: 1;
+}
+.timer-subtask-item.is-completed { color: var(--muted-2); }
+.timer-subtask-item.is-completed > span:last-child { text-decoration: line-through; }
+.timer-subtask-item.is-completed .timer-subtask-mark {
+  border-color: var(--success);
+  background: var(--success);
 }
 
 .side-action,
@@ -2694,7 +2792,7 @@ select:focus-visible {
   .app { grid-template-columns: 196px minmax(0, 1fr); }
   .sidebar { padding-inline: 16px; }
   .main { padding-inline: 28px; }
-  .timer-stage { grid-template-columns: minmax(0, 1fr) 270px; gap: 24px; }
+  .timer-stage { grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; }
   .stats-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -2725,8 +2823,8 @@ select:focus-visible {
   .kanban { grid-template-columns: 1fr !important; }
   .timer-stage { grid-template-columns: 1fr; }
   .timer-main { min-height: 480px; }
-  .timer-circle { width: min(360px, 88vw); height: min(360px, 88vw); }
-  .timer-aside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .timer-circle { width: min(380px, 88vw); }
+  .timer-aside { display: flex; flex-direction: column; }
   .stats-date-controls { width: 100%; align-items: stretch; flex-wrap: wrap; }
   .date-nav { flex: 1; }
 }

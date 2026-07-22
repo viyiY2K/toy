@@ -14,6 +14,15 @@ export function formatCountdown(seconds) {
   return `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
 }
 
+export function timerDisplayTask(activeSession, activeTask, selectedTask) {
+  return activeSession === null ? selectedTask : activeTask;
+}
+
+export function timerSubtasks(taskViews, displayTask) {
+  if (displayTask === null) return [];
+  return taskViews.subtasksByParentId[displayTask.id] ?? [];
+}
+
 export function nextStandardBreakType(completedFocusCount, longBreakEvery) {
   return completedFocusCount > 0 && completedFocusCount % longBreakEvery === 0
     ? 'longBreak'

@@ -17,6 +17,8 @@ import {
   shouldDetectAppReopened,
   shouldRecoverAfterHidden,
   shouldPromptOnReturn,
+  timerDisplayTask,
+  timerSubtasks,
 } from './timerViewModel';
 
 describe('S13c timer view model', () => {
@@ -26,6 +28,29 @@ describe('S13c timer view model', () => {
     expect(remainingSeconds(session, Date.parse('2027-01-01T08:01:02Z'))).toBe(238);
     expect(formatCountdown(238)).toBe('03:58');
     expect(remainingSeconds(session, Date.parse('2027-01-01T09:00:00Z'))).toBe(0);
+  });
+
+  it('uses the selected task while idle and the linked task for active focus or break', () => {
+    const selectedTask = { id: 'selected', title: 'Selected task' };
+    const activeTask = { id: 'linked', title: 'Linked task' };
+
+    expect(timerDisplayTask(null, null, selectedTask)).toBe(selectedTask);
+    expect(timerDisplayTask({ type: 'focus' }, activeTask, selectedTask)).toBe(activeTask);
+    expect(timerDisplayTask({ type: 'shortBreak' }, activeTask, selectedTask)).toBe(activeTask);
+  });
+
+  it('returns ordered current subtasks only when the display task has children', () => {
+    const active = { id: 'child-active', status: 'active', sortIndex: 0 };
+    const completed = { id: 'child-completed', status: 'completed', sortIndex: 1 };
+    const taskViews = {
+      subtasksByParentId: {
+        parent: [active, completed],
+      },
+    };
+
+    expect(timerSubtasks(taskViews, { id: 'parent' })).toEqual([active, completed]);
+    expect(timerSubtasks(taskViews, { id: 'without-children' })).toEqual([]);
+    expect(timerSubtasks(taskViews, null)).toEqual([]);
   });
 
   it('uses the global completed-focus cadence for the next standard break', () => {

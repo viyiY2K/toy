@@ -28,6 +28,8 @@ import {
   remainingSeconds,
   canUseActiveBreakExit,
   canUsePendingBreakExits,
+  timerDisplayTask,
+  timerSubtasks,
 } from './timerViewModel';
 
 const React = window.React;
@@ -96,18 +98,40 @@ function EnergyPrompt({ title, detail, busy, onSubmit, onSkip = null }) {
   );
 }
 
-function TimerCircle({ session, remaining }) {
-  const total = session.plannedDuration ?? 0;
-  const progress = total > 0 ? 1 - remaining / total : 1;
+function TimerCircle({
+  session = null,
+  remaining,
+  idleDuration = 0,
+  idleBlocked = false,
+  idleBlockedMessage = '暂时不能开始',
+  staticMode = null,
+  staticHint = null,
+  onStart = null,
+}) {
+  const total = session?.plannedDuration ?? idleDuration;
+  const isStatic = session === null && staticMode !== null;
+  const progress = isStatic
+    ? 1
+    : session === null
+      ? 0
+      : total > 0 ? 1 - remaining / total : 1;
   const circumference = 2 * Math.PI * 170;
-  const mode = session.type === 'focus'
-    ? '专注中'
-    : session.type === 'shortBreak'
-      ? '短休息'
-      : '长休息';
-  return (
-    <div className="timer-circle">
-      <svg width="360" height="360" viewBox="0 0 360 360" aria-hidden="true">
+  const isIdle = session === null && !isStatic;
+  const mode = isStatic
+    ? staticMode
+    : isIdle
+      ? 'FOCUS'
+      : session.type === 'focus'
+        ? 'FOCUS'
+        : session.type === 'shortBreak'
+          ? 'BREAK'
+          : 'LONG BREAK';
+  const hint = isStatic
+    ? staticHint
+    : isIdle ? (idleBlocked ? idleBlockedMessage : '点击开始') : null;
+  const content = (
+    <>
+      <svg viewBox="0 0 360 360" aria-hidden="true">
         <circle cx="180" cy="180" r="170" fill="none" stroke="var(--line-2)" strokeWidth="4"/>
         <circle
           cx="180"
@@ -125,6 +149,56 @@ function TimerCircle({ session, remaining }) {
       <div className="timer-readout">
         <div className="digits">{formatCountdown(remaining)}</div>
         <div className="mode">{mode}</div>
+        {hint && <div className="hint">{hint}</div>}
+      </div>
+    </>
+  );
+  return isIdle ? (
+    <button
+      type="button"
+      className={`timer-circle timer-circle-action ${idleBlocked ? 'is-blocked' : ''}`}
+      disabled={idleBlocked || onStart === null}
+      onClick={onStart}
+      aria-label={idleBlocked ? idleBlockedMessage : '开始专注'}
+    >
+      {content}
+    </button>
+  ) : <div className={`timer-circle ${isStatic ? 'is-complete' : ''}`}>{content}</div>;
+}
+
+function TimerRoundDots({ completedFocusCount, longBreakEvery }) {
+  const cycleLength = Math.max(1, longBreakEvery);
+  const completedInCycle = completedFocusCount % cycleLength;
+  const currentPosition = completedInCycle + 1;
+  return (
+    <div className="timer-round-dots" aria-label={`本轮已完成 ${completedInCycle} 个番茄`}>
+      {Array.from({ length: cycleLength }, (_, index) => index + 1).map((position) => (
+        <span
+          key={position}
+          className={`d ${
+            position <= completedInCycle ? 'done' : position === currentPosition ? 'now' : ''
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TimerSubtasks({ tasks }) {
+  if (tasks.length === 0) return null;
+  return (
+    <div className="card timer-subtasks-card">
+      <div className="card-title"><span>当前子任务</span></div>
+      <div className="timer-subtasks-list">
+        {tasks.map((task) => {
+          const completed = task.status === 'completed';
+          return (
+            <div key={task.id} className={`timer-subtask-item ${completed ? 'is-completed' : ''}`}>
+              <span className="timer-subtask-mark" aria-hidden="true">{completed ? '✓' : ''}</span>
+              <span>{task.title}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -431,6 +505,9 @@ export function TimerView({
   const [pendingEnergyPrompt, setPendingEnergyPrompt] = React.useState(null);
   const [triageTitle, setTriageTitle] = React.useState('');
   const completedFocusId = React.useRef(null);
+  const selectedTask = activeTasks.find((task) => task.id === selectedTaskId) ?? null;
+  const displayTask = timerDisplayTask(activeSession, snapshot.activeTask, selectedTask);
+  const displaySubtasks = timerSubtasks(taskViews, displayTask);
 
   React.useEffect(() => {
     if (!activeTasks.some((task) => task.id === selectedTaskId)) {
@@ -473,7 +550,12 @@ export function TimerView({
       actualDuration: activeSession.plannedDuration ?? 0,
     })).then((result) => {
       if (result) {
-        setPendingEnergyPrompt({ sessionId: activeSession.id, source: 'afterFocus' });
+        setPendingEnergyPrompt({
+          sessionId: activeSession.id,
+          source: 'afterFocus',
+          taskId: snapshot.activeTask?.id ?? activeSession.taskId,
+          taskTitle: snapshot.activeTask?.title ?? null,
+        });
       }
     });
   }, [
@@ -537,20 +619,50 @@ export function TimerView({
 
   if (pendingEnergyPrompt) {
     const [title, detail] = sourceLabel(pendingEnergyPrompt.source);
+    const completedTask = pendingEnergyPrompt.taskId == null
+      ? null
+      : [...taskViews.todayTasks, ...taskViews.activeTasks, ...taskViews.completedTasks]
+          .find((task) => task.id === pendingEnergyPrompt.taskId)
+        ?? (pendingEnergyPrompt.taskTitle
+          ? { id: pendingEnergyPrompt.taskId, title: pendingEnergyPrompt.taskTitle }
+          : null);
+    const completedTaskSubtasks = timerSubtasks(taskViews, completedTask);
     return (
       <div>
         <div className="main-head">
           <div><h1>计时</h1><div className="sub">计时事实已写入，觉察记录等待你的主动提交。</div></div>
         </div>
-        <div style={{ maxWidth: 560, margin: '40px auto' }}>
-          <EnergyPrompt
-            key={`${pendingEnergyPrompt.source}:${pendingEnergyPrompt.sessionId}`}
-            title={title}
-            detail={detail}
-            busy={busy}
-            onSubmit={submitEnergy(pendingEnergyPrompt.source, pendingEnergyPrompt.sessionId)}
-            onSkip={() => setPendingEnergyPrompt(null)}
-          />
+        <div className="timer-stage">
+          <div className="timer-main">
+            <div className="timer-task">
+              <div className="label">刚完成的任务</div>
+              <div className="name">{completedTask?.title ?? '计时完成'}</div>
+            </div>
+            <TimerCircle
+              remaining={0}
+              staticMode={
+                pendingEnergyPrompt.source === 'afterFocus' ? 'FOCUS COMPLETE' : 'BREAK COMPLETE'
+              }
+              staticHint="记录结束状态"
+            />
+          </div>
+          <aside className="timer-aside">
+            <EnergyPrompt
+              key={`${pendingEnergyPrompt.source}:${pendingEnergyPrompt.sessionId}`}
+              title={title}
+              detail={detail}
+              busy={busy}
+              onSubmit={submitEnergy(pendingEnergyPrompt.source, pendingEnergyPrompt.sessionId)}
+              onSkip={() => setPendingEnergyPrompt(null)}
+            />
+            <TimerSubtasks tasks={completedTaskSubtasks}/>
+            <TaskPicker
+              tasks={activeTasks}
+              selectedTaskId={completedTask?.id ?? selectedTaskId}
+              onSelect={setSelectedTaskId}
+              disabled
+            />
+          </aside>
         </div>
       </div>
     );
@@ -658,8 +770,18 @@ export function TimerView({
   }
 
   if (!activeSession) {
-    const selectedTask = activeTasks.find((task) => task.id === selectedTaskId) ?? null;
     const [energyTitle, energyDetail] = sourceLabel(standaloneEnergySource);
+    const idleBlockedMessage = standaloneEnergySource !== null
+      ? '请先记录能量'
+      : selectedTask === null
+        ? '请先选择任务'
+        : busy
+          ? '正在处理'
+          : null;
+    const startSelectedFocus = () => selectedTask && command(
+      (time) => startFocus({ ...time, taskId: selectedTask.id }),
+      (result) => onSessionStarted(result.value.id),
+    );
     return (
       <div>
         <div className="main-head">
@@ -671,30 +793,29 @@ export function TimerView({
               <div className="label">准备开始</div>
               <div className="name">{selectedTask?.title ?? '先从今日待办选择任务'}</div>
             </div>
-            {standaloneEnergySource ? (
-              <div style={{ width: '100%', maxWidth: 520 }}>
-                <EnergyPrompt
-                  key={standaloneEnergySource}
-                  title={energyTitle}
-                  detail={energyDetail}
-                  busy={busy}
-                  onSubmit={submitEnergy(standaloneEnergySource)}
-                />
-              </div>
-            ) : (
-              <button
-                className="btn primary"
-                disabled={busy || selectedTask === null}
-                onClick={() => selectedTask && command(
-                  (time) => startFocus({ ...time, taskId: selectedTask.id }),
-                  (result) => onSessionStarted(result.value.id),
-                )}
-              >
-                <Icon name="play" size={13}/> 开始专注
-              </button>
-            )}
+            <TimerCircle
+              remaining={taskViews.settings.focusMinutes * 60}
+              idleDuration={taskViews.settings.focusMinutes * 60}
+              idleBlocked={idleBlockedMessage !== null}
+              idleBlockedMessage={idleBlockedMessage ?? undefined}
+              onStart={startSelectedFocus}
+            />
+            <TimerRoundDots
+              completedFocusCount={snapshot.completedFocusCount}
+              longBreakEvery={taskViews.settings.longBreakEvery}
+            />
           </div>
           <aside className="timer-aside">
+            {standaloneEnergySource && (
+              <EnergyPrompt
+                key={standaloneEnergySource}
+                title={energyTitle}
+                detail={energyDetail}
+                busy={busy}
+                onSubmit={submitEnergy(standaloneEnergySource)}
+              />
+            )}
+            <TimerSubtasks tasks={displaySubtasks}/>
             <TaskPicker
               tasks={activeTasks}
               selectedTaskId={selectedTaskId}
@@ -739,88 +860,13 @@ export function TimerView({
             <div className="name">{snapshot.activeTask?.title ?? (isFocus ? '专注' : '休息')}</div>
           </div>
           <TimerCircle session={activeSession} remaining={remaining}/>
-          {isFocus ? (
-            <>
-              <div className="timer-controls">
-                <button
-                  className="btn ghost"
-                  disabled={busy}
-                  onClick={() => activeSessionCommand((time) => discardFocus({
-                    ...time,
-                    sessionId: activeSession.id,
-                    actualDuration: Math.min(elapsed, activeSession.plannedDuration ?? elapsed),
-                  }))}
-                >
-                  <Icon name="x" size={13}/> 作废本次专注
-                </button>
-              </div>
-              <div className="interrupts">
-                <button
-                  className="intr-btn"
-                  disabled={busy}
-                  onClick={() => activeSessionCommand((time) => recordInterrupt({
-                    ...time, sessionId: activeSession.id, kind: 'internal',
-                    offsetSeconds: elapsed,
-                  }))}
-                >
-                  <Icon name="brain" size={14}/> 内部打扰
-                  <span className="count">{snapshot.interruptCounts.internal}</span>
-                </button>
-                <button
-                  className="intr-btn"
-                  disabled={busy}
-                  onClick={() => activeSessionCommand((time) => recordInterrupt({
-                    ...time, sessionId: activeSession.id, kind: 'external',
-                    offsetSeconds: elapsed,
-                  }))}
-                >
-                  <Icon name="bell" size={14}/> 外部打扰
-                  <span className="count">{snapshot.interruptCounts.external}</span>
-                </button>
-              </div>
-              <div className="card triage-capture-card">
-                <div className="triage-capture-copy">
-                  <div className="label">计划外事项</div>
-                  <div className="task-detail-help">
-                    快速记下后继续专注 · 待分流 {taskViews.pendingTriageTasks.length} 个
-                  </div>
-                </div>
-                <div className="triage-capture-form">
-                  <input
-                    className="input boxed"
-                    aria-label="快速捕获待分流事项"
-                    value={triageTitle}
-                    disabled={busy || !triageCaptureEnabled}
-                    placeholder="想到一件事…"
-                    onChange={(event) => setTriageTitle(event.target.value)}
-                    onKeyDown={async (event) => {
-                      if (event.key !== 'Enter' || !triageTitle.trim() || !triageCaptureEnabled) return;
-                      const result = await command((time) => captureTriageTask({
-                        ...time,
-                        sessionId: activeSession.id,
-                        title: triageTitle.trim(),
-                      }));
-                      if (result) setTriageTitle('');
-                    }}
-                  />
-                  <button
-                    className="btn sm"
-                    disabled={busy || !triageCaptureEnabled || !triageTitle.trim()}
-                    onClick={async () => {
-                      const result = await command((time) => captureTriageTask({
-                        ...time,
-                        sessionId: activeSession.id,
-                        title: triageTitle.trim(),
-                      }));
-                      if (result) setTriageTitle('');
-                    }}
-                  >
-                    捕获
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
+          {isFocus && (
+            <TimerRoundDots
+              completedFocusCount={snapshot.completedFocusCount}
+              longBreakEvery={taskViews.settings.longBreakEvery}
+            />
+          )}
+          {!isFocus && (
             <div className="card" style={{ width: '100%', maxWidth: 560, padding: 18, marginTop: 20 }}>
               {suggestedRest && (
                 <div className="rest-suggest">
@@ -868,7 +914,12 @@ export function TimerView({
                     }));
                     const source = energySourceForCompletedSession(activeSession.type);
                     if (result && source) {
-                      setPendingEnergyPrompt({ sessionId: activeSession.id, source });
+                      setPendingEnergyPrompt({
+                        sessionId: activeSession.id,
+                        source,
+                        taskId: snapshot.activeTask?.id ?? null,
+                        taskTitle: snapshot.activeTask?.title ?? null,
+                      });
                     }
                   }}
                 >
@@ -896,9 +947,100 @@ export function TimerView({
           )}
         </div>
         <aside className="timer-aside">
+          {isFocus && (
+            <>
+              <div className="timer-side-actions">
+                <button
+                  className="side-action"
+                  title="作废本次专注"
+                  aria-label="作废本次专注"
+                  disabled={busy}
+                  onClick={() => activeSessionCommand((time) => discardFocus({
+                    ...time,
+                    sessionId: activeSession.id,
+                    actualDuration: Math.min(elapsed, activeSession.plannedDuration ?? elapsed),
+                  }))}
+                >
+                  <Icon name="x" size={21}/>
+                </button>
+                <button
+                  className="side-action"
+                  title="内部打扰（走神 / 自我打断）"
+                  aria-label="内部打扰（走神 / 自我打断）"
+                  disabled={busy}
+                  onClick={() => activeSessionCommand((time) => recordInterrupt({
+                    ...time, sessionId: activeSession.id, kind: 'internal',
+                    offsetSeconds: elapsed,
+                  }))}
+                >
+                  <Icon name="brain" size={21}/>
+                  {snapshot.interruptCounts.internal > 0 && (
+                    <span className="side-count">{snapshot.interruptCounts.internal}</span>
+                  )}
+                </button>
+                <button
+                  className="side-action"
+                  title="外部打扰（消息 / 找人 / 噪音）"
+                  aria-label="外部打扰（消息 / 找人 / 噪音）"
+                  disabled={busy}
+                  onClick={() => activeSessionCommand((time) => recordInterrupt({
+                    ...time, sessionId: activeSession.id, kind: 'external',
+                    offsetSeconds: elapsed,
+                  }))}
+                >
+                  <Icon name="bell" size={21}/>
+                  {snapshot.interruptCounts.external > 0 && (
+                    <span className="side-count">{snapshot.interruptCounts.external}</span>
+                  )}
+                </button>
+              </div>
+              <div className="card urgent-card timer-triage-card">
+                <div className="card-title">
+                  <span><Icon name="urgent" size={12}/> &nbsp;计划外紧急</span>
+                  <span>{taskViews.pendingTriageTasks.length} 条待分流</span>
+                </div>
+                <div className="triage-capture-form">
+                  <input
+                    className="input boxed"
+                    aria-label="快速捕获待分流事项"
+                    value={triageTitle}
+                    disabled={busy || !triageCaptureEnabled}
+                    placeholder="临时冒出来的事，回车记下来…"
+                    onChange={(event) => setTriageTitle(event.target.value)}
+                    onKeyDown={async (event) => {
+                      if (event.key !== 'Enter' || !triageTitle.trim() || !triageCaptureEnabled) return;
+                      const result = await command((time) => captureTriageTask({
+                        ...time,
+                        sessionId: activeSession.id,
+                        title: triageTitle.trim(),
+                      }));
+                      if (result) setTriageTitle('');
+                    }}
+                  />
+                  <button
+                    className="btn sm"
+                    aria-label="捕获计划外事项"
+                    disabled={busy || !triageCaptureEnabled || !triageTitle.trim()}
+                    onClick={async () => {
+                      const result = await command((time) => captureTriageTask({
+                        ...time,
+                        sessionId: activeSession.id,
+                        title: triageTitle.trim(),
+                      }));
+                      if (result) setTriageTitle('');
+                    }}
+                  >
+                    <Icon name="plus" size={12}/>
+                  </button>
+                </div>
+                <div className="timer-triage-help">番茄结束后，再到清单中处理。</div>
+              </div>
+            </>
+          )}
+          <TimerSubtasks tasks={displaySubtasks}/>
           <TaskPicker
             tasks={activeTasks}
-            selectedTaskId={activeSession.taskId ?? selectedTaskId}
+            selectedTaskId={displayTask?.id ?? selectedTaskId}
             onSelect={setSelectedTaskId}
             disabled
           />
