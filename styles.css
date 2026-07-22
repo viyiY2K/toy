@@ -5,8 +5,8 @@
   --card: #FFFDF8;
   --ink: #26211C;
   --ink-2: #4B433A;
-  --muted: #8B8173;
-  --muted-2: #AFA596;
+  --muted: #6B6154;
+  --muted-2: #8B8173;
   --line: #DED6C6;
   --line-2: #ECE5D8;
   --accent: #BC5B40;
@@ -478,7 +478,6 @@ input[type="checkbox"]:checked::before {
 .rest-picker-item.ghost {
   grid-column: 1 / -1;
   color: var(--muted);
-  font-style: italic;
   text-align: center;
 }
 .rest-picker-item.add {
@@ -668,7 +667,7 @@ input[type="checkbox"]:checked::before {
 .atr-item-name {
   flex: 1; min-width: 0;
   font-size: 13px;
-  color: var(--muted-2);
+  color: var(--muted);
   cursor: text;
 }
 .atr-name:hover, .atr-item-name:hover { color: var(--accent-ink); }
@@ -1447,7 +1446,7 @@ input[type="checkbox"]:checked::before {
 .task-row.done .task-name { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--muted-2); }
 
 .empty {
-  color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; font-style: italic;
+  color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0;
 }
 
 /* === interrupt drawer === */
@@ -2092,7 +2091,6 @@ input[type="checkbox"]:checked::before {
   padding: 28px 10px;
   color: var(--muted-2);
   font-size: 12px;
-  font-style: italic;
   text-align: center;
 }
 .stats-energy-points { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -2238,7 +2236,6 @@ select:focus-visible {
   color: var(--accent-ink);
   background: var(--accent-soft);
   border-color: rgba(188, 91, 64, .18);
-  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .nav-item .badge {
@@ -2814,7 +2811,6 @@ select:focus-visible {
   .nav { flex-direction: row; }
   .nav-item { justify-content: center; flex: 1; }
   .nav-item:hover { transform: none; }
-  .nav-item.active { box-shadow: inset 0 -3px 0 var(--accent); }
   .nav-item .badge { display: none; }
   .sidebar-footer { display: none; }
   .main { overflow: visible; padding: 26px 18px 56px; }
@@ -2844,4 +2840,13 @@ select:focus-visible {
   .activity-list-col,
   .kan-col,
   .stats-section { padding: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -23,6 +23,7 @@ export function Icon({ name, size = 16, stroke = 1.5 }) {
     case 'brain': return <svg {...props}><path d="M9 6a3 3 0 0 0-3 3v.5A2.5 2.5 0 0 0 4 12a2.5 2.5 0 0 0 2 2.45V15a3 3 0 0 0 3 3h.5"/><path d="M15 6a3 3 0 0 1 3 3v.5A2.5 2.5 0 0 1 20 12a2.5 2.5 0 0 1-2 2.45V15a3 3 0 0 1-3 3h-.5"/><path d="M12 6v12"/></svg>;
     case 'bell': return <svg {...props}><path d="M6 8a6 6 0 0 1 12 0c0 5 2 6 2 7H4c0-1 2-2 2-7zM10 19a2 2 0 0 0 4 0"/></svg>;
     case 'coffee': return <svg {...props}><path d="M4 9h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V9z"/><path d="M16 11h2a2 2 0 0 1 0 4h-2"/><path d="M7 3v3M10 4v2M13 3v3"/></svg>;
+    case 'urgent': return <svg {...props}><path d="M12 4L2 20h20L12 4z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>;
     default: return <svg {...props}/>;
   }
 }
