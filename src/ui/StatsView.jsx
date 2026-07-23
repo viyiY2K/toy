@@ -145,43 +145,43 @@ function Dashboard({ stats }) {
         interruptCount: interrupts.summary.total,
         energyCount: energy.timeline.length,
       }) && (
-        <div className="stats-empty-range" role="status">这个范围还没有专注、休息、能量、打扰或任务完成记录。</div>
+        <div className="stats-empty-range" role="status">这段时间还没有可统计的活动。</div>
       )}
 
       <div className="stat-grid stats-summary-grid">
-        <SummaryCard label="有效标准番茄" value={session.focus.validPomodoros} detail={`完整循环 ${session.completeCycles}`}/>
-        <SummaryCard label="区间总专注时长" value={formatDuration(session.focus.totalSeconds)} detail="standard + extra + discarded"/>
+        <SummaryCard label="有效番茄" value={session.focus.validPomodoros} detail={`完整循环 ${session.completeCycles}`}/>
+        <SummaryCard label="总专注时长" value={formatDuration(session.focus.totalSeconds)} detail="含加时与中途作废"/>
         <SummaryCard label="任务完成" value={completions.total} detail={`番茄 ${completions.pomodoro} · 手动 ${completions.manual}`}/>
-        <SummaryCard label="累计完整番茄" value={session.lifetime.totalCompleteCycles} detail={`工具内 ${session.lifetime.inToolCompleteCycles} · 基线 ${session.lifetime.baselineCompleteCycles}`}/>
+        <SummaryCard label="累计完整番茄" value={session.lifetime.totalCompleteCycles} detail={`本工具 ${session.lifetime.inToolCompleteCycles} · 之前累计 ${session.lifetime.baselineCompleteCycles}`}/>
       </div>
 
       <div className="stats-two-col">
-        <Section title="番茄与循环" hint="Session.actualDuration">
+        <Section title="番茄与循环" hint="按实际计时时长">
           <DailyBars days={session.days}/>
           <div className="stats-legend"><span className="standard">有效番茄</span><span className="cycle">完整循环</span></div>
           <div className="stats-metric-grid">
-            <Metric label="标准 focus" value={formatDuration(session.focus.standardSeconds)}/>
-            <Metric label="extraFocus" value={formatDuration(session.focus.extraSeconds)}/>
-            <Metric label="discarded focus" value={formatDuration(session.focus.discardedSeconds)}/>
-            <Metric label="累计专注时长" value={formatDuration(session.lifetime.focusSeconds)} detail="standard + extra + discarded"/>
+            <Metric label="标准番茄" value={formatDuration(session.focus.standardSeconds)}/>
+            <Metric label="加时专注" value={formatDuration(session.focus.extraSeconds)}/>
+            <Metric label="中途作废" value={formatDuration(session.focus.discardedSeconds)}/>
+            <Metric label="累计专注时长" value={formatDuration(session.lifetime.focusSeconds)} detail="含加时与中途作废"/>
           </div>
         </Section>
 
-        <Section title="休息事实" hint={`${session.rest.expectedBreaks} 次应休息`}>
+        <Section title="休息" hint={`应休息 ${session.rest.expectedBreaks} 次`}>
           <div className="stats-metric-grid">
-            <Metric label="shortBreak" value={formatDuration(session.rest.shortBreakSeconds)} detail={`${session.rest.completedByType.shortBreak}/${session.rest.expectedByType.shortBreak} 完成 · 主动跳过 ${formatRatio(session.rest.shortBreakExplicitSkipRate)}`}/>
-            <Metric label="longBreak" value={formatDuration(session.rest.longBreakSeconds)} detail={`${session.rest.completedByType.longBreak}/${session.rest.expectedByType.longBreak} 完成 · 主动跳过 ${formatRatio(session.rest.longBreakExplicitSkipRate)}`}/>
-            <Metric label="extraRest" value={formatDuration(session.rest.extraRestSeconds)}/>
+            <Metric label="短休" value={formatDuration(session.rest.shortBreakSeconds)} detail={`${session.rest.completedByType.shortBreak}/${session.rest.expectedByType.shortBreak} 完成 · 主动跳过 ${formatRatio(session.rest.shortBreakExplicitSkipRate)}`}/>
+            <Metric label="长休" value={formatDuration(session.rest.longBreakSeconds)} detail={`${session.rest.completedByType.longBreak}/${session.rest.expectedByType.longBreak} 完成 · 主动跳过 ${formatRatio(session.rest.longBreakExplicitSkipRate)}`}/>
+            <Metric label="额外休息" value={formatDuration(session.rest.extraRestSeconds)}/>
             <Metric label="标准休息完成率" value={formatRatio(session.rest.completionRate)} detail={`${session.rest.standardBreakCompleted} 次完成`}/>
           </div>
           <div className="stats-fact-list">
             <span>跳过 <strong>{skippedTotal}</strong></span>
-            <span>缺失 <strong>{session.rest.missingBreaks}</strong></span>
-            <span>workEnded 豁免 <strong>{session.rest.workEndedExemptions}</strong></span>
+            <span>未收尾 <strong>{session.rest.missingBreaks}</strong></span>
+            <span>收工免休 <strong>{session.rest.workEndedExemptions}</strong></span>
           </div>
           <div className="stats-skip-grid">
             <Metric label="主动跳过" value={session.rest.skipped.explicitSkip} detail={formatRatio(session.rest.explicitSkipRate)}/>
-            <Metric label="无响应" value={session.rest.skipped.noResponse} detail={formatRatio(session.rest.noResponseRate)}/>
+            <Metric label="没理提醒" value={session.rest.skipped.noResponse} detail={formatRatio(session.rest.noResponseRate)}/>
             <Metric label="错过" value={session.rest.skipped.missed} detail={formatRatio(session.rest.missedRate)}/>
             <Metric label="关闭应用" value={session.rest.skipped.appClosed} detail={formatRatio(session.rest.appClosedRate)}/>
           </div>
@@ -193,7 +193,7 @@ function Dashboard({ stats }) {
           <LineChart
             values={energyTrend.values}
             labels={energyTrend.labels}
-            emptyLabel="这个范围还没有能量记录"
+            emptyLabel="这段时间还没有能量记录"
             ariaLabel={session.range.kind === 'day' ? '当日全部能量记录趋势' : '每日能量平均趋势'}
             min={1}
             max={10}
@@ -205,19 +205,19 @@ function Dashboard({ stats }) {
           </div>
         </Section>
 
-        <Section title="休息恢复" hint="动态派生，不写回 EnergyRecord">
+        <Section title="休息恢复" hint="按休息前后的能量记录计算">
           <div className="stats-metric-grid">
             <Metric label="短休恢复均值" value={formatDecimal(recovery.shortBreak.averageDelta)} detail={`${recovery.shortBreak.validSampleCount}/${recovery.shortBreak.usageCount} 有效样本`}/>
             <Metric label="长休恢复均值" value={formatDecimal(recovery.longBreak.averageDelta)} detail={`${recovery.longBreak.validSampleCount}/${recovery.longBreak.usageCount} 有效样本`}/>
           </div>
           {recovery.samples.length === 0 ? (
-            <div className="stats-chart-empty">需要完整的 focus → break 前后能量关联，才能计算 recoveryDelta。</div>
+            <div className="stats-chart-empty">休息前后各要有一次能量记录，才能算出恢复了多少。</div>
           ) : (
             <div className="stats-recovery-list">
               {recovery.samples.map((sample) => (
                 <div key={sample.breakSessionId}>
                   <span>{sample.type === 'shortBreak' ? '短休' : '长休'}</span>
-                  <strong>{sample.delta === null ? '样本缺失' : `${sample.delta > 0 ? '+' : ''}${sample.delta}`}</strong>
+                  <strong>{sample.delta === null ? '缺记录' : `${sample.delta > 0 ? '+' : ''}${sample.delta}`}</strong>
                 </div>
               ))}
             </div>
@@ -226,39 +226,39 @@ function Dashboard({ stats }) {
       </div>
 
       <div className="stats-two-col">
-        <Section title="打扰" hint="仅关联标准 focus">
+        <Section title="打扰" hint="只统计标准番茄内发生的">
           <div className="stats-metric-grid">
             <Metric label="内部打扰" value={interrupts.summary.internal}/>
             <Metric label="外部打扰" value={interrupts.summary.external}/>
-            <Metric label="每有效番茄" value={formatDecimal(interrupts.summary.perValidPomodoro)}/>
+            <Metric label="每个有效番茄平均" value={formatDecimal(interrupts.summary.perValidPomodoro)}/>
           </div>
           <LineChart
             values={interruptValues}
             labels={dateLabels}
-            emptyLabel="这个范围还没有打扰记录"
+            emptyLabel="这段时间还没有打扰记录"
             ariaLabel="每日打扰数量趋势"
           />
           <Distribution rows={interrupts.timeDistribution}/>
           <div className="stats-legend"><span className="internal">内部</span><span className="external">外部</span></div>
         </Section>
 
-        <Section title="任务结果" hint="manual 不计预估样本">
+        <Section title="任务结果" hint="手动完成的任务不计入准确率">
           <div className="stats-metric-grid">
             <Metric label="预估准确率" value={formatRatio(estimates.accuracyRate)} detail={`${estimates.sampleCount} 个有效样本`}/>
             <Metric label="准确" value={estimates.accurate}/>
             <Metric label="估大" value={estimates.overestimated}/>
             <Metric label="估小" value={estimates.underestimated}/>
-            <Metric label="调整后不准" value={estimates.adjustedInaccurate}/>
+            <Metric label="改过预估仍不准" value={estimates.adjustedInaccurate}/>
           </div>
           {taskRows.length === 0 ? (
-            <div className="stats-chart-empty">这个范围还没有关联 Task 的专注记录。</div>
+            <div className="stats-chart-empty">这段时间还没有归到具体任务的专注记录。</div>
           ) : (
             <div className="stats-task-list">
               {taskRows.map((task) => (
                 <div key={task.taskId}>
                   <span>{task.title}</span>
                   <strong>{task.validFocusInRange} 番茄 · {formatDuration(task.totalSeconds)}</strong>
-                  <small>standard {formatDuration(task.standardSeconds)} · extra {formatDuration(task.extraSeconds)} · discarded {formatDuration(task.discardedSeconds)} · 历史有效番茄 {task.historicalValidFocus}</small>
+                  <small>标准 {formatDuration(task.standardSeconds)} · 加时 {formatDuration(task.extraSeconds)} · 作废 {formatDuration(task.discardedSeconds)} · 历史有效番茄 {task.historicalValidFocus}</small>
                 </div>
               ))}
             </div>
@@ -266,9 +266,9 @@ function Dashboard({ stats }) {
         </Section>
       </div>
 
-      <Section title="每日预算使用" hint="DayPlan.appDate">
+      <Section title="每日预算使用" hint="每天一行">
         {budgetDays.length === 0 ? (
-          <div className="stats-chart-empty">这个范围没有已保存的预算或有效番茄。</div>
+          <div className="stats-chart-empty">这段时间没有设过预算，也没有有效番茄。</div>
         ) : (
           <div className="stats-budget-days">
             {budgetDays.map((day) => (
@@ -315,7 +315,7 @@ export function StatsView({ currentAppDate }) {
       <header className="main-head stats-head">
         <div>
           <h1>统计</h1>
-          <div className="sub">由 Task、Session、Event、EnergyRecord 与 DayPlan 实时派生</div>
+          <div className="sub">全部来自你的真实计时与记录，实时计算</div>
         </div>
         <div className="stats-date-controls">
           <div className="range-tabs" aria-label="统计范围">
@@ -344,7 +344,7 @@ export function StatsView({ currentAppDate }) {
           <button className="btn sm" onClick={() => setRetry((value) => value + 1)}>重试</button>
         </div>
       ) : loading && stats === null ? (
-        <div className="empty">正在读取真实统计…</div>
+        <div className="empty">正在读取…</div>
       ) : stats ? (
         <div className={loading ? 'stats-loading' : ''} aria-busy={loading}>
           <Dashboard stats={stats}/>
