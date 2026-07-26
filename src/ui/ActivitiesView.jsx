@@ -274,6 +274,9 @@ export function ActivitiesView({ views, runCommand, busy }) {
   const [batchAction, setBatchAction] = React.useState(null);
   const [selectedBatchIds, setSelectedBatchIds] = React.useState(() => new Set());
   const [batchResult, setBatchResult] = React.useState(null);
+  // 拖拽排序的纯视觉反馈：draggingKey = 正在拖的行，dragOverKey = 当前悬停的落点行。
+  const [draggingKey, setDraggingKey] = React.useState(null);
+  const [dragOverKey, setDragOverKey] = React.useState(null);
   const { activeTasks: activeToday, completedTasks: completedToday } = splitTodayTasks(views.todayTasks);
   const metrics = currentPlanMetrics(views.dayPlan, views.todayPlanningCapacityRemaining);
   const detachedChildren = unattachedSubtasks(views);
@@ -365,6 +368,12 @@ export function ActivitiesView({ views, runCommand, busy }) {
   const setDrag = (event, value) => {
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('application/json', JSON.stringify(value));
+  };
+  const clearDrag = () => { setDraggingKey(null); setDragOverKey(null); };
+  const rowDragClass = (key) => {
+    if (draggingKey === key) return 'dragging';
+    if (dragOverKey === key && draggingKey !== null && draggingKey !== key) return 'drop-target';
+    return '';
   };
 
   return (
@@ -504,11 +513,13 @@ export function ActivitiesView({ views, runCommand, busy }) {
             {views.activeTasks.map((task, index) => (
               <div key={task.id} className="task-tree-group">
                 <div
-                  className="activity-tree-row atr-group draggable"
+                  className={`activity-tree-row atr-group draggable ${rowDragClass(`list-${task.id}`)}`}
                   draggable={!busy && !batchAction}
-                  onDragStart={(event) => setDrag(event, { from: 'list', taskId: task.id, index })}
-                  onDragOver={(event) => event.preventDefault()}
+                  onDragStart={(event) => { setDrag(event, { from: 'list', taskId: task.id, index }); setDraggingKey(`list-${task.id}`); }}
+                  onDragOver={(event) => { event.preventDefault(); setDragOverKey(`list-${task.id}`); }}
+                  onDragEnd={clearDrag}
                   onDrop={(event) => {
+                    clearDrag();
                     const reorder = activityReorderPayload(parseDrag(event), index);
                     if (!reorder) return;
                     event.preventDefault();
@@ -605,11 +616,13 @@ export function ActivitiesView({ views, runCommand, busy }) {
             return (
               <div key={task.id} className="today-task-block">
                 <div
-                  className="activity-tree-row atr-group draggable today-task-row"
+                  className={`activity-tree-row atr-group draggable today-task-row ${rowDragClass(`today-${task.id}`)}`}
                   draggable={!busy && !batchAction}
-                  onDragStart={(event) => setDrag(event, { from: 'today', taskId: task.id, index: dayPlanIndex })}
-                  onDragOver={(event) => event.preventDefault()}
+                  onDragStart={(event) => { setDrag(event, { from: 'today', taskId: task.id, index: dayPlanIndex }); setDraggingKey(`today-${task.id}`); }}
+                  onDragOver={(event) => { event.preventDefault(); setDragOverKey(`today-${task.id}`); }}
+                  onDragEnd={clearDrag}
                   onDrop={(event) => {
+                    clearDrag();
                     event.preventDefault();
                     event.stopPropagation();
                     const drag = parseDrag(event);
