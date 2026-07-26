@@ -117,26 +117,53 @@ export function BudgetPlannerModal({ dayPlan, command, busy, onClose }) {
   );
   const { estimate } = dayPlan;
 
-  const accept = async (budgetMode, budgetPomodoros) => {
+  const accept = async (budgetMode, budgetPomodoros, { close = true } = {}) => {
     const result = await command((time) => acceptDayPlanBudget({
       ...time,
       budgetMode,
       budgetPomodoros,
     }));
-    if (result) onClose();
+    if (result && close) onClose();
+  };
+  // 顶部切换：套用后停留在弹窗；已是同一模式且数值未变时不重复写入。
+  const applyMode = (budgetMode, budgetPomodoros) => {
+    if (dayPlan.budgetMode === budgetMode && dayPlan.budgetPomodoros === budgetPomodoros) return;
+    accept(budgetMode, budgetPomodoros, { close: false });
   };
 
   return (
     <div className="modal-bg" role="presentation">
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="budget-title">
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div>
             <h2 id="budget-title">今日预算估算</h2>
             <div className="sub">按当前产品日的设置快照计算；扣除项修改后立即保存。</div>
           </div>
-          <button className="icon-btn" disabled={busy} title="关闭预算估算" onClick={onClose}>
-            <Icon name="x" size={14}/>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="budget-mode-toggle" role="group" aria-label="采用估算模式">
+              <button
+                type="button"
+                className={dayPlan.budgetMode === 'conservative' ? 'on' : ''}
+                disabled={busy}
+                aria-pressed={dayPlan.budgetMode === 'conservative'}
+                onClick={() => applyMode('conservative', estimate.conservativePomodoros)}
+              >
+                保守
+              </button>
+              <button
+                type="button"
+                className={dayPlan.budgetMode === 'optimistic' ? 'on' : ''}
+                disabled={busy}
+                aria-pressed={dayPlan.budgetMode === 'optimistic'}
+                onClick={() => applyMode('optimistic', estimate.optimisticPomodoros)}
+              >
+                乐观
+              </button>
+            </div>
+            <button className="icon-btn" disabled={busy} title="关闭预算估算" onClick={onClose}>
+              <Icon name="x" size={14}/>
+            </button>
+          </div>
         </div>
 
         <div className="planner-row">
@@ -195,23 +222,7 @@ export function BudgetPlannerModal({ dayPlan, command, busy, onClose }) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={() => accept('conservative', estimate.conservativePomodoros)}
-          >
-            采用保守 {estimate.conservativePomodoros}
-          </button>
-          <button
-            className="btn"
-            disabled={busy}
-            onClick={() => accept('optimistic', estimate.optimisticPomodoros)}
-          >
-            采用乐观 {estimate.optimisticPomodoros}
-          </button>
-        </div>
-        <div className="planner-row" style={{ marginTop: 8 }}>
+        <div className="planner-row" style={{ marginTop: 18 }}>
           <label className="planner-l" htmlFor="manual-budget">手动预算</label>
           <input
             id="manual-budget"
