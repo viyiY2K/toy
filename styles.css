@@ -1440,16 +1440,8 @@ select:focus-visible {
   margin-bottom: 28px;
 }
 
-.main-head h1,
 .modal h2 {
   font-family: "Instrument Sans", "PingFang SC", "Hiragino Sans GB", sans-serif;
-}
-
-.main-head h1 {
-  margin-bottom: 6px;
-  font-size: clamp(27px, 2.4vw, 34px);
-  font-weight: 500;
-  letter-spacing: -.035em;
 }
 
 .main-head .sub {
