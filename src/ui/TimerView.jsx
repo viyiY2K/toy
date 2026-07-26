@@ -925,8 +925,10 @@ export function TimerView({
               longBreakEvery={taskViews.settings.longBreakEvery}
             />
           )}
+        </div>
+        <aside className="timer-aside">
           {!isFocus && (
-            <div className="card" style={{ width: '100%', maxWidth: 560, padding: 18, marginTop: 20 }}>
+            <div className="card" style={{ padding: 18 }}>
               {suggestedRest && (
                 <div className="rest-suggest">
                   <div>
@@ -1004,8 +1006,6 @@ export function TimerView({
               )}
             </div>
           )}
-        </div>
-        <aside className="timer-aside">
           {isFocus && (
             <>
               <div className="timer-side-actions">
