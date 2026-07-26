@@ -133,14 +133,14 @@ function TimerCircle({
   const content = (
     <>
       <svg viewBox="0 0 360 360" aria-hidden="true">
-        <circle cx="180" cy="180" r="170" fill="none" stroke="var(--line-2)" strokeWidth="4"/>
+        <circle cx="180" cy="180" r="170" fill="none" stroke="var(--line)" strokeWidth="2"/>
         <circle
           cx="180"
           cy="180"
           r="170"
           fill="none"
           stroke="var(--accent)"
-          strokeWidth="4"
+          strokeWidth="3"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - progress)}
