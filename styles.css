@@ -47,7 +47,8 @@ body {
 
 /* P3-19: 稳定标题与空态文案的换行，避免随机断行与末行孤字 */
 .main-head h1, .card-title, .section-h h3 { text-wrap: balance; }
-.empty, .stats-empty-range, .stats-chart-empty { text-wrap: pretty; }
+.empty, .stats-empty-range, .stats-chart-empty,
+.empty-state-title, .empty-state-hint { text-wrap: pretty; }
 
 .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-feature-settings: "tnum" on; }
 
@@ -824,8 +825,64 @@ input[type="checkbox"]:checked::before {
 .rest-suggest .label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-ink); }
 .rest-suggest .name { font-family: "Instrument Serif", serif; font-size: 20px; }
 
+/* 说明性小空态（如「已完成子任务保留在所属任务下…」）：紧凑、居中、可读的墨色。 */
 .empty {
-  color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  padding: 26px 14px;
+}
+
+/* loading 与真·空态分开：loading 只是「稍等」，用更轻的语气 + 克制的呼吸感。 */
+.loading-note {
+  color: var(--muted-2);
+  font-size: 13px;
+  text-align: center;
+  padding: 32px 14px;
+  animation: loading-breathe 1.8s ease-in-out infinite;
+}
+@keyframes loading-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-note { animation: none; opacity: 0.72; }
+}
+
+/* 真·空态：用户每天正面撞见的画面。暖态陶土小图标 + 主句 + 一句下一步引导，把冷清感压下去。 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 40px 20px;
+}
+.empty-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 6px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.empty-state-title {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.empty-state-hint {
+  margin: 0;
+  max-width: 26em;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
 /* === date navigator (stats page) === */
@@ -1266,7 +1323,7 @@ input[type="checkbox"]:checked::before {
 }
 .stats-chart-empty {
   padding: 28px 10px;
-  color: var(--muted-2);
+  color: var(--muted);
   font-size: 12px;
   text-align: center;
 }
@@ -1545,12 +1602,6 @@ select:focus-visible {
 .task-detail-inline select:focus {
   border-color: rgba(188, 91, 64, .66);
   box-shadow: 0 0 0 3px rgba(188, 91, 64, .08);
-}
-
-.empty {
-  padding: 32px 14px;
-  color: var(--muted-2);
-  line-height: 1.7;
 }
 
 .section-h {

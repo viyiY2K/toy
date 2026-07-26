@@ -168,7 +168,7 @@ export function App() {
       <main className="main">
         {error && <div className="card" role="alert" style={{ marginBottom: 16 }}>{error}</div>}
         {!snapshot ? (
-          <div className="empty">正在初始化当前产品日…</div>
+          <div className="loading-note" role="status">正在初始化当前产品日…</div>
         ) : page === 'timer' ? (
           <TimerView
             snapshot={snapshot}

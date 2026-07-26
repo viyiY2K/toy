@@ -22,6 +22,7 @@ import {
   updateTaskTitle,
 } from '../data/index';
 import { Icon } from './Icon';
+import { EmptyState } from './EmptyState';
 import { BudgetPlannerModal } from './BudgetPlannerModal';
 import { TaskDetailModal } from './TaskDetailModal';
 import {
@@ -492,7 +493,13 @@ export function ActivitiesView({ views, runCommand, busy }) {
               ...time, title, destination: 'list',
             }))}
           />
-          {views.activeTasks.length === 0 && <div className="empty">清单里暂时没有活动。</div>}
+          {views.activeTasks.length === 0 && (
+            <EmptyState
+              icon="list"
+              title="清单还是空的"
+              hint="在上面输入框写下想做的第一件事，回车就能加进来。"
+            />
+          )}
           <div className="activity-tree">
             {views.activeTasks.map((task, index) => (
               <div key={task.id} className="task-tree-group">
@@ -587,7 +594,11 @@ export function ActivitiesView({ views, runCommand, busy }) {
             }))}
           />
           {activeToday.length === 0 && completedToday.length === 0 && (
-            <div className="empty">从活动清单拖入事项。</div>
+            <EmptyState
+              icon="arrow-day"
+              title="今天还没有安排"
+              hint="从左边的清单把事项拖过来，或在上方直接新建今日任务。"
+            />
           )}
           {activeToday.map((task) => {
             const dayPlanIndex = dayPlanIndexOf(views.todayTasks, task.id);
@@ -800,7 +811,13 @@ export function ActivitiesView({ views, runCommand, busy }) {
           <span className="count">{views.archivedTasks.length} 个</span>
         </div>
         <div className="card completed-card">
-          {views.archivedTasks.length === 0 && <div className="empty">尚无归档任务。</div>}
+          {views.archivedTasks.length === 0 && (
+            <EmptyState
+              icon="check"
+              title="还没有归档记录"
+              hint="完成并归档的任务会收在这里，方便日后回看。"
+            />
+          )}
           {views.archivedTasks.map((task) => {
             const presentation = archivedTaskPresentation(task);
             const lineage = splitLineagePresentation(task, allTaskRecords);

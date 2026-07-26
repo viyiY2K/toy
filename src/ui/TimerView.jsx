@@ -14,6 +14,7 @@ import {
   startFocus,
 } from '../data/index';
 import { Icon } from './Icon';
+import { EmptyState } from './EmptyState';
 import {
   canWriteStandardSession,
   canCaptureTriage,
@@ -223,7 +224,13 @@ function TaskPicker({ tasks, selectedTaskId, onSelect, disabled }) {
             <span className="timer-today-pomo mono">{task.estimatedPomodoros}</span>
           </button>
         ))}
-        {tasks.length === 0 && <div className="empty">今日没有可开始的任务。</div>}
+        {tasks.length === 0 && (
+          <EmptyState
+            icon="list"
+            title="今天还没有待办"
+            hint="先到清单页把今天要做的事安排好，再回来开始专注。"
+          />
+        )}
       </div>
     </div>
   );

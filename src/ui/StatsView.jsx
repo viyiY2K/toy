@@ -344,7 +344,7 @@ export function StatsView({ currentAppDate }) {
           <button className="btn sm" onClick={() => setRetry((value) => value + 1)}>重试</button>
         </div>
       ) : loading && stats === null ? (
-        <div className="empty">正在读取…</div>
+        <div className="loading-note" role="status">正在读取…</div>
       ) : stats ? (
         <div className={loading ? 'stats-loading' : ''} aria-busy={loading}>
           <Dashboard stats={stats}/>
