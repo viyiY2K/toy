@@ -45,6 +45,10 @@ body {
   font-feature-settings: "ss01" on;
 }
 
+/* P3-19: 稳定标题与空态文案的换行，避免随机断行与末行孤字 */
+.main-head h1, .card-title, .section-h h3 { text-wrap: balance; }
+.empty, .stats-empty-range, .stats-chart-empty { text-wrap: pretty; }
+
 .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-feature-settings: "tnum" on; }
 
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
