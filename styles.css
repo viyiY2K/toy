@@ -1558,6 +1558,9 @@ select:focus-visible {
   margin-bottom: 10px;
 }
 
+/* section-h 作为卡片内第一个元素时，34px 顶边距会在框线下留出怪空白 */
+.card > .section-h:first-child { margin-top: 0; }
+
 .section-h h3 { font-size: 13px; }
 
 .bb-v { font-size: 25px; }
