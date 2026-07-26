@@ -1462,9 +1462,8 @@ select:focus-visible {
 .card,
 .kan-col,
 .stat-card {
-  border-color: rgba(213, 202, 182, .78);
-  background: rgba(251, 248, 240, .9);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--line);
+  background: var(--paper);
 }
 
 .card,
