@@ -120,6 +120,19 @@ input[type="checkbox"]:checked::before {
 .brand small {
   display: block; color: var(--muted); font-size: 11px; letter-spacing: 0.02em;
 }
+.brand-title { display: inline-flex; align-items: center; gap: 6px; }
+.brand-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  transform: translateY(-0.5px);
+}
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav-item {
   display: flex; align-items: center; justify-content: space-between;

@@ -131,7 +131,10 @@ export function App() {
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark"/>
-          <div>番茄<small>觉察 · 计划</small></div>
+          <div>
+            <span className="brand-title">番茄<span className="brand-badge">Beta</span></span>
+            <small>觉察 · 计划</small>
+          </div>
         </div>
         <nav className="nav">
           <NavButton
