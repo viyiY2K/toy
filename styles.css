@@ -1713,9 +1713,7 @@ select:focus-visible {
   padding: 0;
   border-radius: 50%;
   color: inherit;
-  background:
-    radial-gradient(circle, rgba(255, 253, 248, .9) 0 55%, transparent 56%),
-    radial-gradient(circle, rgba(188, 91, 64, .055), transparent 69%);
+  background: none;
 }
 
 .timer-circle svg {
