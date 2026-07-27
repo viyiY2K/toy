@@ -498,11 +498,14 @@ input[type="checkbox"]:checked::before {
 .activity-tree-row { cursor: grab; }
 .activity-tree-row:active { cursor: grabbing; }
 .activity-tree-row:hover { background: rgba(28,25,22,.03); }
-/* 拖拽排序反馈：正在拖的行淡出，落点行加陶土左条 + 暖底，一眼看清是把谁挪到哪。 */
+/* 拖拽排序反馈：正在拖的行淡出；落点行的上/下边缘加一条插入线，
+   表示「落到这一行前面/后面」，而不是要跟这一行互换位置。 */
 .activity-tree-row.dragging { opacity: .4; }
-.activity-tree-row.drop-target {
-  background: var(--accent-soft);
-  box-shadow: inset 3px 0 0 0 var(--accent);
+.activity-tree-row.drop-before {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+.activity-tree-row.drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--accent);
 }
 .atr-item {
   min-height: 26px;

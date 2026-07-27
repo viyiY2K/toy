@@ -35,6 +35,7 @@ import {
   completionSourceLabel,
   currentPlanMetrics,
   dayPlanIndexOf,
+  dropInsertIndex,
   isTaskRunningFocus,
   reconcileBatchSelection,
   splitLineagePresentation,
@@ -279,9 +280,11 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
   const [batchAction, setBatchAction] = React.useState(null);
   const [selectedBatchIds, setSelectedBatchIds] = React.useState(() => new Set());
   const [batchResult, setBatchResult] = React.useState(null);
-  // 拖拽排序的纯视觉反馈：draggingKey = 正在拖的行，dragOverKey = 当前悬停的落点行。
+  // 拖拽排序的纯视觉反馈：draggingKey = 正在拖的行，dragOverKey = 当前悬停的落点行，
+  // dropPosition = 悬停在该行的上半还是下半（决定落到目标行前面还是后面，而不是互换）。
   const [draggingKey, setDraggingKey] = React.useState(null);
   const [dragOverKey, setDragOverKey] = React.useState(null);
+  const [dropPosition, setDropPosition] = React.useState('before');
   const { activeTasks: activeToday, completedTasks: completedToday } = splitTodayTasks(views.todayTasks);
   const metrics = currentPlanMetrics(views.dayPlan, views.todayPlanningCapacityRemaining);
   const detachedChildren = unattachedSubtasks(views);
@@ -374,10 +377,18 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('application/json', JSON.stringify(value));
   };
-  const clearDrag = () => { setDraggingKey(null); setDragOverKey(null); };
+  const clearDrag = () => { setDraggingKey(null); setDragOverKey(null); setDropPosition('before'); };
+  const hoverRow = (event, key) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setDragOverKey(key);
+    setDropPosition(event.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+  };
   const rowDragClass = (key) => {
     if (draggingKey === key) return 'dragging';
-    if (dragOverKey === key && draggingKey !== null && draggingKey !== key) return 'drop-target';
+    if (dragOverKey === key && draggingKey !== null && draggingKey !== key) {
+      return dropPosition === 'after' ? 'drop-after' : 'drop-before';
+    }
     return '';
   };
 
@@ -521,11 +532,12 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                   className={`activity-tree-row atr-group draggable ${rowDragClass(`list-${task.id}`)}`}
                   draggable={!busy && !batchAction}
                   onDragStart={(event) => { setDrag(event, { from: 'list', taskId: task.id, index }); setDraggingKey(`list-${task.id}`); }}
-                  onDragOver={(event) => { event.preventDefault(); setDragOverKey(`list-${task.id}`); }}
+                  onDragOver={(event) => hoverRow(event, `list-${task.id}`)}
                   onDragEnd={clearDrag}
                   onDrop={(event) => {
+                    const position = dropPosition;
                     clearDrag();
-                    const reorder = activityReorderPayload(parseDrag(event), index);
+                    const reorder = activityReorderPayload(parseDrag(event), index, position);
                     if (!reorder) return;
                     event.preventDefault();
                     event.stopPropagation();
@@ -628,21 +640,24 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                   className={`activity-tree-row atr-group draggable today-task-row ${rowDragClass(`today-${task.id}`)}`}
                   draggable={!busy && !batchAction}
                   onDragStart={(event) => { setDrag(event, { from: 'today', taskId: task.id, index: dayPlanIndex }); setDraggingKey(`today-${task.id}`); }}
-                  onDragOver={(event) => { event.preventDefault(); setDragOverKey(`today-${task.id}`); }}
+                  onDragOver={(event) => hoverRow(event, `today-${task.id}`)}
                   onDragEnd={clearDrag}
                   onDrop={(event) => {
+                    const position = dropPosition;
                     clearDrag();
                     event.preventDefault();
                     event.stopPropagation();
                     const drag = parseDrag(event);
                     if (drag?.from === 'list') {
+                      const addedAtIndex = position === 'after' ? dayPlanIndex + 1 : dayPlanIndex;
                       command((time) => addTaskToToday({
-                        ...time, taskId: drag.taskId, source: 'drag', addedAtIndex: dayPlanIndex,
+                        ...time, taskId: drag.taskId, source: 'drag', addedAtIndex,
                       }));
-                    } else if (drag?.from === 'today' && drag.index !== dayPlanIndex) {
-                      command((time) => reorderTodayTask({
-                        ...time, fromIndex: drag.index, toIndex: dayPlanIndex,
-                      }));
+                    } else if (drag?.from === 'today') {
+                      const toIndex = dropInsertIndex(drag.index, dayPlanIndex, position);
+                      if (toIndex !== drag.index) {
+                        command((time) => reorderTodayTask({ ...time, fromIndex: drag.index, toIndex }));
+                      }
                     }
                   }}
                 >

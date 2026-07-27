@@ -9,18 +9,28 @@ export function dayPlanIndexOf(tasks, taskId) {
   return tasks.findIndex((task) => task.id === taskId);
 }
 
-export function activityReorderPayload(drag, toIndex) {
+/**
+ * 把「拖拽悬停在目标行的上/下半」换算成 splice 语义下最终的插入下标。
+ * 目标始终是「落到目标行的前面（或后面）」，而不是和目标行互换位置。
+ */
+export function dropInsertIndex(fromIndex, targetIndex, position = 'before') {
+  const anchor = position === 'after' ? targetIndex + 1 : targetIndex;
+  return fromIndex < anchor ? anchor - 1 : anchor;
+}
+
+export function activityReorderPayload(drag, targetIndex, position = 'before') {
   if (
     drag?.from !== 'list' ||
     typeof drag.taskId !== 'string' ||
     !Number.isInteger(drag.index) ||
-    !Number.isInteger(toIndex) ||
+    !Number.isInteger(targetIndex) ||
     drag.index < 0 ||
-    toIndex < 0 ||
-    drag.index === toIndex
+    targetIndex < 0
   ) {
     return null;
   }
+  const toIndex = dropInsertIndex(drag.index, targetIndex, position);
+  if (toIndex === drag.index) return null;
   return { fromIndex: drag.index, toIndex };
 }
 

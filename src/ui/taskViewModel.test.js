@@ -11,6 +11,7 @@ import {
   completionSourceLabel,
   currentPlanMetrics,
   dayPlanIndexOf,
+  dropInsertIndex,
   splitTodayTasks,
   hasRetainedChildren,
   isTaskRunningFocus,
@@ -60,6 +61,28 @@ describe('S13b task view model', () => {
     expect(activityReorderPayload({ from: 'list', taskId: 'task-b', index: 2 }, 2)).toBeNull();
     expect(activityReorderPayload({ from: 'today', taskId: 'task-b', index: 2 }, 0)).toBeNull();
     expect(activityReorderPayload({ from: 'list', taskId: 'task-b' }, 0)).toBeNull();
+  });
+
+  it('drops the dragged row before or after the target instead of swapping places with it', () => {
+    // [A,B,C,D] 拖 A(0) 落到 C(2) 上半：插到 C 前面，得到 [B,A,C,D]。
+    expect(dropInsertIndex(0, 2, 'before')).toBe(1);
+    // 落到 C 下半：插到 C 后面，得到 [B,C,A,D]。
+    expect(dropInsertIndex(0, 2, 'after')).toBe(2);
+    // 反方向：拖 D(3) 落到 B(1) 上半，插到 B 前面，得到 [A,D,B,C]。
+    expect(dropInsertIndex(3, 1, 'before')).toBe(1);
+    // 落到 B 下半：插到 B 后面，得到 [A,B,D,C]。
+    expect(dropInsertIndex(3, 1, 'after')).toBe(2);
+    // 落到自己原本紧邻的下一行前面 = 原地不动。
+    expect(dropInsertIndex(1, 2, 'before')).toBe(1);
+  });
+
+  it('rejects an activity reorder that resolves to a no-op insert position', () => {
+    // index1 拖到 index2 上半，插入点换算后等于自己原来的位置，视为无效拖拽。
+    expect(activityReorderPayload({ from: 'list', taskId: 'task-b', index: 1 }, 2, 'before')).toBeNull();
+    expect(activityReorderPayload({ from: 'list', taskId: 'task-b', index: 0 }, 2, 'after')).toEqual({
+      fromIndex: 0,
+      toIndex: 2,
+    });
   });
 
   it('keeps manual and pomodoro completion sources visibly distinct', () => {
