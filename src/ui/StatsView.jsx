@@ -50,6 +50,28 @@ function Metric({ label, value, detail = null }) {
   );
 }
 
+// 「总数 + 它的构成」用同一行讲完。拆成一行事实文字加一排田字格时，
+// 总分关系全靠读者自己推断，而且一张卡里凭空多出两种排版语言。
+function Breakdown({ rows }) {
+  return (
+    <div className="stats-breakdown">
+      {rows.map(({ label, value, parts }) => (
+        <div className="stats-breakdown-row" key={label}>
+          <span>{label}</span>
+          <strong>{value}</strong>
+          {parts && (
+            <small>
+              {parts.map(({ label: partLabel, value: partValue, ratio }) => (
+                <span key={partLabel} title={`占跳过的 ${formatRatio(ratio)}`}>{partLabel} {partValue}</span>
+              ))}
+            </small>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function LineChart({ values, labels, emptyLabel, ariaLabel, min = null, max = null }) {
   const width = 600;
   const height = 110;
@@ -195,17 +217,20 @@ function Dashboard({ stats }) {
             <Metric label="额外休息" value={<Duration seconds={session.rest.extraRestSeconds}/>}/>
             <Metric label="标准休息完成率" value={formatRatio(session.rest.completionRate)} detail={`${session.rest.standardBreakCompleted} 次完成`}/>
           </div>
-          <div className="stats-fact-list">
-            <span>跳过 <strong>{skippedTotal}</strong></span>
-            <span>未收尾 <strong>{session.rest.missingBreaks}</strong></span>
-            <span>收工免休 <strong>{session.rest.workEndedExemptions}</strong></span>
-          </div>
-          <div className="stats-skip-grid">
-            <Metric label="主动跳过" value={session.rest.skipped.explicitSkip} detail={formatRatio(session.rest.explicitSkipRate)}/>
-            <Metric label="没理提醒" value={session.rest.skipped.noResponse} detail={formatRatio(session.rest.noResponseRate)}/>
-            <Metric label="错过" value={session.rest.skipped.missed} detail={formatRatio(session.rest.missedRate)}/>
-            <Metric label="关闭应用" value={session.rest.skipped.appClosed} detail={formatRatio(session.rest.appClosedRate)}/>
-          </div>
+          <Breakdown rows={[
+            {
+              label: '跳过',
+              value: skippedTotal,
+              parts: [
+                { label: '主动', value: session.rest.skipped.explicitSkip, ratio: session.rest.explicitSkipRate },
+                { label: '没理提醒', value: session.rest.skipped.noResponse, ratio: session.rest.noResponseRate },
+                { label: '错过', value: session.rest.skipped.missed, ratio: session.rest.missedRate },
+                { label: '关闭应用', value: session.rest.skipped.appClosed, ratio: session.rest.appClosedRate },
+              ],
+            },
+            { label: '未收尾', value: session.rest.missingBreaks },
+            { label: '收工免休', value: session.rest.workEndedExemptions },
+          ]}/>
         </Section>
       </div>
 

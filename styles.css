@@ -1351,17 +1351,35 @@ input[type="checkbox"]:checked::before {
 .stats-legend .cycle::before { background: var(--ink-2); }
 .stats-legend .internal::before { background: var(--accent); }
 .stats-legend .external::before { background: var(--ink-2); }
-.stats-fact-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
-  margin: 12px 0;
-  color: var(--muted);
+/* 总数在左、构成在右的一行式拆分，替掉原来「一行事实文字 + 一排田字格」
+   的两套排版语言 */
+.stats-breakdown { margin-top: 12px; }
+.stats-breakdown-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line);
   font-size: 12px;
 }
-.stats-fact-list strong { color: var(--ink-2); font-family: "JetBrains Mono", monospace; font-weight: 400; }
-.stats-skip-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line-2); }
-.stats-skip-grid .stats-metric { padding: 8px; }
+.stats-breakdown-row:last-child { border-bottom: 0; }
+.stats-breakdown-row > span { color: var(--muted); }
+.stats-breakdown-row > strong {
+  color: var(--ink-2);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 400;
+}
+.stats-breakdown-row > small {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.stats-breakdown-row > small span { white-space: nowrap; }
 .stats-line-chart { margin: 4px 0 12px; }
 .stats-line-chart svg { display: block; width: 100%; height: 130px; overflow: visible; }
 .stats-chart-axis { fill: none; stroke: var(--line); stroke-width: 1; }
@@ -1443,7 +1461,6 @@ input[type="checkbox"]:checked::before {
   .stats-head { align-items: flex-start; flex-direction: column; gap: 14px; }
   .stats-summary-grid,
   .stats-two-col { grid-template-columns: 1fr; }
-  .stats-skip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* === warm editorial visual refresh === */
@@ -2078,8 +2095,7 @@ select:focus-visible {
   .stat-grid,
   .stats-summary-grid,
   .stats-two-col,
-  .stats-metric-grid,
-  .stats-skip-grid { grid-template-columns: 1fr; }
+  .stats-metric-grid { grid-template-columns: 1fr; }
   .stat-card { min-height: 132px; }
   .timer-aside { grid-template-columns: 1fr; }
   .timer-side-actions { gap: 6px; }
