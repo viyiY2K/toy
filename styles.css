@@ -1936,7 +1936,7 @@ select:focus-visible {
   border-bottom: 1px solid rgba(213, 202, 182, .55);
 }
 
-.stats-date-controls { gap: 12px; }
+.stats-date-controls { gap: 6px; }
 
 .range-tabs {
   padding: 4px;
@@ -1953,11 +1953,11 @@ select:focus-visible {
 
 .range-tab.on { box-shadow: 0 2px 8px rgba(188, 91, 64, .09); }
 
+/* 日期导航是范围胶囊的附属操作，不该长成同一个胶囊的双胞胎——
+   去掉自己的描边和底色，只留翻页/回到今天的 hover 反馈，视觉上
+   轻一级，读作「胶囊下面的一行操作」而不是「摞起来的第二张卡片」。 */
 .date-nav {
-  padding: 3px;
-  border: 1px solid rgba(213, 202, 182, .78);
-  border-radius: 999px;
-  background: rgba(255, 253, 248, .58);
+  padding: 0 4px;
 }
 
 .date-nav-btn { width: 31px; height: 31px; }
