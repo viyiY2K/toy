@@ -799,11 +799,14 @@ input[type="checkbox"]:checked::before {
 
 .timer-aside { display: flex; flex-direction: column; gap: 14px; }
 .deduction-row {
-  display: grid; grid-template-columns: 1fr 80px 28px;
-  gap: 8px; align-items: center;
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 8px;
   padding: 6px 0;
 }
 .deduction-row input.boxed { padding: 6px 8px; font-size: 13px; }
+.deduction-row > span:first-child,
+.deduction-row > input.boxed:first-child { flex: 1; min-width: 80px; }
+.deduction-row > input.boxed[type="number"] { width: 80px; flex: 0 0 auto; }
 /* 自由时长：可用时段减扣除后的上下文事实，不是可选项，横排一行低调呈现。 */
 .budget-free {
   margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);

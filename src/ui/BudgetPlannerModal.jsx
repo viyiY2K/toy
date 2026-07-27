@@ -28,22 +28,169 @@ function clockToMinutes(value) {
   return hours * 60 + minutes;
 }
 
+function modeToggleStyle(active) {
+  return {
+    fontSize: 11,
+    padding: '3px 8px',
+    borderRadius: 999,
+    border: '1px solid var(--line)',
+    background: active ? 'var(--accent-soft)' : 'transparent',
+    color: active ? 'var(--accent-ink)' : 'var(--muted)',
+  };
+}
+
+function HoursModeToggle({ mode, onChange, disabled }) {
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, flexShrink: 0 }}>
+      <button
+        type="button"
+        style={modeToggleStyle(mode === 'hours')}
+        disabled={disabled}
+        title="按小时数输入"
+        onClick={() => onChange('hours')}
+      >
+        小时
+      </button>
+      <button
+        type="button"
+        style={modeToggleStyle(mode === 'range')}
+        disabled={disabled}
+        title="按起止时间输入"
+        onClick={() => onChange('range')}
+      >
+        时间段
+      </button>
+    </span>
+  );
+}
+
+function DeductionRow({ deduction, deductionType, command, busy }) {
+  const [mode, setMode] = React.useState('hours');
+  const anchorStart = minutesToClock(0);
+  const anchorEnd = minutesToClock(Math.round(deduction.hours * 60));
+  const [rangeStart, setRangeStart] = React.useState(anchorStart);
+  const [rangeEnd, setRangeEnd] = React.useState(anchorEnd);
+
+  React.useEffect(() => {
+    setRangeStart(anchorStart);
+    setRangeEnd(anchorEnd);
+  }, [anchorStart, anchorEnd]);
+
+  const commitHours = (nextHours) => {
+    if (Number.isFinite(nextHours) && nextHours > 0 && nextHours !== deduction.hours) {
+      command((time) => updateDayPlanDeduction({
+        ...time,
+        deductionType,
+        deductionId: deduction.id,
+        hours: nextHours,
+      }));
+    }
+  };
+
+  const commitRange = (nextStart, nextEnd) => {
+    const startMin = clockToMinutes(nextStart);
+    const endMin = clockToMinutes(nextEnd);
+    if (startMin === null || endMin === null || endMin <= startMin) {
+      setRangeStart(anchorStart);
+      setRangeEnd(anchorEnd);
+      return;
+    }
+    commitHours((endMin - startMin) / 60);
+  };
+
+  return (
+    <div className="deduction-row">
+      <span style={{ fontSize: 13 }}>{deduction.label}</span>
+      {mode === 'hours' ? (
+        <input
+          key={deduction.hours}
+          className="input boxed mono"
+          type="number"
+          min="0.01"
+          step="0.25"
+          defaultValue={deduction.hours}
+          disabled={busy}
+          aria-label={`${deduction.label} 小时`}
+          onBlur={(event) => {
+            const nextHours = Number(event.currentTarget.value);
+            if (!Number.isFinite(nextHours) || nextHours <= 0) {
+              event.currentTarget.value = String(deduction.hours);
+              return;
+            }
+            commitHours(nextHours);
+          }}
+        />
+      ) : (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <input
+            className="input boxed mono"
+            type="time"
+            style={{ width: 100 }}
+            value={rangeStart}
+            disabled={busy}
+            aria-label={`${deduction.label} 开始时间`}
+            onChange={(event) => setRangeStart(event.target.value)}
+            onBlur={() => commitRange(rangeStart, rangeEnd)}
+          />
+          <span className="planner-eq">到</span>
+          <input
+            className="input boxed mono"
+            type="time"
+            style={{ width: 100 }}
+            value={rangeEnd}
+            disabled={busy}
+            aria-label={`${deduction.label} 结束时间`}
+            onChange={(event) => setRangeEnd(event.target.value)}
+            onBlur={() => commitRange(rangeStart, rangeEnd)}
+          />
+        </span>
+      )}
+      <HoursModeToggle mode={mode} onChange={setMode} disabled={busy}/>
+      <button
+        className="icon-btn"
+        disabled={busy}
+        title={`删除${deduction.label}`}
+        onClick={() => command((time) => removeDayPlanDeduction({
+          ...time,
+          deductionType,
+          deductionId: deduction.id,
+        }))}
+      >
+        <Icon name="x" size={12}/>
+      </button>
+    </div>
+  );
+}
+
 function DeductionSection({ title, deductionType, deductions, command, busy }) {
   const [label, setLabel] = React.useState('');
+  const [mode, setMode] = React.useState('hours');
   const [hours, setHours] = React.useState('');
+  const [rangeStart, setRangeStart] = React.useState('12:00');
+  const [rangeEnd, setRangeEnd] = React.useState('13:00');
+
+  const rangeHours = (() => {
+    const startMin = clockToMinutes(rangeStart);
+    const endMin = clockToMinutes(rangeEnd);
+    if (startMin === null || endMin === null || endMin <= startMin) return null;
+    return (endMin - startMin) / 60;
+  })();
+  const effectiveHours = mode === 'hours' ? Number(hours) : rangeHours;
+  const effectiveHoursValid = Number.isFinite(effectiveHours) && effectiveHours > 0;
 
   const add = async () => {
-    const parsedHours = Number(hours);
-    if (!label.trim() || !Number.isFinite(parsedHours) || parsedHours <= 0) return;
+    if (!label.trim() || !effectiveHoursValid) return;
     const result = await command((time) => addDayPlanDeduction({
       ...time,
       deductionType,
       label,
-      hours: parsedHours,
+      hours: effectiveHours,
     }));
     if (result) {
       setLabel('');
       setHours('');
+      setRangeStart('12:00');
+      setRangeEnd('13:00');
     }
   };
 
@@ -54,46 +201,13 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
         <span>{deductions.length} 项</span>
       </div>
       {deductions.map((deduction) => (
-        <div className="deduction-row" key={deduction.id}>
-          <span style={{ fontSize: 13 }}>{deduction.label}</span>
-          <input
-            key={deduction.hours}
-            className="input boxed mono"
-            type="number"
-            min="0.01"
-            step="0.25"
-            defaultValue={deduction.hours}
-            disabled={busy}
-            aria-label={`${deduction.label} 小时`}
-            onBlur={(event) => {
-              const nextHours = Number(event.currentTarget.value);
-              if (!Number.isFinite(nextHours) || nextHours <= 0) {
-                event.currentTarget.value = String(deduction.hours);
-                return;
-              }
-              if (nextHours !== deduction.hours) {
-                command((time) => updateDayPlanDeduction({
-                  ...time,
-                  deductionType,
-                  deductionId: deduction.id,
-                  hours: nextHours,
-                }));
-              }
-            }}
-          />
-          <button
-            className="icon-btn"
-            disabled={busy}
-            title={`删除${deduction.label}`}
-            onClick={() => command((time) => removeDayPlanDeduction({
-              ...time,
-              deductionType,
-              deductionId: deduction.id,
-            }))}
-          >
-            <Icon name="x" size={12}/>
-          </button>
-        </div>
+        <DeductionRow
+          key={deduction.id}
+          deduction={deduction}
+          deductionType={deductionType}
+          command={command}
+          busy={busy}
+        />
       ))}
       <div className="deduction-row">
         <input
@@ -105,21 +219,48 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
           onChange={(event) => setLabel(event.target.value)}
           onKeyDown={(event) => event.key === 'Enter' && add()}
         />
-        <input
-          className="input boxed mono"
-          type="number"
-          min="0.01"
-          step="0.25"
-          value={hours}
-          disabled={busy}
-          placeholder="小时"
-          aria-label={`新增${title}小时`}
-          onChange={(event) => setHours(event.target.value)}
-          onKeyDown={(event) => event.key === 'Enter' && add()}
-        />
+        {mode === 'hours' ? (
+          <input
+            className="input boxed mono"
+            type="number"
+            min="0.01"
+            step="0.25"
+            value={hours}
+            disabled={busy}
+            placeholder="小时"
+            aria-label={`新增${title}小时`}
+            onChange={(event) => setHours(event.target.value)}
+            onKeyDown={(event) => event.key === 'Enter' && add()}
+          />
+        ) : (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <input
+              className="input boxed mono"
+              type="time"
+              style={{ width: 100 }}
+              value={rangeStart}
+              disabled={busy}
+              aria-label={`新增${title}开始时间`}
+              onChange={(event) => setRangeStart(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && add()}
+            />
+            <span className="planner-eq">到</span>
+            <input
+              className="input boxed mono"
+              type="time"
+              style={{ width: 100 }}
+              value={rangeEnd}
+              disabled={busy}
+              aria-label={`新增${title}结束时间`}
+              onChange={(event) => setRangeEnd(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && add()}
+            />
+          </span>
+        )}
+        <HoursModeToggle mode={mode} onChange={setMode} disabled={busy}/>
         <button
           className="icon-btn"
-          disabled={busy || !label.trim() || !(Number(hours) > 0)}
+          disabled={busy || !label.trim() || !effectiveHoursValid}
           title={`添加${title}`}
           onClick={add}
         >
