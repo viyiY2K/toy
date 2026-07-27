@@ -955,7 +955,7 @@ input[type="checkbox"]:checked::before {
   font-size: 13px;
   color: var(--ink-2);
   padding: 4px 12px;
-  border-radius: var(--r-sm);
+  border-radius: 999px;
   transition: background var(--t-micro), color var(--t-micro);
   letter-spacing: 0;
   cursor: pointer;
@@ -1955,7 +1955,8 @@ select:focus-visible {
 
 .date-nav {
   padding: 3px;
-  border-color: rgba(213, 202, 182, .78);
+  border: 1px solid rgba(213, 202, 182, .78);
+  border-radius: 999px;
   background: rgba(255, 253, 248, .58);
 }
 
