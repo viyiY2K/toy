@@ -89,6 +89,11 @@ export function canAdjustTaskEstimate(task) {
     && task.estimateRounds.length < 3;
 }
 
+/** 任务正在进行标准 focus 时，清单页不能完成或改预估，需等本轮专注结束。 */
+export function isTaskRunningFocus(task, runningFocusTaskId) {
+  return runningFocusTaskId !== null && task.id === runningFocusTaskId;
+}
+
 export function canReorderSubtasks(views, parentId) {
   return [...views.activeTasks, ...views.todayTasks, ...views.completedTasks]
     .some((task) => task.id === parentId && task.parentId === null);

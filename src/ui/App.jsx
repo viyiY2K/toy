@@ -126,6 +126,10 @@ export function App() {
   };
 
   const listTaskCount = snapshot?.taskViews.activeTasks.length ?? 0;
+  const runningFocusTaskId = snapshot?.activeSession?.type === 'focus'
+    && snapshot.activeSession.status === 'active'
+    ? snapshot.activeTask?.id ?? null
+    : null;
   return (
     <div className="app">
       <aside className="sidebar">
@@ -187,7 +191,12 @@ export function App() {
         ) : page === 'stats' ? (
           <StatsView currentAppDate={snapshot.taskViews.appDate}/>
         ) : (
-          <ActivitiesView views={snapshot.taskViews} runCommand={runCommand} busy={busy}/>
+          <ActivitiesView
+            views={snapshot.taskViews}
+            runCommand={runCommand}
+            busy={busy}
+            runningFocusTaskId={runningFocusTaskId}
+          />
         )}
       </main>
     </div>

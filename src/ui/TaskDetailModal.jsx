@@ -15,13 +15,14 @@ import {
   availableParentTasks,
   canAdjustTaskEstimate,
   hasRetainedChildren,
+  isTaskRunningFocus,
   splitDraftValid,
   splitLineagePresentation,
 } from './taskViewModel';
 
 const React = window.React;
 
-export function TaskDetailModal({ task, views, busy, command, onClose }) {
+export function TaskDetailModal({ task, views, busy, command, onClose, runningFocusTaskId = null }) {
   const [note, setNote] = React.useState(task.note ?? '');
   const [actualWorkNote, setActualWorkNote] = React.useState(task.actualWorkNote ?? '');
   const [estimatedPomodoros, setEstimatedPomodoros] = React.useState(String(task.estimatedPomodoros));
@@ -84,7 +85,8 @@ export function TaskDetailModal({ task, views, busy, command, onClose }) {
   const isTodayTopLevel = task.parentId === null && views.dayPlan.taskIds.includes(task.id);
   const children = views.subtasksByParentId[task.id] ?? [];
   const retainedChildren = hasRetainedChildren(views, task.id);
-  const estimateEditable = canAdjustTaskEstimate(task);
+  const runningFocus = isTaskRunningFocus(task, runningFocusTaskId);
+  const estimateEditable = canAdjustTaskEstimate(task) && !runningFocus;
   const estimateValue = Number(estimatedPomodoros);
   const estimateValid = Number.isInteger(estimateValue) && estimateValue >= 1 && estimateValue <= 7;
   const parentChoices = availableParentTasks(views, task.id);
@@ -151,7 +153,9 @@ export function TaskDetailModal({ task, views, busy, command, onClose }) {
             <div className="task-detail-help">
               {estimateEditable
                 ? `第 ${task.estimateRounds.length + 1} 轮调整；合法范围 1–7。`
-                : '已达到三轮预估上限。'}
+                : runningFocus
+                  ? '本轮专注进行中，结束后再调整预估。'
+                  : '已达到三轮预估上限。'}
             </div>
           </div>
         )}

@@ -35,6 +35,7 @@ import {
   completionSourceLabel,
   currentPlanMetrics,
   dayPlanIndexOf,
+  isTaskRunningFocus,
   reconcileBatchSelection,
   splitLineagePresentation,
   splitTodayTasks,
@@ -75,9 +76,10 @@ function EditableTitle({ task, onSave, disabled = false }) {
   );
 }
 
-function EstimateEditor({ task, onSave, disabled }) {
+function EstimateEditor({ task, onSave, disabled, runningFocusTaskId }) {
   const [editing, setEditing] = React.useState(false);
-  const locked = disabled || task.status !== 'active' || task.estimateRounds.length >= 3;
+  const runningFocus = isTaskRunningFocus(task, runningFocusTaskId);
+  const locked = disabled || runningFocus || task.status !== 'active' || task.estimateRounds.length >= 3;
   if (editing && !locked) {
     return (
       <input
@@ -105,7 +107,7 @@ function EstimateEditor({ task, onSave, disabled }) {
     <button
       className={`mono today-est-num-btn ${locked ? 'locked' : ''}`}
       disabled={locked}
-      title={locked ? '当前阶段不可再调整预估' : '点击调整总预估（1–7）'}
+      title={runningFocus ? '本轮专注进行中，结束后再调整预估' : locked ? '当前阶段不可再调整预估' : '点击调整总预估（1–7）'}
       onClick={() => setEditing(true)}
     >
       {task.estimatedPomodoros}
@@ -267,7 +269,7 @@ function SubtaskList({
   );
 }
 
-export function ActivitiesView({ views, runCommand, busy }) {
+export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = null }) {
   const [plannerOpen, setPlannerOpen] = React.useState(false);
   const [archiveCandidateId, setArchiveCandidateId] = React.useState(null);
   const [detailTaskId, setDetailTaskId] = React.useState(null);
@@ -543,8 +545,12 @@ export function ActivitiesView({ views, runCommand, busy }) {
                     >···</button>
                     <button
                       className="icon-btn"
-                      disabled={busy}
-                      title="手动完成"
+                      disabled={busy || isTaskRunningFocus(task, runningFocusTaskId)}
+                      title={
+                        isTaskRunningFocus(task, runningFocusTaskId)
+                          ? '本轮专注进行中，结束后再完成'
+                          : '手动完成'
+                      }
                       onClick={() => command((time) => completeTaskManually({
                         ...time, taskId: task.id,
                       }))}
@@ -654,6 +660,7 @@ export function ActivitiesView({ views, runCommand, busy }) {
                       <EstimateEditor
                         task={task}
                         disabled={busy}
+                        runningFocusTaskId={runningFocusTaskId}
                         onSave={(estimatedPomodoros) => command((time) => adjustTaskEstimate({
                           ...time, taskId: task.id, estimatedPomodoros,
                         }))}
@@ -661,8 +668,12 @@ export function ActivitiesView({ views, runCommand, busy }) {
                     </span>
                     <button
                       className="icon-btn"
-                      disabled={busy}
-                      title="手动完成"
+                      disabled={busy || isTaskRunningFocus(task, runningFocusTaskId)}
+                      title={
+                        isTaskRunningFocus(task, runningFocusTaskId)
+                          ? '本轮专注进行中，结束后再完成'
+                          : '手动完成'
+                      }
                       onClick={() => command((time) => completeTaskManually({
                         ...time, taskId: task.id,
                       }))}
@@ -886,6 +897,7 @@ export function ActivitiesView({ views, runCommand, busy }) {
           task={detailTask}
           views={views}
           busy={busy}
+          runningFocusTaskId={runningFocusTaskId}
           command={command}
           onClose={() => setDetailTaskId(null)}
         />

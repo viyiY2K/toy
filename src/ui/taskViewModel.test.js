@@ -13,6 +13,7 @@ import {
   dayPlanIndexOf,
   splitTodayTasks,
   hasRetainedChildren,
+  isTaskRunningFocus,
   splitDraftValid,
   splitLineagePresentation,
   reconcileBatchSelection,
@@ -113,6 +114,12 @@ describe('S13b task view model', () => {
     expect(canAdjustTaskEstimate({ status: 'splitNeeded', estimateRounds: [{ index: 1 }, { index: 2 }] })).toBe(true);
     expect(canAdjustTaskEstimate({ status: 'completed', estimateRounds: [{ index: 1 }] })).toBe(false);
     expect(canAdjustTaskEstimate({ status: 'active', estimateRounds: [{}, {}, {}] })).toBe(false);
+  });
+
+  it('flags a Task as running focus only when it matches the active focus session task id', () => {
+    expect(isTaskRunningFocus({ id: 'a' }, 'a')).toBe(true);
+    expect(isTaskRunningFocus({ id: 'a' }, 'b')).toBe(false);
+    expect(isTaskRunningFocus({ id: 'a' }, null)).toBe(false);
   });
 
   it('enables sibling reorder only under a visible current parent', () => {
