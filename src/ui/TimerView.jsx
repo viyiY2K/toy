@@ -248,6 +248,137 @@ function sourceLabel(source) {
   }
 }
 
+// 恢复处理只知道事实包络的开始时刻（session.startedAt）；结束时刻永远是用户手填的
+// 事实，不能反推。时间段模式让用户填「几点结束」而不是心算秒数，开始时刻只读展示。
+function secondsOfDayToClock(totalSeconds) {
+  const normalized = ((Math.round(totalSeconds) % 86400) + 86400) % 86400;
+  const hours = Math.floor(normalized / 3600);
+  const minutes = Math.floor((normalized % 3600) / 60);
+  const seconds = normalized % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function clockToSecondsOfDay(value) {
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(value ?? '');
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = match[3] !== undefined ? Number(match[3]) : 0;
+  if (hours > 23 || minutes > 59 || seconds > 59) return null;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function localSecondsOfDay(isoString) {
+  const date = new Date(isoString);
+  return date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
+}
+
+function durationModeToggleStyle(active) {
+  return {
+    fontSize: 11,
+    padding: '3px 8px',
+    borderRadius: 999,
+    border: '1px solid var(--line)',
+    background: active ? 'var(--accent-soft)' : 'transparent',
+    color: active ? 'var(--accent-ink)' : 'var(--muted)',
+  };
+}
+
+function DurationSecondsField({ id, label, value, onChange, disabled, max, unitHint, startClockSeconds }) {
+  const [mode, setMode] = React.useState('seconds');
+  const startClock = secondsOfDayToClock(startClockSeconds);
+  const [endClock, setEndClock] = React.useState('');
+
+  const switchMode = (nextMode) => {
+    if (nextMode === 'range') {
+      const raw = Number(value);
+      setEndClock(
+        value.trim() !== '' && Number.isFinite(raw)
+          ? secondsOfDayToClock(startClockSeconds + raw)
+          : '',
+      );
+    }
+    setMode(nextMode);
+  };
+
+  const commitRange = (nextEndClock) => {
+    const endSeconds = clockToSecondsOfDay(nextEndClock);
+    if (endSeconds === null) return;
+    let duration = endSeconds - startClockSeconds;
+    if (duration < 0) duration += 86400;
+    onChange(String(Math.round(duration)));
+  };
+
+  return (
+    <div className="planner-row" style={{ marginTop: 12, flexWrap: 'wrap' }}>
+      <label className="planner-l" htmlFor={id}>{label}</label>
+      {mode === 'seconds' ? (
+        <>
+          <input
+            id={id}
+            className="input boxed mono"
+            style={{ width: 130 }}
+            type="number"
+            min="0"
+            max={max}
+            step="1"
+            value={value}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <span className="planner-eq">{unitHint}</span>
+        </>
+      ) : (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <input
+            className="input boxed mono"
+            style={{ width: 110 }}
+            type="time"
+            step="1"
+            value={startClock}
+            disabled
+            aria-label={`${label}开始时间（记录事实，不可改）`}
+            title="计时开始的时刻，来自当时的记录，不可修改"
+          />
+          <span className="planner-eq">到</span>
+          <input
+            id={id}
+            className="input boxed mono"
+            style={{ width: 110 }}
+            type="time"
+            step="1"
+            value={endClock}
+            disabled={disabled}
+            aria-label={`${label}结束时间`}
+            onChange={(event) => setEndClock(event.target.value)}
+            onBlur={() => commitRange(endClock)}
+          />
+        </span>
+      )}
+      <span style={{ display: 'inline-flex', gap: 4 }}>
+        <button
+          type="button"
+          style={durationModeToggleStyle(mode === 'seconds')}
+          disabled={disabled}
+          title="按秒数输入"
+          onClick={() => switchMode('seconds')}
+        >
+          秒数
+        </button>
+        <button
+          type="button"
+          style={durationModeToggleStyle(mode === 'range')}
+          disabled={disabled}
+          title="按结束时刻输入"
+          onClick={() => switchMode('range')}
+        >
+          时间段
+        </button>
+      </span>
+    </div>
+  );
+}
+
 function RecoveryPanel({ recovery, taskViews, busy, command, onResolved }) {
   const sourceSession = recovery.sourceSession;
   const isFocus = sourceSession.type === 'focus';
@@ -277,6 +408,8 @@ function RecoveryPanel({ recovery, taskViews, busy, command, onResolved }) {
     ? originalDurationValue
     : 0;
   const availableExtraSeconds = Math.max(0, recovery.envelopeDurationSeconds - coverageSeconds);
+  const sessionStartClockSeconds = localSecondsOfDay(sourceSession.startedAt);
+  const extraStartClockSeconds = (sessionStartClockSeconds + coverageSeconds) % 86400;
   const extraDurationValue = Number(extraDuration);
   const extraDurationValid = (
     extraDuration.trim() !== ''
@@ -361,22 +494,16 @@ function RecoveryPanel({ recovery, taskViews, busy, command, onResolved }) {
           </button>
         </div>
         {originalNeedsDuration && (
-          <div className="planner-row" style={{ marginTop: 12 }}>
-            <label className="planner-l" htmlFor="recovery-original-duration">实际时长</label>
-            <input
-              id="recovery-original-duration"
-              className="input boxed mono"
-              style={{ width: 130 }}
-              type="number"
-              min="0"
-              max={recovery.envelopeDurationSeconds}
-              step="1"
-              value={originalDuration}
-              disabled={busy}
-              onChange={(event) => setOriginalDuration(event.target.value)}
-            />
-            <span className="planner-eq">秒</span>
-          </div>
+          <DurationSecondsField
+            id="recovery-original-duration"
+            label="实际时长"
+            value={originalDuration}
+            onChange={setOriginalDuration}
+            disabled={busy}
+            max={recovery.envelopeDurationSeconds}
+            unitHint="秒"
+            startClockSeconds={sessionStartClockSeconds}
+          />
         )}
         {!isFocus && originalAs === 'completed' && (
           <div className="planner-row" style={{ marginTop: 8 }}>
@@ -427,22 +554,16 @@ function RecoveryPanel({ recovery, taskViews, busy, command, onResolved }) {
           </div>
         ) : (
           <>
-            <div className="planner-row" style={{ marginTop: 12 }}>
-              <label className="planner-l" htmlFor="recovery-extra-duration">归类时长</label>
-              <input
-                id="recovery-extra-duration"
-                className="input boxed mono"
-                style={{ width: 130 }}
-                type="number"
-                min="1"
-                max={availableExtraSeconds}
-                step="1"
-                value={extraDuration}
-                disabled={busy}
-                onChange={(event) => setExtraDuration(event.target.value)}
-              />
-              <span className="planner-eq">秒（最多 {availableExtraSeconds}）</span>
-            </div>
+            <DurationSecondsField
+              id="recovery-extra-duration"
+              label="归类时长"
+              value={extraDuration}
+              onChange={setExtraDuration}
+              disabled={busy}
+              max={availableExtraSeconds}
+              unitHint={`秒（最多 ${availableExtraSeconds}）`}
+              startClockSeconds={extraStartClockSeconds}
+            />
             {remainderKind === 'extraFocus' ? (
               <div className="planner-row" style={{ marginTop: 8 }}>
                 <label className="planner-l" htmlFor="recovery-extra-task">关联任务</label>
