@@ -148,6 +148,10 @@ function Dashboard({ stats }) {
   const budgetDays = budget.dailyTrend.filter(({ budgetPomodoros, validPomodoros }) =>
     budgetPomodoros !== null || validPomodoros > 0);
   const dateLabels = session.days.map(({ appDate }) => appDate.slice(5));
+  // 逐日趋势图在日视图里退化成「一根柱 / 一个点」，除了占版面没有任何信息；
+  // 反过来，日内能量点在周/月视图里是 7~31 个芯片，和上面那条折线讲同一件事。
+  // 所以按范围只画对这个范围成立的那张图。
+  const isDay = session.range.kind === 'day';
 
   return (
     <>
@@ -170,8 +174,12 @@ function Dashboard({ stats }) {
 
       <div className="stats-two-col">
         <Section title="番茄与循环" hint="按实际计时时长">
-          <DailyBars days={session.days}/>
-          <div className="stats-legend"><span className="standard">有效番茄</span><span className="cycle">完整循环</span></div>
+          {!isDay && (
+            <>
+              <DailyBars days={session.days}/>
+              <div className="stats-legend"><span className="standard">有效番茄</span><span className="cycle">完整循环</span></div>
+            </>
+          )}
           <div className="stats-metric-grid">
             <Metric label="标准番茄" value={<Duration seconds={session.focus.standardSeconds}/>}/>
             <Metric label="加时专注" value={<Duration seconds={session.focus.extraSeconds}/>}/>
@@ -211,11 +219,13 @@ function Dashboard({ stats }) {
             min={1}
             max={10}
           />
-          <div className="stats-energy-points">
-            {energyTrend.rows.map((row) => (
-              <span key={row.key} title={row.detail}>{row.label} · {formatDecimal(row.value)}</span>
-            ))}
-          </div>
+          {isDay && (
+            <div className="stats-energy-points">
+              {energyTrend.rows.map((row) => (
+                <span key={row.key} title={row.detail}>{row.label} · {formatDecimal(row.value)}</span>
+              ))}
+            </div>
+          )}
         </Section>
 
         <Section title="休息恢复" hint="按休息前后的能量记录计算">
@@ -245,12 +255,14 @@ function Dashboard({ stats }) {
             <Metric label="外部打扰" value={interrupts.summary.external}/>
             <Metric label="每个有效番茄平均" value={formatDecimal(interrupts.summary.perValidPomodoro)}/>
           </div>
-          <LineChart
-            values={interruptValues}
-            labels={dateLabels}
-            emptyLabel="这段时间还没有打扰记录"
-            ariaLabel="每日打扰数量趋势"
-          />
+          {!isDay && (
+            <LineChart
+              values={interruptValues}
+              labels={dateLabels}
+              emptyLabel="这段时间还没有打扰记录"
+              ariaLabel="每日打扰数量趋势"
+            />
+          )}
           <Distribution rows={interrupts.timeDistribution}/>
           <div className="stats-legend"><span className="internal">内部</span><span className="external">外部</span></div>
         </Section>
