@@ -844,7 +844,7 @@ export function TimerView({
     return (
       <div>
         <div className="main-head">
-          <div><h1>计时</h1><div className="sub">选择今日任务，开始一个标准 focus。</div></div>
+          <div><h1>计时</h1><div className="sub">开始一个标准 focus，进入「清单」安排今天的任务。</div></div>
         </div>
         <div className="timer-stage">
           <div className="timer-main">

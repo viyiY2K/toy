@@ -32,7 +32,7 @@ function NavButton({ icon, label, active = false, disabled = false, badge = null
 
 export function App() {
   const [snapshot, setSnapshot] = React.useState(null);
-  const [page, setPage] = React.useState('activities');
+  const [page, setPage] = React.useState('timer');
   const [busy, setBusy] = React.useState(true);
   const [error, setError] = React.useState(null);
   const [returnEnergyPrompt, setReturnEnergyPrompt] = React.useState(false);
