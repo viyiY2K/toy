@@ -40,34 +40,19 @@ function SummaryCard({ label, value, detail }) {
   );
 }
 
-function Metric({ label, value, detail = null }) {
+// 明细区统一用这一种行式排版：名目在左、数值右对齐、补充说明缩在名目下面。
+// 原先的 2×2 田字格把每个数字装进带边框的方格里，五张卡各来一套，
+// 整页读起来像五张挨着的表格——密度没降下来，节奏全靠边框硬切。
+function Rows({ children }) {
+  return <div className="stats-rows">{children}</div>;
+}
+
+function Row({ label, value, detail = null, title = null }) {
   return (
-    <div className="stats-metric">
+    <div className="stats-row" title={title ?? undefined}>
       <span>{label}</span>
       <strong>{value}</strong>
       {detail && <small>{detail}</small>}
-    </div>
-  );
-}
-
-// 「总数 + 它的构成」用同一行讲完。拆成一行事实文字加一排田字格时，
-// 总分关系全靠读者自己推断，而且一张卡里凭空多出两种排版语言。
-function Breakdown({ rows }) {
-  return (
-    <div className="stats-breakdown">
-      {rows.map(({ label, value, parts }) => (
-        <div className="stats-breakdown-row" key={label}>
-          <span>{label}</span>
-          <strong>{value}</strong>
-          {parts && (
-            <small>
-              {parts.map(({ label: partLabel, value: partValue, ratio }) => (
-                <span key={partLabel} title={`占跳过的 ${formatRatio(ratio)}`}>{partLabel} {partValue}</span>
-              ))}
-            </small>
-          )}
-        </div>
-      ))}
     </div>
   );
 }
@@ -202,35 +187,29 @@ function Dashboard({ stats }) {
               <div className="stats-legend"><span className="standard">有效番茄</span><span className="cycle">完整循环</span></div>
             </>
           )}
-          <div className="stats-metric-grid">
-            <Metric label="标准番茄" value={<Duration seconds={session.focus.standardSeconds}/>}/>
-            <Metric label="加时专注" value={<Duration seconds={session.focus.extraSeconds}/>}/>
-            <Metric label="中途作废" value={<Duration seconds={session.focus.discardedSeconds}/>}/>
-            <Metric label="累计专注时长" value={<Duration seconds={session.lifetime.focusSeconds}/>} detail="含加时与中途作废"/>
-          </div>
+          <Rows>
+            <Row label="标准番茄" value={<Duration seconds={session.focus.standardSeconds}/>}/>
+            <Row label="加时专注" value={<Duration seconds={session.focus.extraSeconds}/>}/>
+            <Row label="中途作废" value={<Duration seconds={session.focus.discardedSeconds}/>}/>
+            <Row label="累计专注时长" value={<Duration seconds={session.lifetime.focusSeconds}/>} detail="含加时与中途作废"/>
+          </Rows>
         </Section>
 
         <Section title="休息" hint={`应休息 ${session.rest.expectedBreaks} 次`}>
-          <div className="stats-metric-grid">
-            <Metric label="短休" value={<Duration seconds={session.rest.shortBreakSeconds}/>} detail={`${session.rest.completedByType.shortBreak}/${session.rest.expectedByType.shortBreak} 完成 · 主动跳过 ${formatRatio(session.rest.shortBreakExplicitSkipRate)}`}/>
-            <Metric label="长休" value={<Duration seconds={session.rest.longBreakSeconds}/>} detail={`${session.rest.completedByType.longBreak}/${session.rest.expectedByType.longBreak} 完成 · 主动跳过 ${formatRatio(session.rest.longBreakExplicitSkipRate)}`}/>
-            <Metric label="额外休息" value={<Duration seconds={session.rest.extraRestSeconds}/>}/>
-            <Metric label="标准休息完成率" value={formatRatio(session.rest.completionRate)} detail={`${session.rest.standardBreakCompleted} 次完成`}/>
-          </div>
-          <Breakdown rows={[
-            {
-              label: '跳过',
-              value: skippedTotal,
-              parts: [
-                { label: '主动', value: session.rest.skipped.explicitSkip, ratio: session.rest.explicitSkipRate },
-                { label: '没理提醒', value: session.rest.skipped.noResponse, ratio: session.rest.noResponseRate },
-                { label: '错过', value: session.rest.skipped.missed, ratio: session.rest.missedRate },
-                { label: '关闭应用', value: session.rest.skipped.appClosed, ratio: session.rest.appClosedRate },
-              ],
-            },
-            { label: '未收尾', value: session.rest.missingBreaks },
-            { label: '收工免休', value: session.rest.workEndedExemptions },
-          ]}/>
+          <Rows>
+            <Row label="短休" value={<Duration seconds={session.rest.shortBreakSeconds}/>} detail={`${session.rest.completedByType.shortBreak}/${session.rest.expectedByType.shortBreak} 完成 · 主动跳过 ${formatRatio(session.rest.shortBreakExplicitSkipRate)}`}/>
+            <Row label="长休" value={<Duration seconds={session.rest.longBreakSeconds}/>} detail={`${session.rest.completedByType.longBreak}/${session.rest.expectedByType.longBreak} 完成 · 主动跳过 ${formatRatio(session.rest.longBreakExplicitSkipRate)}`}/>
+            <Row label="额外休息" value={<Duration seconds={session.rest.extraRestSeconds}/>}/>
+            <Row label="标准休息完成率" value={formatRatio(session.rest.completionRate)} detail={`${session.rest.standardBreakCompleted} 次完成`}/>
+            <Row
+              label="跳过"
+              value={skippedTotal}
+              detail={`主动 ${session.rest.skipped.explicitSkip} · 没理提醒 ${session.rest.skipped.noResponse} · 错过 ${session.rest.skipped.missed} · 关闭应用 ${session.rest.skipped.appClosed}`}
+              title={`占跳过的比例：主动 ${formatRatio(session.rest.explicitSkipRate)} · 没理提醒 ${formatRatio(session.rest.noResponseRate)} · 错过 ${formatRatio(session.rest.missedRate)} · 关闭应用 ${formatRatio(session.rest.appClosedRate)}`}
+            />
+            <Row label="未收尾" value={session.rest.missingBreaks}/>
+            <Row label="收工免休" value={session.rest.workEndedExemptions}/>
+          </Rows>
         </Section>
       </div>
 
@@ -254,14 +233,15 @@ function Dashboard({ stats }) {
         </Section>
 
         <Section title="休息恢复" hint="按休息前后的能量记录计算">
-          <div className="stats-metric-grid">
-            <Metric label="短休恢复均值" value={formatDecimal(recovery.shortBreak.averageDelta)} detail={`${recovery.shortBreak.validSampleCount}/${recovery.shortBreak.usageCount} 有效样本`}/>
-            <Metric label="长休恢复均值" value={formatDecimal(recovery.longBreak.averageDelta)} detail={`${recovery.longBreak.validSampleCount}/${recovery.longBreak.usageCount} 有效样本`}/>
-          </div>
+          <Rows>
+            <Row label="短休恢复均值" value={formatDecimal(recovery.shortBreak.averageDelta)} detail={`${recovery.shortBreak.validSampleCount}/${recovery.shortBreak.usageCount} 有效样本`}/>
+            <Row label="长休恢复均值" value={formatDecimal(recovery.longBreak.averageDelta)} detail={`${recovery.longBreak.validSampleCount}/${recovery.longBreak.usageCount} 有效样本`}/>
+          </Rows>
           {recovery.samples.length === 0 ? (
             <div className="stats-chart-empty">休息前后各要有一次能量记录，才能算出恢复了多少。</div>
           ) : (
             <div className="stats-recovery-list">
+              <p className="stats-sub-head">逐次恢复</p>
               {recovery.samples.map((sample) => (
                 <div key={sample.breakSessionId}>
                   <span>{sample.type === 'shortBreak' ? '短休' : '长休'}</span>
@@ -275,11 +255,11 @@ function Dashboard({ stats }) {
 
       <div className="stats-two-col">
         <Section title="打扰" hint="只统计标准番茄内发生的">
-          <div className="stats-metric-grid">
-            <Metric label="内部打扰" value={interrupts.summary.internal}/>
-            <Metric label="外部打扰" value={interrupts.summary.external}/>
-            <Metric label="每个有效番茄平均" value={formatDecimal(interrupts.summary.perValidPomodoro)}/>
-          </div>
+          <Rows>
+            <Row label="内部打扰" value={interrupts.summary.internal}/>
+            <Row label="外部打扰" value={interrupts.summary.external}/>
+            <Row label="每个有效番茄平均" value={formatDecimal(interrupts.summary.perValidPomodoro)}/>
+          </Rows>
           {!isDay && (
             <LineChart
               values={interruptValues}
@@ -293,17 +273,20 @@ function Dashboard({ stats }) {
         </Section>
 
         <Section title="任务结果" hint="手动完成的任务不计入准确率">
-          <div className="stats-metric-grid">
-            <Metric label="预估准确率" value={formatRatio(estimates.accuracyRate)} detail={`${estimates.sampleCount} 个有效样本`}/>
-            <Metric label="准确" value={estimates.accurate}/>
-            <Metric label="估大" value={estimates.overestimated}/>
-            <Metric label="估小" value={estimates.underestimated}/>
-            <Metric label="改过预估仍不准" value={estimates.adjustedInaccurate}/>
-          </div>
+          <Rows>
+            <Row
+              label="预估准确率"
+              value={formatRatio(estimates.accuracyRate)}
+              detail={`准确 ${estimates.accurate} · 估大 ${estimates.overestimated} · 估小 ${estimates.underestimated}`}
+            />
+            <Row label="有效样本" value={estimates.sampleCount}/>
+            <Row label="改过预估仍不准" value={estimates.adjustedInaccurate}/>
+          </Rows>
           {taskRows.length === 0 ? (
             <div className="stats-chart-empty">这段时间还没有归到具体任务的专注记录。</div>
           ) : (
             <div className="stats-task-list">
+              <p className="stats-sub-head">这段时间的任务</p>
               {taskRows.map((task) => (
                 <div key={task.taskId}>
                   <span>{task.title}</span>

@@ -1268,35 +1268,32 @@ input[type="checkbox"]:checked::before {
   text-transform: none;
   color: var(--muted-2);
 }
-.stats-metric-grid {
+/* 明细区唯一的排版语言：名目在左、数值右对齐、补充说明缩在名目下面。
+   虚线分隔而不是方框，让一列指标读起来是「一份清单」而不是「一张表格」。 */
+.stats-rows { margin-top: 4px; }
+.stats-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-sm);
-  background: var(--line-2);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 1px 12px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--line);
 }
-.stats-metric {
-  min-width: 0;
-  padding: 10px 12px;
-  background: var(--paper);
-  display: grid;
-  gap: 2px;
-}
-.stats-metric > span { color: var(--muted); font-size: 11px; }
-.stats-metric strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 16px;
-  font-weight: 400;
+.stats-row:last-child { border-bottom: 0; }
+.stats-row > span { grid-column: 1; color: var(--ink-2); font-size: 12px; }
+.stats-row > strong {
+  grid-column: 2;
+  grid-row: 1;
+  text-align: right;
   white-space: nowrap;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 400;
 }
-.stats-metric small { color: var(--muted-2); font-size: 10px; }
+.stats-row > small { grid-column: 1; color: var(--muted); font-size: 11px; }
 /* 「1 小时 30 分钟」= 两段，段间留一点气口，段内单位紧跟数字 */
 .duration-part + .duration-part { margin-left: 6px; }
-.stats-metric strong .unit { font-size: 11px; color: var(--muted); margin-left: 3px; }
+.stats-row > strong .unit { font-size: 11px; color: var(--muted); margin-left: 3px; }
 .stats-bars {
   display: grid;
   grid-auto-flow: column;
@@ -1351,35 +1348,6 @@ input[type="checkbox"]:checked::before {
 .stats-legend .cycle::before { background: var(--ink-2); }
 .stats-legend .internal::before { background: var(--accent); }
 .stats-legend .external::before { background: var(--ink-2); }
-/* 总数在左、构成在右的一行式拆分，替掉原来「一行事实文字 + 一排田字格」
-   的两套排版语言 */
-.stats-breakdown { margin-top: 12px; }
-.stats-breakdown-row {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 4px 10px;
-  padding: 9px 0;
-  border-bottom: 1px dashed var(--line);
-  font-size: 12px;
-}
-.stats-breakdown-row:last-child { border-bottom: 0; }
-.stats-breakdown-row > span { color: var(--muted); }
-.stats-breakdown-row > strong {
-  color: var(--ink-2);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 14px;
-  font-weight: 400;
-}
-.stats-breakdown-row > small {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 4px 12px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.stats-breakdown-row > small span { white-space: nowrap; }
 .stats-line-chart { margin: 4px 0 12px; }
 .stats-line-chart svg { display: block; width: 100%; height: 130px; overflow: visible; }
 .stats-chart-axis { fill: none; stroke: var(--line); stroke-width: 1; }
@@ -1408,6 +1376,14 @@ input[type="checkbox"]:checked::before {
 }
 .stats-recovery-list,
 .stats-task-list { margin-top: 10px; }
+/* 明细列表和上面的指标行现在共用同一种行式排版，需要一个轻标题说明
+   「下面换了一组东西」，否则两组不同含义的内容会读成一串 */
+.stats-sub-head {
+  margin: 6px 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: .045em;
+}
 .stats-recovery-list > div,
 .stats-task-list > div {
   display: grid;
@@ -2014,22 +1990,13 @@ select:focus-visible {
   margin-bottom: 16px;
 }
 
-.stats-metric-grid,
 .stats-budget-days {
   gap: 0;
   border-color: rgba(213, 202, 182, .72);
   background: transparent;
 }
 
-.stats-metric {
-  min-height: 76px;
-  padding: 12px 14px;
-  background: rgba(255, 253, 248, .54);
-  border-right: 1px solid rgba(213, 202, 182, .55);
-  border-bottom: 1px solid rgba(213, 202, 182, .55);
-}
-
-.stats-metric strong { font-size: 18px; }
+.stats-row { border-bottom-color: rgba(213, 202, 182, .8); }
 .stats-bars { min-height: 148px; border-bottom-color: rgba(213, 202, 182, .72); }
 .stats-bar-pair { height: 112px; }
 .stats-bar-pair .cycle { background: var(--success); }
@@ -2094,8 +2061,7 @@ select:focus-visible {
   .main-head .right { align-items: flex-start; flex-wrap: wrap; }
   .stat-grid,
   .stats-summary-grid,
-  .stats-two-col,
-  .stats-metric-grid { grid-template-columns: 1fr; }
+  .stats-two-col { grid-template-columns: 1fr; }
   .stat-card { min-height: 132px; }
   .timer-aside { grid-template-columns: 1fr; }
   .timer-side-actions { gap: 6px; }
