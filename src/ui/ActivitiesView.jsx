@@ -209,7 +209,9 @@ function SubtaskRow({
             >↓</button>
           </>
         )}
-        <button className="icon-btn text-icon" disabled={busy} title="任务详情" onClick={() => onOpen(task.id)}>···</button>
+        <button className="icon-btn" disabled={busy} title="任务详情" onClick={() => onOpen(task.id)}>
+          <Icon name="info" size={11}/>
+        </button>
         {active && (
           <>
             <button
@@ -553,11 +555,13 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                   />
                   <span className="atr-actions">
                     <button
-                      className="icon-btn text-icon"
+                      className="icon-btn"
                       disabled={busy}
                       title="任务详情、备注与层级"
                       onClick={() => setDetailTaskId(task.id)}
-                    >···</button>
+                    >
+                      <Icon name="info" size={12}/>
+                    </button>
                     <button
                       className="icon-btn"
                       disabled={busy || isTaskRunningFocus(task, runningFocusTaskId)}
@@ -669,11 +673,13 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                   />
                   <div className="today-task-tools">
                     <button
-                      className="icon-btn text-icon"
+                      className="icon-btn"
                       disabled={busy}
                       title="任务详情、备注与层级"
                       onClick={() => setDetailTaskId(task.id)}
-                    >···</button>
+                    >
+                      <Icon name="info" size={12}/>
+                    </button>
                     <span className="today-est-pill">
                       <EstimateEditor
                         task={task}
