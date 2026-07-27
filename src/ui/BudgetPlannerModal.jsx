@@ -112,23 +112,30 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
 }
 
 export function BudgetPlannerModal({ dayPlan, command, busy, onClose }) {
+  const { estimate } = dayPlan;
+  // 保守 / 乐观 / 手动 是「今日预算」的三个来源，收成三选一；确认后统一套用并关闭。
+  const [selectedMode, setSelectedMode] = React.useState(dayPlan.budgetMode ?? 'conservative');
   const [manualBudget, setManualBudget] = React.useState(
     dayPlan.budgetMode === 'manual' ? String(dayPlan.budgetPomodoros) : '',
   );
-  const { estimate } = dayPlan;
 
-  const accept = async (budgetMode, budgetPomodoros, { close = true } = {}) => {
+  const manualValue = Number(manualBudget);
+  const manualValid = manualBudget.trim() !== ''
+    && Number.isInteger(manualValue) && manualValue >= 0;
+  const resolvedPomodoros = selectedMode === 'conservative'
+    ? estimate.conservativePomodoros
+    : selectedMode === 'optimistic'
+      ? estimate.optimisticPomodoros
+      : (manualValid ? manualValue : null);
+
+  const confirm = async () => {
+    if (busy || resolvedPomodoros === null) return;
     const result = await command((time) => acceptDayPlanBudget({
       ...time,
-      budgetMode,
-      budgetPomodoros,
+      budgetMode: selectedMode,
+      budgetPomodoros: resolvedPomodoros,
     }));
-    if (result && close) onClose();
-  };
-  // 顶部切换：套用后停留在弹窗；已是同一模式且数值未变时不重复写入。
-  const applyMode = (budgetMode, budgetPomodoros) => {
-    if (dayPlan.budgetMode === budgetMode && dayPlan.budgetPomodoros === budgetPomodoros) return;
-    accept(budgetMode, budgetPomodoros, { close: false });
+    if (result) onClose();
   };
 
   return (
@@ -139,31 +146,9 @@ export function BudgetPlannerModal({ dayPlan, command, busy, onClose }) {
             <h2 id="budget-title">今日预算估算</h2>
             <div className="sub">按当前产品日的设置快照计算；扣除项修改后立即保存。</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div className="budget-mode-toggle" role="group" aria-label="采用估算模式">
-              <button
-                type="button"
-                className={dayPlan.budgetMode === 'conservative' ? 'on' : ''}
-                disabled={busy}
-                aria-pressed={dayPlan.budgetMode === 'conservative'}
-                onClick={() => applyMode('conservative', estimate.conservativePomodoros)}
-              >
-                保守
-              </button>
-              <button
-                type="button"
-                className={dayPlan.budgetMode === 'optimistic' ? 'on' : ''}
-                disabled={busy}
-                aria-pressed={dayPlan.budgetMode === 'optimistic'}
-                onClick={() => applyMode('optimistic', estimate.optimisticPomodoros)}
-              >
-                乐观
-              </button>
-            </div>
-            <button className="icon-btn" disabled={busy} title="关闭预算估算" onClick={onClose}>
-              <Icon name="x" size={14}/>
-            </button>
-          </div>
+          <button className="icon-btn" disabled={busy} title="关闭预算估算" onClick={onClose}>
+            <Icon name="x" size={14}/>
+          </button>
         </div>
 
         <div className="planner-row">
@@ -199,55 +184,74 @@ export function BudgetPlannerModal({ dayPlan, command, busy, onClose }) {
           command={command}
           busy={busy}
         />
-        <DeductionSection
-          title="生活时间"
-          deductionType="life"
-          deductions={estimate.lifeDeductions}
-          command={command}
-          busy={busy}
-        />
 
-        <div className="budget-summary">
-          <div className="stat">
-            <div className="v">{estimate.freeMin}<span className="unit">分钟</span></div>
-            <div className="l">自由时长</div>
-          </div>
-          <div className="stat">
-            <div className="v">{estimate.conservativePomodoros}<span className="unit">个</span></div>
-            <div className="l">保守估算</div>
-          </div>
-          <div className="stat">
-            <div className="v">{estimate.optimisticPomodoros}<span className="unit">个</span></div>
-            <div className="l">乐观估算</div>
-          </div>
+        <div className="budget-free">
+          <span className="budget-free-v mono">{estimate.freeMin}<span className="unit">分钟</span></span>
+          <span className="budget-free-l">自由时长（可用时段减去扣除）</span>
         </div>
 
-        <div className="planner-row" style={{ marginTop: 18 }}>
-          <label className="planner-l" htmlFor="manual-budget">手动预算</label>
-          <input
-            id="manual-budget"
-            className="input boxed mono"
-            style={{ width: 110 }}
-            type="number"
-            min="0"
-            step="1"
-            value={manualBudget}
-            disabled={busy}
-            onChange={(event) => setManualBudget(event.target.value)}
-          />
+        <div className="section-h" style={{ marginBottom: 8 }}>
+          <h3>今日预算</h3>
+          <span className="count">选一个来源</span>
+        </div>
+        <div className="budget-choice-grid" role="radiogroup" aria-label="今日预算来源">
           <button
-            className="btn primary sm"
-            disabled={
-              busy
-              || manualBudget.trim() === ''
-              || !Number.isInteger(Number(manualBudget))
-              || Number(manualBudget) < 0
-            }
-            onClick={() => accept('manual', Number(manualBudget))}
+            type="button"
+            role="radio"
+            aria-checked={selectedMode === 'conservative'}
+            className={`budget-choice ${selectedMode === 'conservative' ? 'on' : ''}`}
+            disabled={busy}
+            onClick={() => setSelectedMode('conservative')}
           >
-            确认手动预算
+            <span className="budget-choice-l">保守</span>
+            <span className="budget-choice-v mono">
+              {estimate.conservativePomodoros}<span className="unit">个</span>
+            </span>
           </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={selectedMode === 'optimistic'}
+            className={`budget-choice ${selectedMode === 'optimistic' ? 'on' : ''}`}
+            disabled={busy}
+            onClick={() => setSelectedMode('optimistic')}
+          >
+            <span className="budget-choice-l">乐观</span>
+            <span className="budget-choice-v mono">
+              {estimate.optimisticPomodoros}<span className="unit">个</span>
+            </span>
+          </button>
+          <div
+            className={`budget-choice budget-choice-manual ${selectedMode === 'manual' ? 'on' : ''}`}
+            onClick={() => setSelectedMode('manual')}
+          >
+            <span className="budget-choice-l">手动</span>
+            <span className="budget-choice-v mono">
+              <input
+                className="budget-choice-input mono"
+                type="number"
+                min="0"
+                step="1"
+                value={manualBudget}
+                disabled={busy}
+                placeholder="—"
+                aria-label="手动预算番茄数"
+                onFocus={() => setSelectedMode('manual')}
+                onChange={(event) => setManualBudget(event.target.value)}
+              />
+              <span className="unit">个</span>
+            </span>
+          </div>
         </div>
+
+        <button
+          className="btn primary"
+          style={{ width: '100%', justifyContent: 'center', marginTop: 16 }}
+          disabled={busy || resolvedPomodoros === null}
+          onClick={confirm}
+        >
+          确认今日预算
+        </button>
       </div>
     </div>
   );

@@ -804,40 +804,43 @@ input[type="checkbox"]:checked::before {
   padding: 6px 0;
 }
 .deduction-row input.boxed { padding: 6px 8px; font-size: 13px; }
-/* 顶部「保守 / 乐观」采用切换：分段胶囊，选中档陶土高亮表示已采用；数字不重复展示（下方摘要已有）。 */
-.budget-mode-toggle {
-  display: inline-flex; gap: 2px;
-  padding: 3px;
-  background: var(--line-2);
-  border-radius: 999px;
+/* 自由时长：可用时段减扣除后的上下文事实，不是可选项，横排一行低调呈现。 */
+.budget-free {
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+  display: flex; align-items: baseline; gap: 10px;
 }
-.budget-mode-toggle button {
-  padding: 5px 15px;
-  border-radius: 999px;
-  font-size: 13px;
-  color: var(--muted);
-  white-space: nowrap;
-  transition: background var(--t-micro), color var(--t-micro), box-shadow var(--t-micro);
-}
-.budget-mode-toggle button:hover:not(.on):not(:disabled) { color: var(--ink-2); }
-.budget-mode-toggle button.on {
-  background: var(--card);
-  color: var(--accent-ink);
-  box-shadow: 0 1px 2px rgba(28,25,22,.06);
-}
+.budget-free-v { font-size: 22px; letter-spacing: -0.02em; }
+.budget-free-v .unit { font-size: 12px; color: var(--muted); margin-left: 3px; }
+.budget-free-l { font-size: 12px; color: var(--muted); }
 
-.budget-summary {
-  margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line);
-  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;
+/* 今日预算三选一：保守 / 乐观 / 手动 平级卡片，选中用陶土描边 + 墨字提亮（不铺重底色）。 */
+.budget-choice-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.budget-choice {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--card);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-micro), box-shadow var(--t-micro);
 }
-.budget-summary .stat { }
-.budget-summary .stat .v {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 26px; font-weight: 400;
-  letter-spacing: -0.02em;
+.budget-choice:hover:not(.on):not(:disabled) { border-color: var(--muted-2); }
+.budget-choice.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
-.budget-summary .stat .v .unit { font-size: 12px; color: var(--muted); margin-left: 4px; }
-.budget-summary .stat .l { font-size: 11px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.budget-choice-l { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+.budget-choice.on .budget-choice-l { color: var(--accent-ink); }
+.budget-choice-v { font-size: 22px; letter-spacing: -0.02em; color: var(--ink); }
+.budget-choice-v .unit { font-size: 11px; color: var(--muted); margin-left: 3px; }
+.budget-choice-input {
+  width: 2.6em;
+  border: 0; background: transparent; padding: 0;
+  font-size: 22px; letter-spacing: -0.02em; color: var(--ink);
+}
+.budget-choice-input:focus { outline: none; }
+.budget-choice-input::placeholder { color: var(--muted-2); }
 
 /* === stats === */
 .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
@@ -1562,7 +1565,6 @@ select:focus-visible {
 .card-title,
 .section-h h3,
 .bb-l,
-.budget-summary .stat .l,
 .stat-card .l {
   color: var(--muted);
   font-weight: 500;
