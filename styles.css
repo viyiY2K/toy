@@ -1261,6 +1261,36 @@ input[type="checkbox"]:checked::before {
 }
 .stats-section { min-width: 0; margin-bottom: 14px; }
 .stats-two-col > .stats-section { margin-bottom: 0; }
+/* 卡片按内容高度收住。默认的 stretch 会把短卡片撑到和同行最高的一样，
+   底下留出一大块什么都没有的白，反而显得页面散。 */
+.stats-two-col { align-items: start; }
+/* 日视图没有逐日柱图，趋势层只剩能量一张，让它占满整行而不是半边 */
+.stats-trend-solo { grid-template-columns: minmax(0, 1fr); }
+/* 第三层的分组标题：一行小字 + 一条延伸到底的发丝线 */
+.stats-group-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 26px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .045em;
+}
+.stats-group-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+/* 明细卡降一级：去掉纸面底色与投影，只留发丝边框。
+   两段类名是为了压过文件末节那条更晚出现的 `.card { background: var(--paper) }`。 */
+.stats-section.stats-section--muted {
+  background: transparent;
+  border-color: rgba(213, 202, 182, .62);
+  box-shadow: none;
+  padding: 20px;
+}
 .stats-section .card-title small {
   font-size: 10px;
   font-weight: 400;
@@ -1413,16 +1443,15 @@ input[type="checkbox"]:checked::before {
 .stats-distribution-track i { display: block; height: 100%; }
 .stats-distribution-track .internal { background: var(--accent); }
 .stats-distribution-track .external { background: var(--ink-2); }
+/* 周/月的逐日预算是一片密集小格，但不该长成一张带框的表——去掉格线与
+   底色，只靠留白分组，和明细区其余部分说同一种话 */
 .stats-budget-days {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-sm);
-  background: var(--line-2);
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 12px 16px;
+  margin-top: 6px;
 }
-.stats-budget-days > div { display: grid; gap: 2px; padding: 9px; background: var(--paper); }
+.stats-budget-days > div { display: grid; gap: 1px; }
 .stats-budget-days span { color: var(--muted); font-family: "JetBrains Mono", monospace; font-size: 10px; }
 .stats-budget-days strong { font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 400; }
 .stats-budget-days small { color: var(--muted-2); }
@@ -1988,12 +2017,6 @@ select:focus-visible {
 .stats-section {
   padding: 24px;
   margin-bottom: 16px;
-}
-
-.stats-budget-days {
-  gap: 0;
-  border-color: rgba(213, 202, 182, .72);
-  background: transparent;
 }
 
 .stats-row { border-bottom-color: rgba(213, 202, 182, .8); }

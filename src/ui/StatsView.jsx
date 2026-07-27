@@ -179,14 +179,41 @@ function Dashboard({ stats }) {
         <SummaryCard label="累计完整番茄" value={session.lifetime.totalCompleteCycles} detail={`本工具 ${session.lifetime.inToolCompleteCycles} · 之前累计 ${session.lifetime.baselineCompleteCycles}`}/>
       </div>
 
-      <div className="stats-two-col">
-        <Section title="番茄与循环" hint="按实际计时时长">
-          {!isDay && (
-            <>
-              <DailyBars days={session.days}/>
-              <div className="stats-legend"><span className="standard">有效番茄</span><span className="cycle">完整循环</span></div>
-            </>
+      {/* 第二层：趋势。这一页 3 秒内要回答的是「我这段时间怎么样」，
+          能回答它的只有概览数字和这两张图，所以它们独占一层、保持主卡片质感。 */}
+      <div className={`stats-two-col ${isDay ? 'stats-trend-solo' : ''}`}>
+        {!isDay && (
+          <Section title="番茄与循环" hint="每日有效番茄与完整循环">
+            <DailyBars days={session.days}/>
+            <div className="stats-legend"><span className="standard">有效番茄</span><span className="cycle">完整循环</span></div>
+          </Section>
+        )}
+
+        <Section title="能量趋势" hint={`${energy.timeline.length} 条记录`}>
+          <LineChart
+            values={energyTrend.values}
+            labels={energyTrend.labels}
+            emptyLabel="这段时间还没有能量记录"
+            ariaLabel={isDay ? '当日全部能量记录趋势' : '每日能量平均趋势'}
+            min={1}
+            max={10}
+          />
+          {isDay && (
+            <div className="stats-energy-points">
+              {energyTrend.rows.map((row) => (
+                <span key={row.key} title={row.detail}>{row.label} · {formatDecimal(row.value)}</span>
+              ))}
+            </div>
           )}
+        </Section>
+      </div>
+
+      {/* 第三层：明细。数字一个不少，但整体降一级——去掉纸面底色与投影，
+          只留发丝边框，读作「想细看时再看」而不是和上面平起平坐。 */}
+      <h2 className="stats-group-head">明细</h2>
+
+      <div className="stats-two-col stats-detail-grid">
+        <Section className="stats-section--muted" title="专注构成" hint="按实际计时时长">
           <Rows>
             <Row label="标准番茄" value={<Duration seconds={session.focus.standardSeconds}/>}/>
             <Row label="加时专注" value={<Duration seconds={session.focus.extraSeconds}/>}/>
@@ -195,7 +222,7 @@ function Dashboard({ stats }) {
           </Rows>
         </Section>
 
-        <Section title="休息" hint={`应休息 ${session.rest.expectedBreaks} 次`}>
+        <Section className="stats-section--muted" title="休息" hint={`应休息 ${session.rest.expectedBreaks} 次`}>
           <Rows>
             <Row label="短休" value={<Duration seconds={session.rest.shortBreakSeconds}/>} detail={`${session.rest.completedByType.shortBreak}/${session.rest.expectedByType.shortBreak} 完成 · 主动跳过 ${formatRatio(session.rest.shortBreakExplicitSkipRate)}`}/>
             <Row label="长休" value={<Duration seconds={session.rest.longBreakSeconds}/>} detail={`${session.rest.completedByType.longBreak}/${session.rest.expectedByType.longBreak} 完成 · 主动跳过 ${formatRatio(session.rest.longBreakExplicitSkipRate)}`}/>
@@ -211,28 +238,8 @@ function Dashboard({ stats }) {
             <Row label="收工免休" value={session.rest.workEndedExemptions}/>
           </Rows>
         </Section>
-      </div>
 
-      <div className="stats-two-col">
-        <Section title="能量趋势" hint={`${energy.timeline.length} 条记录`}>
-          <LineChart
-            values={energyTrend.values}
-            labels={energyTrend.labels}
-            emptyLabel="这段时间还没有能量记录"
-            ariaLabel={session.range.kind === 'day' ? '当日全部能量记录趋势' : '每日能量平均趋势'}
-            min={1}
-            max={10}
-          />
-          {isDay && (
-            <div className="stats-energy-points">
-              {energyTrend.rows.map((row) => (
-                <span key={row.key} title={row.detail}>{row.label} · {formatDecimal(row.value)}</span>
-              ))}
-            </div>
-          )}
-        </Section>
-
-        <Section title="休息恢复" hint="按休息前后的能量记录计算">
+        <Section className="stats-section--muted" title="休息恢复" hint="按休息前后的能量记录计算">
           <Rows>
             <Row label="短休恢复均值" value={formatDecimal(recovery.shortBreak.averageDelta)} detail={`${recovery.shortBreak.validSampleCount}/${recovery.shortBreak.usageCount} 有效样本`}/>
             <Row label="长休恢复均值" value={formatDecimal(recovery.longBreak.averageDelta)} detail={`${recovery.longBreak.validSampleCount}/${recovery.longBreak.usageCount} 有效样本`}/>
@@ -251,10 +258,8 @@ function Dashboard({ stats }) {
             </div>
           )}
         </Section>
-      </div>
 
-      <div className="stats-two-col">
-        <Section title="打扰" hint="只统计标准番茄内发生的">
+        <Section className="stats-section--muted" title="打扰" hint="只统计标准番茄内发生的">
           <Rows>
             <Row label="内部打扰" value={interrupts.summary.internal}/>
             <Row label="外部打扰" value={interrupts.summary.external}/>
@@ -272,7 +277,7 @@ function Dashboard({ stats }) {
           <div className="stats-legend"><span className="internal">内部</span><span className="external">外部</span></div>
         </Section>
 
-        <Section title="任务结果" hint="手动完成的任务不计入准确率">
+        <Section className="stats-section--muted" title="任务结果" hint="手动完成的任务不计入准确率">
           <Rows>
             <Row
               label="预估准确率"
@@ -297,23 +302,34 @@ function Dashboard({ stats }) {
             </div>
           )}
         </Section>
-      </div>
 
-      <Section title="每日预算使用" hint="每天一行">
-        {budgetDays.length === 0 ? (
-          <div className="stats-chart-empty">这段时间没有设过预算，也没有有效番茄。</div>
-        ) : (
-          <div className="stats-budget-days">
-            {budgetDays.map((day) => (
-              <div key={day.appDate}>
-                <span>{day.appDate}</span>
-                <strong>{day.validPomodoros} / {day.budgetPomodoros === null ? '未设' : day.budgetPomodoros}</strong>
-                <small>{formatRatio(day.usageRate)}</small>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+        <Section className="stats-section--muted" title="预算使用" hint={isDay ? null : '每天一行'}>
+          {budgetDays.length === 0 ? (
+            <div className="stats-chart-empty">这段时间没有设过预算，也没有有效番茄。</div>
+          ) : isDay ? (
+            <Rows>
+              {budgetDays.map((day) => (
+                <Row
+                  key={day.appDate}
+                  label={day.appDate}
+                  value={`${day.validPomodoros} / ${day.budgetPomodoros === null ? '未设' : day.budgetPomodoros}`}
+                  detail={`用掉 ${formatRatio(day.usageRate)}`}
+                />
+              ))}
+            </Rows>
+          ) : (
+            <div className="stats-budget-days">
+              {budgetDays.map((day) => (
+                <div key={day.appDate}>
+                  <span>{day.appDate}</span>
+                  <strong>{day.validPomodoros} / {day.budgetPomodoros === null ? '未设' : day.budgetPomodoros}</strong>
+                  <small>{formatRatio(day.usageRate)}</small>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      </div>
     </>
   );
 }
