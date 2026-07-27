@@ -1,6 +1,7 @@
 import { loadStatsDashboard } from '../data/index';
 import {
   chartPoints,
+  durationParts,
   energyTrendPresentation,
   formatDecimal,
   formatDuration,
@@ -16,6 +17,18 @@ const RANGE_OPTIONS = [
   { kind: 'week', label: '周' },
   { kind: 'month', label: '月' },
 ];
+
+// 数字走 mono 主字号，单位降一档灰字——否则「0 分钟」里的「分钟」
+// 在 46px 的 KPI 卡里比卡片标签还抢眼，一页几十个时长全在喊。
+function Duration({ seconds }) {
+  return (
+    <>
+      {durationParts(seconds).map(({ value, unit }) => (
+        <span className="duration-part" key={unit}>{value}<span className="unit">{unit}</span></span>
+      ))}
+    </>
+  );
+}
 
 function SummaryCard({ label, value, detail }) {
   return (
@@ -150,7 +163,7 @@ function Dashboard({ stats }) {
 
       <div className="stat-grid stats-summary-grid">
         <SummaryCard label="有效番茄" value={session.focus.validPomodoros} detail={`完整循环 ${session.completeCycles}`}/>
-        <SummaryCard label="总专注时长" value={formatDuration(session.focus.totalSeconds)} detail="含加时与中途作废"/>
+        <SummaryCard label="总专注时长" value={<Duration seconds={session.focus.totalSeconds}/>} detail="含加时与中途作废"/>
         <SummaryCard label="任务完成" value={completions.total} detail={`番茄 ${completions.pomodoro} · 手动 ${completions.manual}`}/>
         <SummaryCard label="累计完整番茄" value={session.lifetime.totalCompleteCycles} detail={`本工具 ${session.lifetime.inToolCompleteCycles} · 之前累计 ${session.lifetime.baselineCompleteCycles}`}/>
       </div>
@@ -160,18 +173,18 @@ function Dashboard({ stats }) {
           <DailyBars days={session.days}/>
           <div className="stats-legend"><span className="standard">有效番茄</span><span className="cycle">完整循环</span></div>
           <div className="stats-metric-grid">
-            <Metric label="标准番茄" value={formatDuration(session.focus.standardSeconds)}/>
-            <Metric label="加时专注" value={formatDuration(session.focus.extraSeconds)}/>
-            <Metric label="中途作废" value={formatDuration(session.focus.discardedSeconds)}/>
-            <Metric label="累计专注时长" value={formatDuration(session.lifetime.focusSeconds)} detail="含加时与中途作废"/>
+            <Metric label="标准番茄" value={<Duration seconds={session.focus.standardSeconds}/>}/>
+            <Metric label="加时专注" value={<Duration seconds={session.focus.extraSeconds}/>}/>
+            <Metric label="中途作废" value={<Duration seconds={session.focus.discardedSeconds}/>}/>
+            <Metric label="累计专注时长" value={<Duration seconds={session.lifetime.focusSeconds}/>} detail="含加时与中途作废"/>
           </div>
         </Section>
 
         <Section title="休息" hint={`应休息 ${session.rest.expectedBreaks} 次`}>
           <div className="stats-metric-grid">
-            <Metric label="短休" value={formatDuration(session.rest.shortBreakSeconds)} detail={`${session.rest.completedByType.shortBreak}/${session.rest.expectedByType.shortBreak} 完成 · 主动跳过 ${formatRatio(session.rest.shortBreakExplicitSkipRate)}`}/>
-            <Metric label="长休" value={formatDuration(session.rest.longBreakSeconds)} detail={`${session.rest.completedByType.longBreak}/${session.rest.expectedByType.longBreak} 完成 · 主动跳过 ${formatRatio(session.rest.longBreakExplicitSkipRate)}`}/>
-            <Metric label="额外休息" value={formatDuration(session.rest.extraRestSeconds)}/>
+            <Metric label="短休" value={<Duration seconds={session.rest.shortBreakSeconds}/>} detail={`${session.rest.completedByType.shortBreak}/${session.rest.expectedByType.shortBreak} 完成 · 主动跳过 ${formatRatio(session.rest.shortBreakExplicitSkipRate)}`}/>
+            <Metric label="长休" value={<Duration seconds={session.rest.longBreakSeconds}/>} detail={`${session.rest.completedByType.longBreak}/${session.rest.expectedByType.longBreak} 完成 · 主动跳过 ${formatRatio(session.rest.longBreakExplicitSkipRate)}`}/>
+            <Metric label="额外休息" value={<Duration seconds={session.rest.extraRestSeconds}/>}/>
             <Metric label="标准休息完成率" value={formatRatio(session.rest.completionRate)} detail={`${session.rest.standardBreakCompleted} 次完成`}/>
           </div>
           <div className="stats-fact-list">

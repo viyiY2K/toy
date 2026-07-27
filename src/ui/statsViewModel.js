@@ -53,15 +53,21 @@ export function formatStatsRange(range) {
   return `${start.month}.${String(start.day).padStart(2, '0')} - ${end.month}.${String(end.day).padStart(2, '0')}`;
 }
 
-export function formatDuration(seconds) {
-  if (seconds <= 0) return '0 分钟';
+// 时长拆成「数字 + 单位」两段，让 UI 能把单位排成小号灰字。
+// formatDuration 仍返回同样的纯文本，供 title / 明细行等纯字符串场景使用。
+export function durationParts(seconds) {
+  if (seconds <= 0) return [{ value: '0', unit: '分钟' }];
   const minutes = Math.floor(seconds / 60);
-  if (minutes === 0) return '<1 分钟';
+  if (minutes === 0) return [{ value: '<1', unit: '分钟' }];
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  if (hours === 0) return `${minutes} 分钟`;
-  if (rest === 0) return `${hours} 小时`;
-  return `${hours} 小时 ${rest} 分钟`;
+  if (hours === 0) return [{ value: String(minutes), unit: '分钟' }];
+  if (rest === 0) return [{ value: String(hours), unit: '小时' }];
+  return [{ value: String(hours), unit: '小时' }, { value: String(rest), unit: '分钟' }];
+}
+
+export function formatDuration(seconds) {
+  return durationParts(seconds).map(({ value, unit }) => `${value} ${unit}`).join(' ');
 }
 
 export function formatRatio(value) {
