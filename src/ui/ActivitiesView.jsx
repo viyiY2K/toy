@@ -117,16 +117,19 @@ function EstimateEditor({ task, onSave, disabled, runningFocusTaskId }) {
 
 function AddTaskInput({ placeholder, onCreate, disabled }) {
   const [title, setTitle] = React.useState('');
+  const inputRef = React.useRef(null);
   const submit = async () => {
     const value = title.trim();
     if (!value || disabled) return;
     await onCreate(value);
     setTitle('');
+    inputRef.current?.focus();
   };
   return (
     <div className="activity-tree-row atr-group" style={{ marginTop: 8 }}>
       <span className="atr-bullet"/>
       <input
+        ref={inputRef}
         className="input atr-input"
         value={title}
         disabled={disabled}
