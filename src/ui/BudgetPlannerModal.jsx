@@ -9,6 +9,25 @@ import { Icon } from './Icon';
 
 const React = window.React;
 
+// 「可用时段」不存起止时间，只存时长；这里固定一个展示锚点，把分钟数换算成钟点给用户输入。
+const WORK_WINDOW_DISPLAY_ANCHOR_MIN = 9 * 60;
+
+function minutesToClock(totalMinutes) {
+  const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function clockToMinutes(value) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value ?? '');
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
 function DeductionSection({ title, deductionType, deductions, command, busy }) {
   const [label, setLabel] = React.useState('');
   const [hours, setHours] = React.useState('');
@@ -111,6 +130,59 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
   );
 }
 
+function WorkWindowRangeInput({ workWindowMin, command, busy }) {
+  const derivedStart = minutesToClock(WORK_WINDOW_DISPLAY_ANCHOR_MIN);
+  const derivedEnd = minutesToClock(WORK_WINDOW_DISPLAY_ANCHOR_MIN + workWindowMin);
+  const [start, setStart] = React.useState(derivedStart);
+  const [end, setEnd] = React.useState(derivedEnd);
+
+  React.useEffect(() => {
+    setStart(derivedStart);
+    setEnd(derivedEnd);
+  }, [derivedStart, derivedEnd]);
+
+  const commit = (nextStart, nextEnd) => {
+    const startMin = clockToMinutes(nextStart);
+    const endMin = clockToMinutes(nextEnd);
+    if (startMin === null || endMin === null) {
+      setStart(derivedStart);
+      setEnd(derivedEnd);
+      return;
+    }
+    const nextWorkWindowMin = Math.max(0, endMin - startMin);
+    if (nextWorkWindowMin !== workWindowMin) {
+      command((time) => updateDayPlanWorkWindow({ ...time, workWindowMin: nextWorkWindowMin }));
+    }
+  };
+
+  return (
+    <div className="planner-row">
+      <label className="planner-l" style={{ flexShrink: 0 }} htmlFor="work-window-start">可用时段</label>
+      <input
+        id="work-window-start"
+        className="input boxed mono"
+        type="time"
+        value={start}
+        disabled={busy}
+        onChange={(event) => setStart(event.target.value)}
+        onBlur={() => commit(start, end)}
+      />
+      <span className="planner-eq">到</span>
+      <input
+        id="work-window-end"
+        aria-label="可用时段结束"
+        className="input boxed mono"
+        type="time"
+        value={end}
+        disabled={busy}
+        onChange={(event) => setEnd(event.target.value)}
+        onBlur={() => commit(start, end)}
+      />
+      <span className="planner-eq" style={{ marginLeft: 'auto' }}>共 {workWindowMin} 分钟</span>
+    </div>
+  );
+}
+
 export function BudgetPlannerModal({ dayPlan, command, busy, onClose }) {
   const { estimate } = dayPlan;
   // 保守 / 乐观 / 手动 是「今日预算」的三个来源，收成三选一；确认后统一套用并关闭。
@@ -151,31 +223,11 @@ export function BudgetPlannerModal({ dayPlan, command, busy, onClose }) {
           </button>
         </div>
 
-        <div className="planner-row">
-          <label className="planner-l" htmlFor="work-window-min">可用时段</label>
-          <input
-            id="work-window-min"
-            key={estimate.workWindowMin}
-            className="input boxed mono"
-            style={{ width: 110 }}
-            type="number"
-            min="0"
-            step="1"
-            defaultValue={estimate.workWindowMin}
-            disabled={busy}
-            onBlur={(event) => {
-              const workWindowMin = Number(event.currentTarget.value);
-              if (!Number.isInteger(workWindowMin) || workWindowMin < 0) {
-                event.currentTarget.value = String(estimate.workWindowMin);
-                return;
-              }
-              if (workWindowMin !== estimate.workWindowMin) {
-                command((time) => updateDayPlanWorkWindow({ ...time, workWindowMin }));
-              }
-            }}
-          />
-          <span className="planner-eq">分钟</span>
-        </div>
+        <WorkWindowRangeInput
+          workWindowMin={estimate.workWindowMin}
+          command={command}
+          busy={busy}
+        />
 
         <DeductionSection
           title="固定日程"
