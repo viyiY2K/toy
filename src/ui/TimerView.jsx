@@ -1,4 +1,5 @@
 import {
+  adjustTaskEstimate,
   completeBreak,
   completeFocus,
   completeTaskFromPomodoro,
@@ -15,6 +16,7 @@ import {
 } from '../data/index';
 import { Icon } from './Icon';
 import { EmptyState } from './EmptyState';
+import { canAdjustTaskEstimate } from './taskViewModel';
 import {
   canWriteStandardSession,
   canCaptureTriage,
@@ -246,6 +248,65 @@ function sourceLabel(source) {
     case 'afterLongBreak': return ['长休后的状态', '记录这次长休后的恢复感受。'];
     default: return ['记录能量', '记录此刻状态。'];
   }
+}
+
+function TaskCompletionActions({ task, focusCount, busy, onComplete, onReestimate }) {
+  const [reestimating, setReestimating] = React.useState(false);
+  const [estimate, setEstimate] = React.useState(String(task.estimatedPomodoros));
+  const canReestimate = canAdjustTaskEstimate(task);
+  const estimateValue = Number(estimate);
+  const estimateValid = Number.isInteger(estimateValue)
+    && estimateValue >= 1 && estimateValue <= 7 && estimateValue !== task.estimatedPomodoros;
+
+  if (reestimating) {
+    return (
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+        <input
+          className="input boxed mono"
+          type="number"
+          min="1"
+          max="7"
+          style={{ width: 70 }}
+          value={estimate}
+          disabled={busy}
+          autoFocus
+          onChange={(event) => setEstimate(event.target.value)}
+        />
+        <button
+          className="btn primary sm"
+          disabled={busy || !estimateValid}
+          onClick={() => onReestimate(estimateValue)}
+        >
+          确认新预估
+        </button>
+        <button className="btn ghost sm" disabled={busy} onClick={() => setReestimating(false)}>
+          取消
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+      <button
+        className="btn primary"
+        style={{ flex: 1, justifyContent: 'center' }}
+        disabled={busy}
+        onClick={onComplete}
+      >
+        <Icon name="check" size={13}/> 已完成 {focusCount} / {task.estimatedPomodoros} · 任务已完成
+      </button>
+      {canReestimate && (
+        <button
+          className="btn ghost"
+          style={{ flex: 1, justifyContent: 'center' }}
+          disabled={busy}
+          onClick={() => setReestimating(true)}
+        >
+          需要重新预估
+        </button>
+      )}
+    </div>
+  );
 }
 
 // 恢复处理只知道事实包络的开始时刻（session.startedAt）；结束时刻永远是用户手填的
@@ -632,6 +693,7 @@ export function TimerView({
   const [nowMs, setNowMs] = React.useState(Date.now());
   const [actualRest, setActualRest] = React.useState(null);
   const [pendingEnergyPrompt, setPendingEnergyPrompt] = React.useState(null);
+  const [pendingTaskCheck, setPendingTaskCheck] = React.useState(null);
   const [triageTitle, setTriageTitle] = React.useState('');
   const completedFocusId = React.useRef(null);
   const selectedTask = activeTasks.find((task) => task.id === selectedTaskId) ?? null;
@@ -681,6 +743,7 @@ export function TimerView({
       if (result) {
         setPendingEnergyPrompt({
           sessionId: activeSession.id,
+          focusSessionId: activeSession.id,
           source: 'afterFocus',
           taskId: snapshot.activeTask?.id ?? activeSession.taskId,
           taskTitle: snapshot.activeTask?.title ?? null,
@@ -756,8 +819,7 @@ export function TimerView({
           ? { id: pendingEnergyPrompt.taskId, title: pendingEnergyPrompt.taskTitle }
           : null);
     const completedTaskSubtasks = timerSubtasks(taskViews, completedTask);
-    const completionCheckDue = pendingEnergyPrompt.source === 'afterFocus'
-      && shouldOfferTaskCompletionCheck(taskViews, completedTask);
+    const completionCheckDue = shouldOfferTaskCompletionCheck(taskViews, completedTask);
     const completedTaskFocusCount = completedTask === null
       ? 0
       : taskViews.completedValidFocusCountByTaskId[completedTask.id] ?? 0;
@@ -785,24 +847,22 @@ export function TimerView({
               <div className="card" style={{ padding: 18 }}>
                 <div className="section-h" style={{ marginBottom: 10 }}>
                   <h3>任务完成确认</h3>
-                  <span className="count">
-                    {completedTaskFocusCount} / {completedTask.estimatedPomodoros}
-                  </span>
                 </div>
                 <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
-                  已达到当前预估番茄数。如果任务已经做完，请在这里确认。
+                  已达到当前预估番茄数。这个任务做完了，还是需要继续、调整预估？
                 </p>
-                <button
-                  className="btn primary"
-                  style={{ width: '100%', justifyContent: 'center' }}
-                  disabled={busy}
-                  onClick={() => command((time) => completeTaskFromPomodoro({
+                <TaskCompletionActions
+                  task={completedTask}
+                  focusCount={completedTaskFocusCount}
+                  busy={busy}
+                  onComplete={() => command((time) => completeTaskFromPomodoro({
                     ...time,
-                    sessionId: pendingEnergyPrompt.sessionId,
+                    sessionId: pendingEnergyPrompt.focusSessionId,
                   }))}
-                >
-                  <Icon name="check" size={13}/> 确认完成任务
-                </button>
+                  onReestimate={(estimatedPomodoros) => command((time) => adjustTaskEstimate({
+                    ...time, taskId: completedTask.id, estimatedPomodoros,
+                  }))}
+                />
               </div>
             )}
             <EnergyPrompt
@@ -821,6 +881,45 @@ export function TimerView({
               disabled
             />
           </aside>
+        </div>
+      </div>
+    );
+  }
+
+  if (pendingTaskCheck) {
+    return (
+      <div>
+        <div className="main-head">
+          <div><h1>计时</h1><div className="sub">{pendingTaskCheck.reason}，先确认一下这个任务的状态。</div></div>
+        </div>
+        <div style={{ maxWidth: 480, margin: '40px auto' }}>
+          <div className="card" style={{ padding: 20 }}>
+            <div className="section-h" style={{ marginBottom: 10 }}>
+              <h3>{pendingTaskCheck.task.title}</h3>
+            </div>
+            <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
+              已达到当前预估番茄数。这个任务做完了，还是需要继续、调整预估？
+            </p>
+            <TaskCompletionActions
+              task={pendingTaskCheck.task}
+              focusCount={pendingTaskCheck.focusCount}
+              busy={busy}
+              onComplete={() => command((time) => completeTaskFromPomodoro({
+                ...time, sessionId: pendingTaskCheck.focusSessionId,
+              })).then((result) => { if (result) setPendingTaskCheck(null); })}
+              onReestimate={(estimatedPomodoros) => command((time) => adjustTaskEstimate({
+                ...time, taskId: pendingTaskCheck.task.id, estimatedPomodoros,
+              })).then((result) => { if (result) setPendingTaskCheck(null); })}
+            />
+            <button
+              className="btn ghost"
+              style={{ width: '100%', justifyContent: 'center' }}
+              disabled={busy}
+              onClick={() => setPendingTaskCheck(null)}
+            >
+              稍后再说
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -867,18 +966,17 @@ export function TimerView({
                 <Icon name="coffee" size={20}/>
               </div>
               {completionCheckDue && (
-                <button
-                  className="btn primary"
-                  style={{ width: '100%', justifyContent: 'center', marginBottom: 8 }}
-                  disabled={busy}
-                  onClick={() => command((time) => completeTaskFromPomodoro({
+                <TaskCompletionActions
+                  task={snapshot.pendingBreakTask}
+                  focusCount={pendingTaskFocusCount}
+                  busy={busy}
+                  onComplete={() => command((time) => completeTaskFromPomodoro({
                     ...time, sessionId: snapshot.pendingBreakFocus.id,
                   }))}
-                >
-                  <Icon name="check" size={13}/>
-                  已完成 {pendingTaskFocusCount} / {snapshot.pendingBreakTask.estimatedPomodoros}
-                  · 确认完成任务
-                </button>
+                  onReestimate={(estimatedPomodoros) => command((time) => adjustTaskEstimate({
+                    ...time, taskId: snapshot.pendingBreakTask.id, estimatedPomodoros,
+                  }))}
+                />
               )}
               <button
                 className="btn primary"
@@ -903,7 +1001,16 @@ export function TimerView({
                   onClick={() => command((time) => skipPendingBreak({
                     ...time,
                     sourceFocusSessionId: snapshot.pendingBreakFocus.id,
-                  }))}
+                  })).then((result) => {
+                    if (result && completionCheckDue) {
+                      setPendingTaskCheck({
+                        focusSessionId: snapshot.pendingBreakFocus.id,
+                        task: snapshot.pendingBreakTask,
+                        focusCount: pendingTaskFocusCount,
+                        reason: '短休已跳过',
+                      });
+                    }
+                  })}
                 >
                   跳过休息
                 </button>
@@ -1098,6 +1205,7 @@ export function TimerView({
                     if (result && source) {
                       setPendingEnergyPrompt({
                         sessionId: activeSession.id,
+                        focusSessionId: activeSession.sourceFocusSessionId,
                         source,
                         taskId: snapshot.activeTask?.id ?? null,
                         taskTitle: snapshot.activeTask?.title ?? null,
@@ -1117,10 +1225,27 @@ export function TimerView({
                   className="btn ghost"
                   style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}
                   disabled={busy}
-                  onClick={() => activeSessionCommand((time) => skipActiveBreak({
-                    ...time,
-                    sessionId: activeSession.id,
-                  }))}
+                  onClick={() => {
+                    const sourceFocusSessionId = activeSession.sourceFocusSessionId;
+                    const task = snapshot.activeTask;
+                    const focusCount = task
+                      ? taskViews.completedValidFocusCountByTaskId[task.id] ?? 0
+                      : 0;
+                    const checkDue = shouldOfferTaskCompletionCheck(taskViews, task);
+                    activeSessionCommand((time) => skipActiveBreak({
+                      ...time,
+                      sessionId: activeSession.id,
+                    })).then((result) => {
+                      if (result && checkDue) {
+                        setPendingTaskCheck({
+                          focusSessionId: sourceFocusSessionId,
+                          task,
+                          focusCount,
+                          reason: '休息已提前结束',
+                        });
+                      }
+                    });
+                  }}
                 >
                   提前结束休息
                 </button>
