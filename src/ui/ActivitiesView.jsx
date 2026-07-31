@@ -399,7 +399,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
       <div className="main-head">
         <div>
           <h1>清单与计划</h1>
-          <div className="sub">在活动清单里整理想法，移到今日待办后开始番茄。</div>
+          <div className="sub">在「活动清单」里整理想法，移到「今日待办」后开始番茄。</div>
         </div>
         <div className="right" style={{ gap: 20 }}>
           <div className="bb-stat" style={{ textAlign: 'right' }}>
