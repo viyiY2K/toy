@@ -364,7 +364,7 @@ export function StatsView({ currentAppDate }) {
       <header className="main-head stats-head">
         <div>
           <h1>统计</h1>
-          <div className="sub">全部来自你的真实计时与记录，实时计算</div>
+          <div className="sub">来看看你种下的番茄吧</div>
         </div>
         <div className="stats-date-controls">
           <div className="range-tabs" aria-label="统计范围">
