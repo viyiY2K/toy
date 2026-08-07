@@ -221,13 +221,19 @@ export const SYNCABLE_BASE_KEYS = [
 ] as const;
 
 /**
- * 写入来源模式：'local'（默认）为本地普通写入，deviceId/syncedAt 必须为 null；
- * 'sync' 为同步写入（本地上传成功回写 / 接收远端数据落地本地），deviceId/syncedAt 必须为合法非空值。
- * 见 src/data/sync/ADR-0034-sync-s1-device-identity-and-sync-write-mode.md。
+ * 写入来源模式：
+ * - 'local'（默认）本地普通写入（含从未同步过的新建记录，以及编辑一条此前已同步过的既有记录）。
+ *   deviceId/syncedAt 要么都是 null（从未同步过），要么都是此前 'sync' 写入落下的合法值——
+ *   本地编辑命令一律靠展开既有实体对象带过这两个字段，不会主动清空它们，
+ *   所以"编辑一条已同步过的记录"必须仍然通过校验，不能一刀切要求 null。
+ * - 'sync' 同步写入（本地上传成功回写 syncedAt / 接收远端数据落地本地）。
+ *   这类写入的本质就是"让这条记录此刻与远端同步"，故 deviceId/syncedAt 必须是合法非空值，
+ *   且只有这类写入才允许把它们从 null 变成非空——本地写入路径本身不做这个转换。
+ * 见 src/data/ADR-0034-sync-s1-device-identity-and-sync-write-mode.md、ADR-0035。
  */
 export type SyncWriteMode = 'local' | 'sync';
 
-/** 可同步实体公共字段校验；mode 默认 'local'，行为与此前完全一致。 */
+/** 可同步实体公共字段校验；mode 默认 'local'。 */
 export function validateSyncableBase(
   value: Record<string, unknown>,
   collector: ValidationCollector,
@@ -247,8 +253,26 @@ export function validateSyncableBase(
     validateUuidV7(value.deviceId, 'deviceId', collector);
     validateIsoDateTime(value.syncedAt, 'syncedAt', collector);
   } else {
-    collector.check(value.deviceId === null, 'sync.deviceId.reserved', 'deviceId', 'Phase 1 必须为 null');
-    collector.check(value.syncedAt === null, 'sync.syncedAt.reserved', 'syncedAt', 'Phase 1 必须为 null');
+    const deviceIdIsNull = value.deviceId === null;
+    const syncedAtIsNull = value.syncedAt === null;
+    if (deviceIdIsNull && syncedAtIsNull) {
+      // 从未同步过，Phase 1 原有口径：两者皆 null。
+    } else {
+      collector.check(
+        !deviceIdIsNull,
+        'sync.deviceId.pairing',
+        'deviceId',
+        'deviceId 与 syncedAt 必须同时为 null 或同时非空',
+      );
+      collector.check(
+        !syncedAtIsNull,
+        'sync.syncedAt.pairing',
+        'syncedAt',
+        'deviceId 与 syncedAt 必须同时为 null 或同时非空',
+      );
+      if (!deviceIdIsNull) validateUuidV7(value.deviceId, 'deviceId', collector);
+      if (!syncedAtIsNull) validateIsoDateTime(value.syncedAt, 'syncedAt', collector);
+    }
   }
 }
 
