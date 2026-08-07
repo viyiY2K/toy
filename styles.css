@@ -996,23 +996,26 @@ input[type="checkbox"]:checked::before {
 .completed-row-item:last-child { border-bottom: 0; }
 .completed-row-head {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 14px;
 }
 .completed-row-actions {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 .completed-done-name {
+  flex: 1;
+  min-width: 0;
   font-size: 13px; color: var(--muted);
   text-decoration: line-through;
 }
 .completed-done-date {
   font-size: 11px; color: var(--muted-2);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* === Phase 3 task hierarchy, details, and archive history === */

@@ -8,6 +8,7 @@ import {
   batchRetryIds,
   canAdjustTaskEstimate,
   canReorderSubtasks,
+  completedTaskTimeLabel,
   completionSourceLabel,
   currentPlanMetrics,
   dayPlanIndexOf,
@@ -89,6 +90,23 @@ describe('S13b task view model', () => {
     expect(completionSourceLabel('manual')).toBe('手动完成');
     expect(completionSourceLabel('pomodoro')).toBe('番茄完成');
     expect(completionSourceLabel(null)).toBe('完成来源未知');
+  });
+
+  it('prefers the focus start~end range for pomodoro completion, falls back to completedAt for manual', () => {
+    const pomodoroTiming = {
+      timezone: 'Asia/Shanghai',
+      focusStartedAt: '2027-04-04T09:01:00+08:00',
+      focusEndedAt: '2027-04-04T09:26:00+08:00',
+    };
+    expect(completedTaskTimeLabel({ completedAt: '2027-04-04T09:27:00+08:00' }, pomodoroTiming))
+      .toBe('2027.04.04 09:01~09:26');
+
+    const manualTiming = { timezone: 'Asia/Shanghai', focusStartedAt: null, focusEndedAt: null };
+    expect(completedTaskTimeLabel({ completedAt: '2027-04-04T08:01:00+08:00' }, manualTiming))
+      .toBe('2027.04.04 08:01');
+
+    expect(completedTaskTimeLabel({ completedAt: '2027-04-04T08:01:00+08:00' }, null)).toBe('');
+    expect(completedTaskTimeLabel({ completedAt: null }, manualTiming)).toBe('');
   });
 
   it('offers only other active top-level Tasks as reparent targets without duplicates', () => {

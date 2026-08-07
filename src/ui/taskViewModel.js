@@ -40,6 +40,30 @@ export function completionSourceLabel(completionSource) {
   return '完成来源未知';
 }
 
+// 只用于展示：按事实记录自带的 timezone 取墙钟时刻，不用当前设备时区重算历史记录。
+function wallClockLabel(isoInstant, timezone) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(isoInstant));
+  const get = (type) => parts.find((part) => part.type === type)?.value ?? '00';
+  return { date: `${get('year')}.${get('month')}.${get('day')}`, time: `${get('hour')}:${get('minute')}` };
+}
+
+// 番茄完成优先展示那次专注的起止时间段；手动完成没有关联专注，退回展示完成时刻。
+export function completedTaskTimeLabel(task, timing) {
+  if (!timing) return '';
+  if (timing.focusStartedAt && timing.focusEndedAt) {
+    const start = wallClockLabel(timing.focusStartedAt, timing.timezone);
+    const end = wallClockLabel(timing.focusEndedAt, timing.timezone);
+    return `${start.date} ${start.time}~${end.time}`;
+  }
+  if (!task.completedAt) return '';
+  const instant = wallClockLabel(task.completedAt, timing.timezone);
+  return `${instant.date} ${instant.time}`;
+}
+
 export function currentPlanMetrics(dayPlan, todayPlanningCapacityRemaining) {
   return {
     freeHours: dayPlan.estimate.freeMin / 60,

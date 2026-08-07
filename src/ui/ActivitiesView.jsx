@@ -32,6 +32,7 @@ import {
   batchResultPresentation,
   batchRetryIds,
   canReorderSubtasks,
+  completedTaskTimeLabel,
   completionSourceLabel,
   currentPlanMetrics,
   dayPlanIndexOf,
@@ -760,56 +761,56 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                     {task.title}
                   </span>
                   <span className="completed-done-date">
-                    {completionSourceLabel(task.completionSource)} · {task.completedAt ?? ''}
+                    {completionSourceLabel(task.completionSource)} · {completedTaskTimeLabel(task, views.completionTimingByTaskId[task.id])}
                   </span>
-                </div>
-                <div className="completed-row-actions">
-                  <button
-                    className="btn ghost sm"
-                    disabled={busy}
-                    onClick={() => setDetailTaskId(task.id)}
-                  >
-                    详情 / 工作记录
-                  </button>
-                  <button
-                    className="btn ghost sm"
-                    disabled={busy}
-                    onClick={() => {
-                      setArchiveCandidateId(null);
-                      command((time) => uncompleteTask({ ...time, taskId: task.id }));
-                    }}
-                  >
-                    取消完成
-                  </button>
-                  {archiveCandidateId === task.id ? (
-                    <>
-                      <button
-                        className="btn sm"
-                        disabled={busy}
-                        onClick={() => {
-                          setArchiveCandidateId(null);
-                          command((time) => archiveCompletedTask({ ...time, taskId: task.id }));
-                        }}
-                      >
-                        确认归档
-                      </button>
-                      <button
-                        className="btn ghost sm"
-                        disabled={busy}
-                        onClick={() => setArchiveCandidateId(null)}
-                      >
-                        取消
-                      </button>
-                    </>
-                  ) : (
+                  <div className="completed-row-actions">
                     <button
                       className="btn ghost sm"
                       disabled={busy}
-                      onClick={() => setArchiveCandidateId(task.id)}
+                      onClick={() => setDetailTaskId(task.id)}
                     >
-                      归档
+                      详情 / 工作记录
                     </button>
-                  )}
+                    <button
+                      className="btn ghost sm"
+                      disabled={busy}
+                      onClick={() => {
+                        setArchiveCandidateId(null);
+                        command((time) => uncompleteTask({ ...time, taskId: task.id }));
+                      }}
+                    >
+                      取消完成
+                    </button>
+                    {archiveCandidateId === task.id ? (
+                      <>
+                        <button
+                          className="btn sm"
+                          disabled={busy}
+                          onClick={() => {
+                            setArchiveCandidateId(null);
+                            command((time) => archiveCompletedTask({ ...time, taskId: task.id }));
+                          }}
+                        >
+                          确认归档
+                        </button>
+                        <button
+                          className="btn ghost sm"
+                          disabled={busy}
+                          onClick={() => setArchiveCandidateId(null)}
+                        >
+                          取消
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="btn ghost sm"
+                        disabled={busy}
+                        onClick={() => setArchiveCandidateId(task.id)}
+                      >
+                        归档
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <SubtaskList
                   tasks={views.subtasksByParentId[task.id]}
