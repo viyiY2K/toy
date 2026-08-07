@@ -2,11 +2,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { dataStore, STORE } from '../dataStore';
-import type { DayPlan, Event, Task } from '../schema';
+import type { DayPlan, Event, Settings, Task } from '../schema';
 import { createManualTask } from '../commands/taskCommands';
 import { __resetSupabaseClientForTests, getSupabaseClient } from './supabaseClient';
 import { downloadChanges } from './downloadChanges';
-import { toRemoteEventRow } from './remoteRowMappers';
+import { toRemoteEntityRow, toRemoteEventRow } from './remoteRowMappers';
 
 const TIMEZONE = 'Asia/Shanghai';
 const dayAt = (day: number, minute: number) =>
@@ -101,7 +101,12 @@ describe('downloadChanges (S5)', () => {
     __resetSupabaseClientForTests();
     getSupabaseClient({});
     const result = await downloadChanges(dayAt(1, 10), TIMEZONE, { storage: memoryStorage() });
-    expect(result).toEqual({ configured: false, entities: [], events: { fetched: 0, applied: 0 } });
+    expect(result).toEqual({
+      configured: false,
+      entities: [],
+      events: { fetched: 0, applied: 0 },
+      settingsBaselineConflict: null,
+    });
   });
 
   it('本地不存在的远端 Task 会被直接写入本地', async () => {
@@ -220,5 +225,91 @@ describe('downloadChanges events (S5)', () => {
 
     const afterEvents = await dataStore.getAll<Event>(STORE.events);
     expect(afterEvents.filter((event) => event.id === existingEvent.id)).toHaveLength(1);
+  });
+});
+
+describe('downloadChanges settings (S6)', () => {
+  it('远端 Settings 与本地同 id 时走普通 LWW', async () => {
+    await createManualTask({
+      now: dayAt(6, 0), timezone: TIMEZONE, title: '为了初始化 Settings', estimatedPomodoros: 1, destination: 'list',
+    });
+    const [localSettings] = await dataStore.getAll<Settings>(STORE.settings);
+    const remoteSettings: Settings = {
+      ...localSettings!, updatedAt: dayAt(6, 10), focusMinutes: 50, deviceId: REMOTE_DEVICE_ID,
+    };
+
+    server.use(
+      http.get(`${REST_URL}/settings`, () =>
+        HttpResponse.json([toRemoteEntityRow(STORE.settings, remoteSettings)]),
+      ),
+    );
+
+    const result = await downloadChanges(dayAt(6, 15), TIMEZONE, { storage: memoryStorage() });
+    const settingsEntity = result.entities.find((entity) => entity.store === STORE.settings)!;
+    expect(settingsEntity).toMatchObject({ applied: 1, failed: 0 });
+    expect(result.settingsBaselineConflict).toBeNull();
+
+    const stored = await dataStore.get<Settings>(STORE.settings, localSettings!.id);
+    expect(stored!.focusMinutes).toBe(50);
+  });
+
+  it('远端 Settings 是不同 id（两台从未同步过的设备各自初始化）时字段级合并，并检测 baseline 冲突', async () => {
+    await createManualTask({
+      now: dayAt(7, 0), timezone: TIMEZONE, title: '为了初始化 Settings2', estimatedPomodoros: 1, destination: 'list',
+    });
+    const [localSettings] = await dataStore.getAll<Settings>(STORE.settings);
+    const remoteSettings: Settings = {
+      ...localSettings!,
+      id: '018f5e2a-0000-7000-8000-0000000000f1',
+      createdAt: dayAt(7, 0),
+      updatedAt: dayAt(7, 10),
+      focusMinutes: 50,
+      lifetimePomodoroBaseline: 999,
+      deviceId: REMOTE_DEVICE_ID,
+    };
+
+    server.use(
+      http.get(`${REST_URL}/settings`, () =>
+        HttpResponse.json([toRemoteEntityRow(STORE.settings, remoteSettings)]),
+      ),
+    );
+
+    const result = await downloadChanges(dayAt(7, 15), TIMEZONE, { storage: memoryStorage() });
+    expect(result.settingsBaselineConflict).toEqual({
+      local: localSettings!.lifetimePomodoroBaseline,
+      remote: 999,
+    });
+
+    // 合并结果仍然延续本地 id：这个 id 底下的记录被更新，远端那条不同 id 的行不会出现在本地。
+    const stored = await dataStore.get<Settings>(STORE.settings, localSettings!.id);
+    expect(stored!.focusMinutes).toBe(50); // 远端 updatedAt 更新，非 baseline 字段取远端
+    expect(stored!.lifetimePomodoroBaseline).toBe(localSettings!.lifetimePomodoroBaseline); // baseline 暂缓保留本地
+    const remoteIdRecord = await dataStore.get<Settings>(STORE.settings, remoteSettings.id);
+    expect(remoteIdRecord).toBeUndefined();
+  });
+
+  it('远端 Settings 内容与本地完全一致时不产生写入', async () => {
+    await createManualTask({
+      now: dayAt(8, 0), timezone: TIMEZONE, title: '为了初始化 Settings3', estimatedPomodoros: 1, destination: 'list',
+    });
+    const [localSettings] = await dataStore.getAll<Settings>(STORE.settings);
+    const identicalRemote: Settings = {
+      ...localSettings!,
+      id: '018f5e2a-0000-7000-8000-0000000000f2',
+      createdAt: dayAt(8, 0),
+      updatedAt: dayAt(8, 10),
+      deviceId: REMOTE_DEVICE_ID,
+    };
+
+    server.use(
+      http.get(`${REST_URL}/settings`, () =>
+        HttpResponse.json([toRemoteEntityRow(STORE.settings, identicalRemote)]),
+      ),
+    );
+
+    const result = await downloadChanges(dayAt(8, 15), TIMEZONE, { storage: memoryStorage() });
+    const settingsEntity = result.entities.find((entity) => entity.store === STORE.settings)!;
+    expect(settingsEntity).toMatchObject({ applied: 0, skipped: 1 });
+    expect(result.settingsBaselineConflict).toBeNull();
   });
 });

@@ -1,9 +1,9 @@
 /**
- * 下载：远端变更 → 本地（S5，pull + last-write-wins by updatedAt）。
+ * 下载：远端变更 → 本地（S5/S6，pull + last-write-wins by updatedAt；Settings 走字段级合并）。
  *
- * 五个实体（不含 settings——它走字段级合并，见下方说明）按本地游标（各表各自的
- * `lastPulledAt`）增量拉取 `updated_at > cursor` 的远端行，逐条应用：本地不存在则
- * 直接写入，已存在则按 updatedAt 取较新一份，否则跳过（本地更新，留给下一轮上传推送）。
+ * 五个实体（tasks/day_plans/sessions/energy_records/unresolved_intervals）按本地游标
+ * （各表各自的 `lastPulledAt`）增量拉取 `updated_at > cursor` 的远端行，逐条应用：本地不存在
+ * 则直接写入，已存在则按 updatedAt 取较新一份，否则跳过（本地更新，留给下一轮上传推送）。
  *
  * 每条远端行各自一次独立的 executeAtomicWrite（而不是整批一个大事务）：校验失败
  * （比如极端情况下 DayPlan 引用的 Task 还没下载到本地）只影响这一条，不拖累同批
@@ -17,8 +17,9 @@
  * 除非它在远端又有新的 updatedAt。真实使用中，本模块把 tasks 排在 dayPlans 之前
  * 下载，同一轮内 DayPlan 引用的 Task 通常已经先落地，这个限制预期极少触发。
  *
- * Settings 不在本模块处理：不适用整表 last-write-wins，需要字段级合并，
- * 留给 S6 的 settingsMerge 模块。
+ * Settings 是单例，不走上面的通用增量游标逻辑：每次都拉取远端那唯一一行，与本地
+ * 唯一一条比较——同 id 走普通 LWW；不同 id（两台从未同步过的设备各自初始化）走
+ * settingsMerge 的字段级合并，见 `downloadSettings` 与 `src/data/sync/settingsMerge.ts`。
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -26,9 +27,9 @@ import { dataStore, STORE } from '../dataStore';
 import type { SyncableEntityMap, SyncableStoreName } from '../dataStore';
 import { executeAtomicWrite } from '../writes/executeAtomicWrite';
 import { EntityValidationError } from '../validation';
-import type { DayPlan, Event, IsoDateTime } from '../schema';
+import type { DayPlan, Event, IsoDateTime, Settings } from '../schema';
 import { getSupabaseClient } from './supabaseClient';
-import { type DeviceIdentityStorage } from './deviceIdentity';
+import { getOrCreateDeviceId, type DeviceIdentityStorage } from './deviceIdentity';
 import {
   REMOTE_EVENTS_TABLE,
   REMOTE_TABLE_BY_STORE,
@@ -36,6 +37,7 @@ import {
   fromRemoteEventRow,
   type RemoteRow,
 } from './remoteRowMappers';
+import { mergeSettings, settingsContentEquals, type LifetimeBaselineConflict } from './settingsMerge';
 
 type DownloadableStoreName = Exclude<SyncableStoreName, 'settings'>;
 
@@ -78,6 +80,8 @@ export interface DownloadChangesResult {
   configured: boolean;
   entities: readonly DownloadEntityResult[];
   events: DownloadEventsResult;
+  /** 非 null 表示这一轮下载检测到 lifetimePomodoroBaseline 冲突，等待用户决定。 */
+  settingsBaselineConflict: LifetimeBaselineConflict | null;
 }
 
 type ApplyOutcome = 'applied' | 'skipped' | 'failed';
@@ -189,6 +193,74 @@ async function downloadEntityStore<S extends DownloadableStoreName>(
   return { store, fetched: rows.length, applied, skipped, failed };
 }
 
+interface DownloadSettingsOutcome {
+  result: DownloadEntityResult;
+  baselineConflict: LifetimeBaselineConflict | null;
+}
+
+/**
+ * Settings 是单例，不用增量游标：每次都取远端唯一一行、跟本地唯一一条比较。
+ * - 本地不存在：直接写入远端那份。
+ * - 同 id：普通 LWW（这是绝大多数情况——一旦同步过一次，往后都是这个分支）。
+ * - 不同 id：两台从未同步过的设备各自初始化了 Settings，走字段级合并
+ *   （见 settingsMerge.ts），合并结果延续本地 id，`deviceId`/`syncedAt` 盖成本机、此刻。
+ *   内容和本地完全一致时不写入（避免每轮都无意义地推高 updatedAt）。
+ */
+async function downloadSettings(
+  client: SupabaseClient,
+  now: IsoDateTime,
+  timezone: string,
+  storage: DeviceIdentityStorage | undefined,
+): Promise<DownloadSettingsOutcome> {
+  const { data, error } = await client.from(REMOTE_TABLE_BY_STORE[STORE.settings]).select('*').limit(1);
+  const empty: DownloadEntityResult = { store: STORE.settings, fetched: 0, applied: 0, skipped: 0, failed: 0 };
+
+  if (error) return { result: { ...empty, error: error.message }, baselineConflict: null };
+  const rows = (data ?? []) as RemoteRow[];
+  if (rows.length === 0) return { result: empty, baselineConflict: null };
+
+  const remote = fromRemoteEntityRow(STORE.settings, rows[0]!, now);
+  let baselineConflict: LifetimeBaselineConflict | null = null;
+
+  try {
+    const outcome = await executeAtomicWrite(
+      { storeNames: [STORE.settings], now, timezone, writeMode: 'sync' },
+      async (transaction) => {
+        const [local] = await transaction.getAll<Settings>(STORE.settings);
+        if (!local) {
+          await transaction.put(STORE.settings, remote);
+          return 'applied' as const;
+        }
+        if (local.id === remote.id) {
+          if (Date.parse(remote.updatedAt) > Date.parse(local.updatedAt)) {
+            await transaction.put(STORE.settings, remote);
+            return 'applied' as const;
+          }
+          return 'skipped' as const;
+        }
+
+        const { merged, baselineConflict: conflict } = mergeSettings(local, remote);
+        baselineConflict = conflict;
+        if (settingsContentEquals(merged, local)) return 'skipped' as const;
+        await transaction.put(STORE.settings, {
+          ...merged,
+          updatedAt: now,
+          deviceId: getOrCreateDeviceId(storage),
+          syncedAt: now,
+        });
+        return 'applied' as const;
+      },
+    );
+    return {
+      result: { ...empty, fetched: 1, applied: outcome === 'applied' ? 1 : 0, skipped: outcome === 'skipped' ? 1 : 0 },
+      baselineConflict,
+    };
+  } catch (thrown) {
+    if (thrown instanceof EntityValidationError) return { result: { ...empty, fetched: 1, failed: 1 }, baselineConflict: null };
+    throw thrown;
+  }
+}
+
 async function downloadEvents(
   client: SupabaseClient,
   now: IsoDateTime,
@@ -239,7 +311,7 @@ export async function downloadChanges(
 ): Promise<DownloadChangesResult> {
   const client = getSupabaseClient();
   if (!client) {
-    return { configured: false, entities: [], events: { fetched: 0, applied: 0 } };
+    return { configured: false, entities: [], events: { fetched: 0, applied: 0 }, settingsBaselineConflict: null };
   }
 
   const storage = options.storage ?? defaultStorage();
@@ -248,7 +320,10 @@ export async function downloadChanges(
   for (const store of DOWNLOADABLE_STORE_NAMES) {
     entities.push(await downloadEntityStore(client, store, now, timezone, storage));
   }
+  const settingsOutcome = await downloadSettings(client, now, timezone, storage);
+  entities.push(settingsOutcome.result);
+
   const events = await downloadEvents(client, now, timezone, storage);
 
-  return { configured: true, entities, events };
+  return { configured: true, entities, events, settingsBaselineConflict: settingsOutcome.baselineConflict };
 }
