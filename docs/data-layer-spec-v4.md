@@ -3075,6 +3075,115 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 ---
 
+### 7.19 MergeGroup（合并组）
+
+本节定义合并番茄钟（MergeGroup，见 §3.8）生命周期相关事件：创建、成员增减、预估追加、解散。
+
+**Domain 级说明**：
+
+- 合并组触发的 focus Session 本身（开始 / 完成 / 作废）仍归 §7.5 `focus.*` 域，不在本节重复定义；合并场景下 `focus.started` / `focus.completed` 按参与任务数量各发一条，见 §7.5 补充说明。
+- 本节 5 个事件所属功能批次为"合并番茄钟"，是 Phase 1–3 封板之后新增的独立功能批次，不套用 §10 既有 P1–P5 编号（避免与既定 Phase 范围混淆），Phase 归属见 §10.7。
+- 合并组内部当前不支持成员重排序（展示顺序即 `taskIds` 数组顺序，调整需要移出再按新顺序移入）；不定义独立的 `mergeGroup.reordered` 事件。
+- 合并组的预估追加（第三轮用满）**不触发** `prompt.shown(taskSplitSuggestion)` 强制拆分提示——该提示是 §3.1 Task 专属的强引导机制，合并组是零碎杂事的临时集合，不适用同一套强提醒语义；`mergeGroup.estimateAdjusted` 只复用 Task 预估追加的**数值上限规则**（1–7 封顶、最多三轮），不复用其"强触发拆分提示"的 UI 行为。
+
+---
+
+#### mergeGroup.created（合并番茄钟功能批次）
+
+**顶层关联字段**：`mergeGroupId`。
+
+**payload**：`{ taskIds, estimatedPomodoros }`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `taskIds` | `string[]` | 创建时的初始成员列表，长度必须 ≥ 2 |
+| `estimatedPomodoros` | `number` | 创建时的初始预估番茄数，固定为 1（见 §3.8 字段说明），同时作为 `estimateRounds` 第一轮记录写入 MergeGroup（`index=1`，`occurredAt`=创建时刻，参照 §3.1 关键规则 11 的写法） |
+
+**说明**：用户首次把 ≥ 2 个任务拖到一起组成合并组时触发。本事件与写入这些 Task 各自的 `mergeGroupId` 字段同属一个原子事务，可共享 `correlationId`。
+
+**典型触发**：用户在清单页把任务 B 拖到任务 A 的正中间（区别于拖到上方 / 下方触发的排序），形成新的合并卡片。
+
+**不应触发**：已有合并组追加新成员（→ `mergeGroup.taskAdded`）；组内成员重排序（当前不支持，见 Domain 级说明）。
+
+---
+
+#### mergeGroup.taskAdded（合并番茄钟功能批次）
+
+**顶层关联字段**：`mergeGroupId`、`taskId`（被加入的任务）。
+
+**payload**：`{ addedAtIndex, source }`
+
+`source` 取值：
+
+| 值 | 含义 |
+|---|---|
+| `'drag'` | 用户在清单页 / 今日待办把一个任务拖进已有合并卡片 |
+| `'duringActiveSession'` | 对应 focus Session 进行中，用户往当前合并组里追加新任务（丰满这个番茄） |
+
+**说明**：往已有合并组追加一个任务成员时触发，同时写入该 Task 的 `mergeGroupId`。可以发生在计时开始前的规划阶段，也可以发生在 focus Session 进行中。
+
+**典型触发**：番茄计时进行中，用户提前做完了原有任务，把"订咖啡豆"拖进正在跑的合并卡片里；用户在开始计时前，往合并卡片里再拖入一个杂事。
+
+**不应触发**：创建合并组时的初始成员（→ `mergeGroup.created`）；组解散后的成员归属清空（→ `mergeGroup.dissolved`）。
+
+---
+
+#### mergeGroup.taskRemoved（合并番茄钟功能批次）
+
+**顶层关联字段**：`mergeGroupId`、`taskId`（被移出的任务）。
+
+**payload**：`{ removedAtIndex, reason }`
+
+`reason` 取值：
+
+| 值 | 含义 |
+|---|---|
+| `'manualUnmerge'` | 用户在清单页主动把该任务从合并卡片里拖出 |
+| `'sessionEndedIncomplete'` | 对应 focus Session 到点，组内该任务当时尚未完成，用户选择"结束"，该任务退出组、回到今日待办 / 活动清单独立显示 |
+
+**说明**：单个任务退出合并组、但组本身未必解散时触发。若移出后 `taskIds` 长度降到 1（含）以下，紧接着触发 `mergeGroup.dissolved`（`dissolvedReason='membersBelowMinimum'`），两者共享 `correlationId`。组整体解散导致的批量成员清空，由 `mergeGroup.dissolved` 的 payload 统一记录（见该事件说明），**不**逐个触发本事件。
+
+**典型触发**：用户后悔把某任务合并进去，主动把它拖出合并卡片；4 个任务合并计时，到点还剩 1 个没做完，用户选"结束"，该任务退出组。
+
+**不应触发**：组整体解散时的批量成员清空（→ `mergeGroup.dissolved`）；追加新成员（→ `mergeGroup.taskAdded`）。
+
+---
+
+#### mergeGroup.estimateAdjusted（合并番茄钟功能批次）
+
+**顶层关联字段**：`mergeGroupId`。
+
+**payload**：`{ round, oldEstimate, newEstimate }`
+
+`round` 为 2 或 3，对应 `estimateRounds` 数组中本轮的 `index`（第 1 轮已随 `mergeGroup.created` 记录，不触发本事件）。取值范围、三轮上限，与 §7.1 `task.estimateAdjusted` 一致（`newEstimate` 1–7，`>7` 拒绝写入）；**但不触发** `prompt.shown(taskSplitSuggestion)`（见 Domain 级说明）。
+
+**说明**：focus Session 响铃到点、组内仍有未完成任务时，用户选择"追加预估番茄"，`estimateRounds` 数组新增一条记录时触发。`newEstimate` 表示该轮之后合并组的**总预估番茄数**（不是增量）。
+
+**典型触发**：4 个任务合并计时，第一个番茄到点还剩 1 个没做完，用户选"追加预估番茄"，`estimatedPomodoros` 从 1 变为 2，紧接着开启第 2 个 focus Session。
+
+**不应触发**：创建组时的初始预估（→ `mergeGroup.created`）；单个 Task 自己的预估追加（→ §7.1 `task.estimateAdjusted`，两者是不同实体，互不触发）。
+
+---
+
+#### mergeGroup.dissolved（合并番茄钟功能批次）
+
+**顶层关联字段**：`mergeGroupId`。
+
+**payload**：`{ finalTaskIds, dissolvedReason }`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `finalTaskIds` | `string[]` | 解散那一刻组内仍剩的成员列表（这些成员的 `mergeGroupId` 随本事件一并清空） |
+| `dissolvedReason` | `string` | 与 MergeGroup.dissolvedReason 一致，枚举值见 §3.8 |
+
+**说明**：合并组生命周期正常终结时触发，对应 §3.8 关键规则 2/4/5 的三条路径：成员数掉到 1（含）以下自动解散；focus Session 到点用户选择"结束"；用户随时主动整体解散。解散不是软删除，`MergeGroup.deletedAt` 不因本事件写入（见 §3.8 关键规则 7）。
+
+**典型触发**：4 个任务合并计时，到点用户选"结束"而非"追加预估"；用户在还没开始计时前，主动取消整次合并；合并组成员被逐个移出，最后只剩 1 个。
+
+**不应触发**：单个成员退出、组内仍剩 ≥ 2 个成员（→ `mergeGroup.taskRemoved`）；用户完成了组内某个任务但组继续进行（不触发任何 mergeGroup 事件，见 §3.8 关键规则 3）。
+
+---
+
 ## 8. 统计口径
 
 本章定义番茄钟产品所有统计指标的计算口径。§8 只规定"怎么算"（数据来源、筛选条件、公式、排除边界），不规定"怎么展示"（UI 布局、图表类型、颜色）。统计页整体真实化阶段见 §10；具体指标是否进入当期 UI 展示，由 §11 / 后续实现计划承接。§8 仅定义统计计算口径，不负责 UI 排期，也不逐指标标注 Phase。
@@ -4323,6 +4432,12 @@ todayPlanningCapacityRemaining =
 - 相关能力包括：多端数据同步、冲突解决、云端备份 / 恢复等。
 - 交叉引用：冲突解决预留字段见 §2.6；云端备份 / 跨设备恢复挂账见 §14【18】。
 - 当前**不展开**账号体系、云端架构、同步算法、冲突合并策略、设备间数据迁移细节——本节仅为路线图级别方向说明，不是已确认设计。
+
+### 10.7 合并番茄钟（新增功能批次，范围）
+
+- v4.1 新增的"合并番茄钟"（MergeGroup，见 §3.8、§7.19）是 Phase 1–3 封板、完成一轮 UI 打磨并合入 `main` 之后新增的**独立功能批次**，不是 P1–P5 既定路线图的自然延伸，因此不套用 P1–P5 编号，事件表统一标注为"合并番茄钟功能批次"。
+- 范围：MergeGroup 实体结构、Task/Session/Event 的相应字段扩展、5 个 `mergeGroup.*` 事件、统计口径补充（§8.3、§8.5），均已在 v4.1 完整定义。
+- 本轮**只定义数据结构与规则**，真实 UI 交互（清单页"拖到正中间=合并"的手势、计时页合并卡片展示、"结束 / 追加预估"选择界面）未在本文档范围内实现，属于后续独立的施工计划。
 
 ---
 
