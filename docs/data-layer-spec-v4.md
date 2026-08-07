@@ -2187,7 +2187,7 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 
 #### interrupt.internal（P2）
 
-**顶层关联字段**：`sessionId`（正在进行的 focus Session id）、`taskId`（关联任务）；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。
+**顶层关联字段**：`sessionId`（正在进行的 focus Session id）、`taskId`（关联任务）；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。**合并番茄钟场景**（`Session.taskIds` 长度 ≥ 2）：打扰不特定针对某一个成员任务，`taskId` 固定为 null，只通过 `sessionId` 关联，需要时经 `sessionId` 反查 `Session.taskIds` 得到全部涉及任务；不按成员数量重复触发本事件。
 
 **payload**：`{ offsetSeconds, note }`
 
@@ -2206,7 +2206,7 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 
 #### interrupt.external（P2）
 
-**顶层关联字段**：`sessionId`（正在进行的 focus Session id）、`taskId`（关联任务）；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。
+**顶层关联字段**：`sessionId`（正在进行的 focus Session id）、`taskId`（关联任务）；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。**合并番茄钟场景**（`Session.taskIds` 长度 ≥ 2）：打扰不特定针对某一个成员任务，`taskId` 固定为 null，只通过 `sessionId` 关联，需要时经 `sessionId` 反查 `Session.taskIds` 得到全部涉及任务；不按成员数量重复触发本事件。
 
 **payload**：`{ offsetSeconds, note }`
 
@@ -3365,6 +3365,8 @@ Session.type === 'focus'
 
 周 / 月 / 年有效番茄数：将 `appDate` 筛选范围扩展至对应时段（见 §8.2.3）。
 
+**合并番茄钟的计数口径**：上述公式按 **Session 记录数**计数，不因 `Session.taskIds` 长度而重复计数——一次合并了 3 个任务的 focus Session 完成，本节口径下的全局有效番茄数仍然 `+1`（按实际发生的专注时长走）。**这与 §8.5 的 Task 维度统计不同**：§8.5 中每个参与合并的任务各自都记 `+1` 个有效番茄，因此"各任务有效番茄数之和"可能大于本节的全局有效番茄数，这是设计如此，不是数据不一致（见 §3.3 关键规则 12）。
+
 #### 8.3.2 标准专注时长
 
 **定义**：所有已完成的标准 focus Session 的实际专注秒数之和。
@@ -3603,12 +3605,12 @@ focus.type === 'focus'
 
 #### 8.5.1 Task 有效番茄数
 
-**定义**：某 Task 的有效番茄数 = 该 Task 下满足有效番茄条件（§8.3.1）的标准 focus Session 数。
+**定义**：某 Task 的有效番茄数 = 该 Task 下满足有效番茄条件（§8.3.1）的标准 focus Session 数。**合并番茄钟场景**下，一次 Session 的 `taskIds` 可能包含多个任务，此时参与的每个任务各自都记 `+1`，不做平分（见 §3.3 关键规则 12、§8.3.1 合并计数口径说明）。
 
 **筛选条件**：
 
 ```
-Session.taskId === task.id
+Session.taskIds.includes(task.id)
 && Session.type === 'focus'
 && Session.status === 'completed'
 && Session.deletedAt === null
@@ -3620,13 +3622,15 @@ Session.taskId === task.id
 
 ```
 今日新增有效番茄数（某 Task）=
-  count(Session where taskId=task.id and type='focus' and status='completed'
+  count(Session where taskIds.includes(task.id) and type='focus' and status='completed'
         and deletedAt===null and appDate = 目标日期)
 
 completedValidFocusCountForTask（历史累计有效番茄数）=
-  count(Session where taskId=task.id and type='focus' and status='completed'
+  count(Session where taskIds.includes(task.id) and type='focus' and status='completed'
         and deletedAt===null)   // 全时间段，不限日期
 ```
+
+**任务维度加总 ≠ 全局总数**：同一次合并 Session 会被 `taskIds` 内每个任务各自的 `completedValidFocusCountForTask` 计数一次，因此把多个任务的有效番茄数直接相加，可能大于 §8.3.1 的全局有效番茄总数。两个口径服务不同问题——"这个任务上我完成了几个有效番茄"用本节口径，"我今天总共专注了几个番茄"用 §8.3.1 口径——不得互相替代或用其中一个反推另一个。
 
 - **日统计主口径为"今日新增"**：跨天继续同一 Task 时，日统计页展示该 Task 当天新增有效番茄数，而非历史累计（详见 §8.5.5）；
 - 历史累计有效番茄数 `completedValidFocusCountForTask` 由该 Task 下 completed 标准 focus Session 派生，作明细辅助展示。
@@ -3643,15 +3647,15 @@ completedValidFocusCountForTask（历史累计有效番茄数）=
 
 ```
 Task 标准专注时长 =
-  sum(Session.actualDuration where taskId=task.id
+  sum(Session.actualDuration where taskIds.includes(task.id)
       and type='focus' and status='completed' and deletedAt===null)
 
 Task 额外专注时长 =
-  sum(Session.actualDuration where taskId=task.id
+  sum(Session.actualDuration where taskIds.includes(task.id)
       and type='extraFocus' and deletedAt===null)
 
 Task 作废专注时长 =
-  sum(Session.actualDuration where taskId=task.id
+  sum(Session.actualDuration where taskIds.includes(task.id)
       and type='focus' and status='discarded' and deletedAt===null)
 
 Task 专注总时长 = Task 标准专注时长 + Task 额外专注时长 + Task 作废专注时长
@@ -3660,9 +3664,10 @@ Task 专注总时长 = Task 标准专注时长 + Task 额外专注时长 + Task 
 **约束**：
 
 - Task 有效番茄数仍然只统计 `type='focus' && status='completed'` 的标准 focus（§8.5.1）；`focus.status='discarded'` 与 `extraFocus` 均不计入 Task 有效番茄数；
-- `extraFocus` 计入 Task 专注总时长明细，但不计入 Task 有效番茄数、不计入完整循环、不参与预估准确率；其 `taskId` 继承归类时用户确认的 Task（§7.11）；
+- `extraFocus` 计入 Task 专注总时长明细，但不计入 Task 有效番茄数、不计入完整循环、不参与预估准确率；其 `taskIds` 固定长度为 1（extraFocus 不支持合并，见 §3.3 字段一致性约束 6），继承归类时用户确认的 Task（§7.11）；
 - `focus.status='discarded'` 的 `actualDuration` 计入 Task 专注总时长（与 §8.3.4 全局总专注时长含作废的口径一致），用于反映该任务上的真实投入时间，但不计入 Task 有效番茄成果；
-- 展示或明细层必须拆分为标准专注时长 / 额外专注时长 / 作废专注时长三部分，不得无差别合并。
+- 展示或明细层必须拆分为标准专注时长 / 额外专注时长 / 作废专注时长三部分，不得无差别合并；
+- **合并番茄钟场景下**，一次 Session 的 `actualDuration` 会被 `taskIds` 内每个任务的专注时长明细各自完整计入一遍（不平分），这与 §8.3.2 全局标准专注时长"按 Session 记录只算一次实际时长"的口径不同，是同一份实际时长按不同维度（全局 vs 单个任务）重复呈现，不是数据重复写入。
 
 #### 8.5.3 预估准确 / 预估偏差
 
@@ -4091,7 +4096,7 @@ energySampleCount(某日) =
 
 #### 8.9.1 数据来源与术语
 
-**数据来源**：`interrupt.internal` / `interrupt.external` 两类事件（§7.8）。每条事件顶层带 `sessionId`（正在进行的 focus Session）、`taskId`、可选 `dayPlanId`，payload 含 `offsetSeconds`（距该 focus `startedAt` 的已过秒数，≥ 0）。打扰次数从事件派生，不存在 Session 字段上（§3.3 关键规则 8）。
+**数据来源**：`interrupt.internal` / `interrupt.external` 两类事件（§7.8）。每条事件顶层带 `sessionId`（正在进行的 focus Session）、`taskId`（合并番茄钟场景固定 null，见 §7.8）、可选 `dayPlanId`，payload 含 `offsetSeconds`（距该 focus `startedAt` 的已过秒数，≥ 0）。打扰次数从事件派生，不存在 Session 字段上（§3.3 关键规则 8）。本节统计按 `sessionId` / `appDate` 聚合，不依赖 `taskId`，因此合并场景不影响本节口径。
 
 不得继续使用旧原型字段：
 
