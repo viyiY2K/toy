@@ -306,6 +306,7 @@ Task 是产品的核心实体，表示一个待办事项或子任务。子任务
 | `schemaVersion` | `number` | 否 | 写入时取当前 schema 版本 | 该条记录写入时的 schema 版本号（见 §2.3）；取值约束：正整数，≥ 1 |
 | `deviceId` | `string \| null` | 是 | `null` | （可选预留）写入设备标识（见 §2.3，Phase 5+ 启用）；取值约束：null 或非空字符串 |
 | `syncedAt` | `string \| null` | 是 | `null` | （可选预留）最近一次同步成功时间（见 §2.3，Phase 5+ 启用）；取值约束：ISO 8601 带时区格式或 null |
+| `mergeGroupId` | `string \| null` | 是 | `null` | 当前所属合并组（MergeGroup，见 §3.8）id；`null` 表示未参与任何合并组；有值表示该任务当前正被并入某个合并番茄钟，与其他共享同一 `mergeGroupId` 的任务地位完全平等，不构成父子关系；取值约束：null 或合法的 MergeGroup UUID v7，且该 id 对应的 MergeGroup 的 `taskIds` 必须包含本 Task 的 id |
 
 **status 枚举值说明**
 
@@ -354,6 +355,7 @@ Task 是产品的核心实体，表示一个待办事项或子任务。子任务
 9. **单个 Task 总预估上限为 7 个番茄**。`estimatedPomodoros` 取值范围：1–7；1–4 属于正常颗粒度；5–6 属于偏大提醒区，允许写入，UI 可给出非阻断式软提醒（如"此任务已偏大，建议拆分"），该提醒不必触发 `prompt.shown`；7 为最大允许值，允许写入；`>7` 必须被数据层拒绝，不允许创建或调整到 8 个番茄以上的任务。三轮预估规则仍保留（index 最多为 3），但第三轮预估不是唯一拆分触发点。
 10. **达到 7 个有效标准 focus 后仍未完成，采用严格拆分路线（路线 A）**。第 7 个有效标准 focus 完成后，应等其对应 break 完成 / 跳过 / 经恢复流程收尾后，触发 `prompt.shown`（promptType=`'taskSplitSuggestion'`），并使该 Task 进入需要拆分 / 重新处理的状态（`splitNeeded` 语义见上方 status 枚举）。在用户完成拆分、完成归档，或通过明确的重新处理流程解除前，**不允许**该 Task 直接开启第 8 个标准 focus。用户关闭、跳过或暂不处理该提示**不等于解除限制**——`prompt.dismissed(taskSplitSuggestion)` 只记录提示被关闭，不放开第 8 个标准 focus（见 §7.15）。Phase 1 只要求数据结构、事件类型与字段可承载该规则，真实阻断逻辑在后续 Phase 接入。
 11. **`estimateRounds` 第一轮（`index=1`）在创建任务时写入**：用户创建任务时的初始预估也应作为 `estimateRounds` 第一轮记录写入，`index=1`，`pomodoros` 为创建时的初始总预估番茄数（与 `estimatedPomodoros` 一致），`occurredAt` 为创建时刻；后续二次 / 三次预估分别写 `index=2` / `index=3`（由 `task.estimateAdjusted` 承接，见 §7.1）。`estimateRounds[].pomodoros` 始终表示**该轮预估后的总预估番茄数**（不是增量）。历史旧数据 / 迁移数据若缺少第一轮记录，可在迁移说明中作为 legacy 兼容处理，但**新写入数据必须完整记录 `index=1`**。
+12. **`parentId`（子任务血缘）与 `mergeGroupId`（合并组归属）是两个互不影响的维度，可以同时非 null**。`parentId` 表达"为完成某个更大的事项而拆出的子任务"，用于事后回溯某母任务总共花了多少专注时间、拆了多少个子任务；`mergeGroupId` 表达"这个任务这次和其他任务被合并进同一个番茄钟一起做"，纯粹是执行层面的临时归并，不改变任务的血缘归属。一个子任务（`parentId` 非 null）可以被拉入合并组，一个顶层任务同样可以被拉入合并组；两个字段的写入与清空互不联动。
 
 **字段一致性约束**
 
