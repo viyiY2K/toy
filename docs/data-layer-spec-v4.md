@@ -1814,24 +1814,25 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 - extraFocus Session 由用户对 UnresolvedInterval 执行归类操作产生，不通过 `focus.*` 事件触发，相关事件见 §7.11（interval 域）。
 - v4 不支持暂停 / 恢复功能。focus Session 的合法状态仅为 `'active'` / `'completed'` / `'discarded'`；历史 v3 的 `focus.paused` / `focus.resumed` 不迁移。用户在专注中遇到打扰但继续专注时，由 §7.8 interrupt 事件记录；若因此放弃本次番茄，则结束为 `focus.discarded`。
 - v3 的 `focus.earlyEnded` 在 v4 中不定义。v4 只区分正常完成（响铃）与作废（中途停止）；提前停止的会话统一归入 `focus.discarded`，不计入有效番茄。
+- **合并番茄钟场景**（`Session.taskIds` 长度 ≥ 2，见 §3.3、§3.8）：`focus.started` / `focus.completed` / `focus.discarded` 按 `taskIds` 数组的每个成员**各写一条独立事件**（`taskId` 分别对应各自成员），共享同一个 `sessionId`、同一个 `mergeGroupId`，可共享同一个 `correlationId`——这是 §3.4 关键规则 5 明确允许的既有机制（一次操作可产生多条 Event），不为合并场景新增事件类型。
 
 ---
 
 #### focus.started（P1）
 
-**顶层关联字段**：`taskId`、`sessionId`（本次专注的 Session id）；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。
+**顶层关联字段**：`taskId`、`sessionId`（本次专注的 Session id）；若对应 `Session.mergeGroupId` 非 null，则同步填写 `mergeGroupId`；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。**合并番茄钟场景**：按 `Session.taskIds` 每个成员各写一条本事件，`taskId` 分别对应各自成员，其余顶层字段在这些事件间保持一致。
 
 **payload**：`{ pomodoroIndex, plannedDuration, taskEstimateAtStart }`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `pomodoroIndex` | `number` | 该 Task 下本次专注的发生序号（从 1 起递增），与 Session.pomodoroIndex 一致；discarded 历史 session 占用序号不回收（见 §3.3） |
+| `pomodoroIndex` | `number \| null` | 单任务场景：该 Task 下本次专注的发生序号（从 1 起递增），与 Session.pomodoroIndex 一致，discarded 历史 session 占用序号不回收（见 §3.3）；合并场景：`Session.pomodoroIndex` 固定 null，本字段改为按本条事件的 `taskId` 单独计算该 Task 自己的发生序号（查询口径见 §8） |
 | `plannedDuration` | `number` | 计划时长（秒），与 Session.plannedDuration 一致，取 `Settings.focusMinutes × 60` |
-| `taskEstimateAtStart` | `number` | 本次专注开始时 Task.estimatedPomodoros 的快照；用于事后分析"第几个番茄时完成了任务、预估是否准确" |
+| `taskEstimateAtStart` | `number` | 本次专注开始时，本条事件 `taskId` 对应 Task 的 `estimatedPomodoros` 快照；用于事后分析"第几个番茄时完成了任务、预估是否准确" |
 
-**说明**：用户选定任务并启动计时，新 Session（type=`'focus'`，status=`'active'`）写入存储时触发。`pomodoroIndex` 在 Session 写入时确定，discarded 历史 session 占用的序号不回收。
+**说明**：用户选定任务（或合并组）并启动计时，新 Session（type=`'focus'`，status=`'active'`）写入存储时触发。`pomodoroIndex` 语义见上方字段说明，discarded 历史 session 占用的序号不回收。
 
-**典型触发**：用户在计时页选定任务后点击开始，倒计时启动。
+**典型触发**：用户在计时页选定任务后点击开始，倒计时启动；用户从合并卡片启动一次涵盖多个任务的专注。
 
 **不应触发**：休息计时开始（→ §7.6 `break.started`）；仅浏览计时页未点击开始；App 重新打开后检测到已有进行中的 focus Session（Session 已存在，不重复触发本事件）；UnresolvedInterval 归类产生 extraFocus（→ §7.11）。
 
@@ -1839,19 +1840,19 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 
 #### focus.completed（P2）
 
-**顶层关联字段**：`taskId`、`sessionId`；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。
+**顶层关联字段**：`taskId`、`sessionId`；若对应 `Session.mergeGroupId` 非 null，则同步填写 `mergeGroupId`；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。**合并番茄钟场景**：按 `Session.taskIds` 每个成员各写一条本事件（见 §7.5 Domain 级说明）。
 
 **payload**：`{ pomodoroIndex, plannedDuration, actualDuration }`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `pomodoroIndex` | `number` | 该 Task 下本次专注的序号，与 Session.pomodoroIndex 一致 |
+| `pomodoroIndex` | `number \| null` | 语义同 `focus.started`：单任务场景与 Session.pomodoroIndex 一致，合并场景固定 null 语义下改由本条事件 `taskId` 单独计算 |
 | `plannedDuration` | `number` | 计划时长（秒），与 Session.plannedDuration 一致 |
 | `actualDuration` | `number` | 实际专注时长（秒），正常完成时约等于 plannedDuration；与 Session.actualDuration 一致 |
 
-**说明**：专注倒计时归零、响铃，Session status 变更为 `'completed'`，`endedAt` 写入时触发。本事件代表一个有效专注单元完成，计入有效番茄统计（统计口径见 §8）。完成后系统进入休息引导流程，休息相关事件见 §7.6。
+**说明**：专注倒计时归零、响铃，Session status 变更为 `'completed'`，`endedAt` 写入时触发。本事件代表一个有效专注单元完成，计入有效番茄统计（统计口径见 §8）；合并场景下，`taskIds` 内每个任务各自都记一个完整的有效标准 focus，不做平分（见 §3.3 关键规则 12、§8.3、§8.5）。完成后系统进入休息引导流程，休息相关事件见 §7.6。
 
-**典型触发**：25 分钟倒计时结束，响铃，Session 正常收尾。
+**典型触发**：25 分钟倒计时结束，响铃，Session 正常收尾；合并番茄钟到点响铃，涉及的每个任务各自记一次完成。
 
 **不应触发**：用户中途主动停止（→ `focus.discarded`）；休息计时完成（→ §7.6 `break.completed`）；App 关闭导致 Session 未正常收尾（→ 产生 UnresolvedInterval，见 §7.11）；用户手动勾选任务完成（→ §7.1 `task.completed`，两者无直接触发关系）。
 
@@ -1859,13 +1860,13 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 
 #### focus.discarded（P2）
 
-**顶层关联字段**：`taskId`、`sessionId`；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。
+**顶层关联字段**：`taskId`、`sessionId`；若对应 `Session.mergeGroupId` 非 null，则同步填写 `mergeGroupId`；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。**合并番茄钟场景**：按 `Session.taskIds` 每个成员各写一条本事件。
 
 **payload**：`{ pomodoroIndex, actualDuration, reason, triggeredByInterruptEventId }`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `pomodoroIndex` | `number` | 与 Session.pomodoroIndex 一致；作废 session 仍占用此序号，不回收（见 §3.3） |
+| `pomodoroIndex` | `number \| null` | 语义同 `focus.started`；作废 session 仍占用此序号，不回收（见 §3.3） |
 | `actualDuration` | `number` | 实际已经过时长（秒），与 Session.actualDuration 一致 |
 | `reason` | `string \| null` | 作废归因字段；枚举值：`'userInitiated'`（用户在计时页主动点击作废） / `'userConfirmedAfterRecovery'`（用户在恢复处理流程中确认该 focus 番茄作废，见 §7.11）；取值约束：必须取自此两值之一，或为 null |
 | `triggeredByInterruptEventId` | `string \| null` | （可选）本次 focus 作废**主要由哪一条 interrupt 事件触发**的因果关联；可空，默认 `null`；仅当用户在放弃确认流程中**明确确认**"本次放弃主要由某条 interrupt 触发"时，写入该 interrupt Event 的 id；用户未确认 / 跳过 / 不确定，或本次作废与打扰无明确因果关系时写 `null`；**不得**仅凭时间接近自动推断"最近一次 interrupt 导致作废"；取值约束：`null`，或同一 focus session（顶层 `sessionId` 相同）内已写入的 `interrupt.internal` / `interrupt.external` Event 的 UUID v7 id |
