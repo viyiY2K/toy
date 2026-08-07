@@ -378,14 +378,30 @@ describe('S10 当前任务派生视图', () => {
       type: 'focus', status: 'completed', taskId: pomodoroTask.id,
       plannedDuration: 1500, actualDuration: 1500, pomodoroIndex: 1,
     });
+    const manualContextSession = makeSession({
+      now: manualCompletedAt,
+      startedAt: '2027-04-04T08:00:00+08:00',
+      endedAt: manualCompletedAt,
+      timezone: TIMEZONE,
+      type: 'focus',
+      status: 'discarded',
+      taskId: manualTask.id,
+      plannedDuration: 1500,
+      actualDuration: 60,
+      pomodoroIndex: 1,
+    });
     await executeAtomicWrite(
       { storeNames: [STORE.tasks, STORE.sessions, EVENT_STORE], now, timezone: TIMEZONE },
       async (transaction) => {
         await transaction.put(STORE.tasks, manualTask);
         await transaction.put(STORE.tasks, pomodoroTask);
         await transaction.put(STORE.sessions, focusSession);
+        await transaction.put(STORE.sessions, manualContextSession);
         await transaction.appendEvent(makeEvent({
           now: manualCompletedAt, timezone: TIMEZONE, type: 'task.completed', taskId: manualTask.id,
+          // v4 allows manual completion to carry the surrounding Session as context; it must
+          // still render the task completion instant instead of impersonating pomodoro completion.
+          sessionId: manualContextSession.id,
           correlationId: transaction.correlationId,
           payload: { completionSource: 'manual', completedAt: manualCompletedAt, validFocusCountAtCompletion: 0 },
         }));

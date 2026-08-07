@@ -104,7 +104,8 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     const completionEvent = latestCompletionEventByTaskId.get(task.id);
     if (!completionEvent) continue;
     const session = completionEvent.sessionId ? sessionById.get(completionEvent.sessionId) : undefined;
-    completionTimingByTaskId[task.id] = session?.endedAt
+    completionTimingByTaskId[task.id] =
+      completionEvent.payload.completionSource === 'pomodoro' && session?.endedAt
       ? { timezone: session.timezone, focusStartedAt: session.startedAt, focusEndedAt: session.endedAt }
       : { timezone: completionEvent.timezone, focusStartedAt: null, focusEndedAt: null };
   }
