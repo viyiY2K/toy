@@ -1,10 +1,22 @@
-import { dataStore, STORE } from '../dataStore';
+import { dataStore, EVENT_STORE, STORE } from '../dataStore';
 import {
   ensureCurrentAppDateInitialized,
   type InitializationClock,
 } from '../initialization/currentAppDate';
-import type { DayPlan, Session, Settings, Task } from '../schema';
+import type { DayPlan, Event, IsoDateTime, Session, Settings, Task } from '../schema';
 import { deriveAppDate, type IsoDate } from '../time';
+
+/**
+ * 已完成任务的完成时刻展示口径（只用于渲染，不参与统计口径）：
+ * 番茄完成优先展示那次标准 focus 的起止时间段（源自 `task.completed` 事件的 sessionId 关联 Session）；
+ * 手动完成没有关联 Session，退回展示完成事件本身的 occurredAt（即 task.completedAt）。
+ * `timezone` 一律取自事实记录自带的时区，不用当前设备时区重算（红线 5）。
+ */
+export interface CompletedTaskTiming {
+  timezone: string;
+  focusStartedAt: IsoDateTime | null;
+  focusEndedAt: IsoDateTime | null;
+}
 
 export interface CurrentTaskViews {
   appDate: IsoDate;
@@ -19,6 +31,7 @@ export interface CurrentTaskViews {
   archivedTasks: Task[];
   completedFocusCountToday: number;
   completedValidFocusCountByTaskId: Record<string, number>;
+  completionTimingByTaskId: Record<string, CompletedTaskTiming>;
   remainingPomodorosByTaskId: Record<string, number>;
   todayPlanningCapacityRemaining: number;
 }
@@ -37,10 +50,11 @@ function isCurrentStatus(task: Task): boolean {
  */
 export async function loadCurrentTaskViews(clock: InitializationClock): Promise<CurrentTaskViews> {
   const initialized = await ensureCurrentAppDateInitialized(clock);
-  const [storedDayPlan, tasks, sessions] = await Promise.all([
+  const [storedDayPlan, tasks, sessions, events] = await Promise.all([
     dataStore.get<DayPlan>(STORE.dayPlans, initialized.dayPlan.id),
     dataStore.getAll<Task>(STORE.tasks),
     dataStore.getAll<Session>(STORE.sessions),
+    dataStore.getAll<Event>(EVENT_STORE),
   ]);
   if (!storedDayPlan || storedDayPlan.appDate !== initialized.appDate) {
     throw new Error('当前 appDate 的有效 DayPlan 在初始化后不可用');
@@ -75,6 +89,26 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
       if (rightTodayIndex >= 0) return 1;
       return compareListOrder(left, right);
     });
+
+  const sessionById = new Map(sessions.map((session) => [session.id, session]));
+  const latestCompletionEventByTaskId = new Map<string, Event<'task.completed'>>();
+  for (const event of events) {
+    if (event.type !== 'task.completed' || event.taskId === null) continue;
+    const existing = latestCompletionEventByTaskId.get(event.taskId);
+    if (!existing || Date.parse(event.occurredAt) > Date.parse(existing.occurredAt)) {
+      latestCompletionEventByTaskId.set(event.taskId, event);
+    }
+  }
+  const completionTimingByTaskId: Record<string, CompletedTaskTiming> = {};
+  for (const task of completedTasks) {
+    const completionEvent = latestCompletionEventByTaskId.get(task.id);
+    if (!completionEvent) continue;
+    const session = completionEvent.sessionId ? sessionById.get(completionEvent.sessionId) : undefined;
+    completionTimingByTaskId[task.id] = session?.endedAt
+      ? { timezone: session.timezone, focusStartedAt: session.startedAt, focusEndedAt: session.endedAt }
+      : { timezone: completionEvent.timezone, focusStartedAt: null, focusEndedAt: null };
+  }
+
   const pendingTriageTasks = tasks
     .filter(
       (task) =>
@@ -164,6 +198,7 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     archivedTasks,
     completedFocusCountToday,
     completedValidFocusCountByTaskId,
+    completionTimingByTaskId,
     remainingPomodorosByTaskId,
     todayPlanningCapacityRemaining,
   };
