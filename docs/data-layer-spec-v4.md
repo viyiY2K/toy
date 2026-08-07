@@ -1179,6 +1179,7 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 | `session` | 当前不定义事件 | §7.16 | 计时行为归 `focus` / `break`；本域当前无事件 |
 | `error` | 运行时异常 | §7.17 | v4 新增；不进用户统计；不允许 `error.migrationFailed`（迁移失败见 `data.migrationFailed`） |
 | `diagnosticLog` | 用户主动导出诊断日志（排障用） | §7.18 | v4 新增；不进用户统计；与 §7.14 `data.*` 全量数据导出分离 |
+| `mergeGroup` | 合并番茄钟（多任务合并进同一 focus Session）的创建、成员增减、预估追加、解散 | §7.19 | v4.1 新增；对应 §3.8 MergeGroup 实体 |
 
 ### 6.3 Action 动词规范
 
@@ -1231,6 +1232,7 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 | `loaded` | 加载演示数据（§7.14 demo 域）|
 | `dataWriteFailed` | 本地数据库写入操作失败（§7.17 error 域）|
 | `unexpectedState` | 系统检测到数据处于违反业务约束的意外状态（§7.17 error 域）|
+| `dissolved` | 合并组生命周期正常终结，成员归属清空但历史记录保留（§7.19 mergeGroup 域；v4.1 新增，区别于 `deleted`——解散不是软删除，见 §3.8 关键规则 7）|
 
 **复合 action 规则**：§7 中允许使用由业务对象名 + §6.3 基础 action 组合而成的复合 action，例如 `budgetAccepted` = `budget` + `accepted`，`deductionRemoved` = `deduction` + `removed`，`estimateAdjusted` = `estimate` + `adjusted`，`taskAdded` = `task` + `added`。此类复合 action 只要基础动作词已在本节列表中登记，即视为合法，无需逐个单列。若未来引入无法由现有基础动作词解释的新 action，仍必须同步补入本节列表。
 
