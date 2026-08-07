@@ -1,6 +1,7 @@
 import { detectRecoveryInterval, loadCurrentTimerViews } from '../data/index';
 import { ActivitiesView } from './ActivitiesView';
 import { Icon } from './Icon';
+import { SettingsView } from './SettingsView';
 import { StatsView } from './StatsView';
 import { TimerView } from './TimerView';
 import {
@@ -160,6 +161,12 @@ export function App() {
             active={page === 'stats'}
             onClick={() => setPage('stats')}
           />
+          <NavButton
+            icon="settings"
+            label="设置"
+            active={page === 'settings'}
+            onClick={() => setPage('settings')}
+          />
         </nav>
         <div className="sidebar-footer">
           {snapshot && (
@@ -190,6 +197,12 @@ export function App() {
           />
         ) : page === 'stats' ? (
           <StatsView currentAppDate={snapshot.taskViews.appDate}/>
+        ) : page === 'settings' ? (
+          <SettingsView
+            settings={snapshot.taskViews.settings}
+            runCommand={runCommand}
+            busy={busy}
+          />
         ) : (
           <ActivitiesView
             views={snapshot.taskViews}

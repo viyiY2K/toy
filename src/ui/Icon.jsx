@@ -25,6 +25,7 @@ export function Icon({ name, size = 16, stroke = 1.5 }) {
     case 'coffee': return <svg {...props}><path d="M4 9h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V9z"/><path d="M16 11h2a2 2 0 0 1 0 4h-2"/><path d="M7 3v3M10 4v2M13 3v3"/></svg>;
     case 'urgent': return <svg {...props}><path d="M12 4L2 20h20L12 4z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>;
     case 'info': return <svg {...props}><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>;
+    case 'settings': return <svg {...props}><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="2" y1="14" x2="6" y2="14"/><line x1="10" y1="8" x2="14" y2="8"/><line x1="18" y1="16" x2="22" y2="16"/></svg>;
     default: return <svg {...props}/>;
   }
 }
