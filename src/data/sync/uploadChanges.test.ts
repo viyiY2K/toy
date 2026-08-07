@@ -78,10 +78,16 @@ describe('uploadChanges (S4)', () => {
     expect(taskRows).toHaveLength(1);
     expect(taskRows[0]).toMatchObject({ title: '待上传任务', status: 'active' });
     expect(taskRows[0]).not.toHaveProperty('synced_at');
+    // 回归测试：上传 payload 里的 device_id 必须是本机 id，不能是本地记录当前仍为 null 的
+    // 旧值——否则远端这一行会永久带着 device_id=null，导致其它设备下载它时在 'sync' 模式
+    // 校验（deviceId 必须非空）上失败，见本次修复。
+    expect(taskRows[0]!.device_id).not.toBeNull();
+    expect(typeof taskRows[0]!.device_id).toBe('string');
 
     const stored = await dataStore.get<Task>(STORE.tasks, created.value.id);
     expect(stored!.syncedAt).toBe(at(5));
     expect(stored!.deviceId).not.toBeNull();
+    expect(stored!.deviceId).toBe(taskRows[0]!.device_id); // 本地回写的 deviceId 和实际上传的一致
 
     const taskEntity = result.entities.find((entity) => entity.store === STORE.tasks)!;
     expect(taskEntity.succeeded).toBeGreaterThanOrEqual(1);

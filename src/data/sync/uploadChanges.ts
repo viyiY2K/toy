@@ -86,7 +86,11 @@ async function uploadEntityStore<S extends SyncableStoreName>(
   const pending = all.filter((record) => isStale(record.updatedAt, record.syncedAt));
   if (pending.length === 0) return { store, attempted: 0, succeeded: 0, failedIds: [] };
 
-  const rows = pending.map((record) => toRemoteEntityRow(store, record));
+  // device_id 在上传 payload 里恒定盖成本机 id，不能照抄本地记录当前存的值——一条从未
+  // 同步过的记录，本地 deviceId 在这次上传发生的那一刻仍然是 null（写回要等上传成功之后才
+  // 发生），如果原样传上去，remote 那一行就会永久带着 device_id=null，导致其它设备下载它
+  // 时在 'sync' 模式校验（deviceId 必须非空）上失败——这是本单元开发时踩到的真实 bug。
+  const rows = pending.map((record) => ({ ...toRemoteEntityRow(store, record), device_id: deviceId }));
   const table = REMOTE_TABLE_BY_STORE[store];
   const { error } = await client.from(table).upsert(rows, { onConflict: 'id' });
 
