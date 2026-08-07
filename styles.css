@@ -1339,6 +1339,11 @@ input[type="checkbox"]:checked::before {
   font-weight: 400;
 }
 .stats-row > small { grid-column: 1; color: var(--muted); font-size: 11px; }
+.stats-row-warning, .stats-budget-days .stats-row-warning {
+  color: var(--accent-ink);
+  cursor: help;
+  font-size: 11px;
+}
 /* 「1 小时 30 分钟」= 两段，段间留一点气口，段内单位紧跟数字 */
 .duration-part + .duration-part { margin-left: 6px; }
 .stats-row > strong .unit { font-size: 11px; color: var(--muted); margin-left: 3px; }

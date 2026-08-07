@@ -48,10 +48,10 @@ function Rows({ children }) {
   return <div className="stats-rows">{children}</div>;
 }
 
-function Row({ label, value, detail = null, title = null }) {
+function Row({ label, value, detail = null, title = null, warning = null }) {
   return (
     <div className="stats-row" title={title ?? undefined}>
-      <span>{label}</span>
+      <span>{label}{warning && <span className="stats-row-warning" title={warning}> ⚠</span>}</span>
       <strong>{value}</strong>
       {detail && <small>{detail}</small>}
     </div>
@@ -155,6 +155,8 @@ function Dashboard({ stats }) {
   const interruptValues = interrupts.dailyTrend.map(({ total }) => total);
   const budgetDays = budget.dailyTrend.filter(({ budgetPomodoros, validPomodoros }) =>
     budgetPomodoros !== null || validPomodoros > 0);
+  const changedAppDates = new Set(session.timerSettingChanges.map(({ appDate }) => appDate));
+  const budgetChangeWarning = '当天计时参数变过，这一行的对比数字受番茄大小变化影响，不代表专注状态变差';
   const dateLabels = session.days.map(({ appDate }) => appDate.slice(5));
   // 逐日趋势图在日视图里退化成「一根柱 / 一个点」，除了占版面没有任何信息；
   // 反过来，日内能量点在周/月视图里是 7~31 个芯片，和上面那条折线讲同一件事。
@@ -325,6 +327,7 @@ function Dashboard({ stats }) {
                   label={day.appDate}
                   value={`${day.validPomodoros} / ${day.budgetPomodoros === null ? '未设' : day.budgetPomodoros}`}
                   detail={`用掉 ${formatRatio(day.usageRate)}`}
+                  warning={changedAppDates.has(day.appDate) ? budgetChangeWarning : null}
                 />
               ))}
             </Rows>
@@ -332,7 +335,12 @@ function Dashboard({ stats }) {
             <div className="stats-budget-days">
               {budgetDays.map((day) => (
                 <div key={day.appDate}>
-                  <span>{day.appDate}</span>
+                  <span>
+                    {day.appDate}
+                    {changedAppDates.has(day.appDate) && (
+                      <span className="stats-row-warning" title={budgetChangeWarning}> ⚠</span>
+                    )}
+                  </span>
                   <strong>{day.validPomodoros} / {day.budgetPomodoros === null ? '未设' : day.budgetPomodoros}</strong>
                   <small>{formatRatio(day.usageRate)}</small>
                 </div>
