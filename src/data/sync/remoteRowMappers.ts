@@ -187,3 +187,155 @@ export function toRemoteEventRow(event: Event): RemoteRow {
     correlation_id: event.correlationId,
   };
 }
+
+/**
+ * 远端行 → 本地实体（S5，下载方向的反向映射）。
+ *
+ * `syncedAt` 不取自远端（远端根本没有这一列）——它是"这台设备什么时候确认同步过这条记录"，
+ * 传入调用方本次下载动作发生的本地时刻；`deviceId` 取远端行的 device_id
+ * （谁最后一次把这条记录写上去的，是跨端共享的溯源信息，和 syncedAt 语义不同）。
+ */
+export function fromRemoteEntityRow<S extends SyncableStoreName>(
+  store: S,
+  row: RemoteRow,
+  syncedAt: string,
+): SyncableEntityMap[S] {
+  const base = {
+    id: row.id as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    schemaVersion: row.schema_version as number,
+    deletedAt: row.deleted_at as string | null,
+    deviceId: row.device_id as string | null,
+    syncedAt,
+  };
+  switch (store) {
+    case STORE.tasks: {
+      const entity: SyncableEntityMap['tasks'] = {
+        ...base,
+        parentId: row.parent_id as string | null,
+        title: row.title as string,
+        status: row.status as SyncableEntityMap['tasks']['status'],
+        outcome: row.outcome as SyncableEntityMap['tasks']['outcome'],
+        completionSource: row.completion_source as SyncableEntityMap['tasks']['completionSource'],
+        estimatedPomodoros: row.estimated_pomodoros as number,
+        estimateRounds: row.estimate_rounds as SyncableEntityMap['tasks']['estimateRounds'],
+        actualWorkNote: row.actual_work_note as string | null,
+        note: row.note as string | null,
+        sortIndex: row.sort_index as number,
+        completedAt: row.completed_at as string | null,
+        archivedAt: row.archived_at as string | null,
+        deletedReason: row.deleted_reason as SyncableEntityMap['tasks']['deletedReason'],
+        metadata: row.metadata as SyncableEntityMap['tasks']['metadata'],
+        lineageId: row.lineage_id as string,
+        splitFromTaskId: row.split_from_task_id as string | null,
+        splitIndex: row.split_index as number,
+      };
+      return entity as SyncableEntityMap[S];
+    }
+    case STORE.dayPlans: {
+      const entity: SyncableEntityMap['dayPlans'] = {
+        ...base,
+        appDate: row.app_date as string,
+        localDate: row.local_date as string,
+        timezone: row.timezone as string,
+        taskIds: row.task_ids as string[],
+        budgetPomodoros: row.budget_pomodoros as number,
+        budgetMode: row.budget_mode as SyncableEntityMap['dayPlans']['budgetMode'],
+        estimate: row.estimate as SyncableEntityMap['dayPlans']['estimate'],
+        settingsSnapshot: row.settings_snapshot as SyncableEntityMap['dayPlans']['settingsSnapshot'],
+      };
+      return entity as SyncableEntityMap[S];
+    }
+    case STORE.sessions: {
+      const entity: SyncableEntityMap['sessions'] = {
+        ...base,
+        type: row.type as SyncableEntityMap['sessions']['type'],
+        status: row.status as SyncableEntityMap['sessions']['status'],
+        taskId: row.task_id as string | null,
+        startedAt: row.started_at as string,
+        endedAt: row.ended_at as string | null,
+        plannedDuration: row.planned_duration as number | null,
+        actualDuration: row.actual_duration as number | null,
+        pomodoroIndex: row.pomodoro_index as number | null,
+        skipKind: row.skip_kind as SyncableEntityMap['sessions']['skipKind'],
+        originIntervalId: row.origin_interval_id as string | null,
+        sourceFocusSessionId: row.source_focus_session_id as string | null,
+        suggestedRest: row.suggested_rest as string | null,
+        actualRest: row.actual_rest as string | null,
+        localDate: row.local_date as string,
+        timezone: row.timezone as string,
+        dayPlanId: row.day_plan_id as string | null,
+      };
+      return entity as SyncableEntityMap[S];
+    }
+    case STORE.energyRecords: {
+      const entity: SyncableEntityMap['energyRecords'] = {
+        ...base,
+        energyLevel: row.energy_level as number,
+        mood: row.mood as number | null,
+        source: row.source as SyncableEntityMap['energyRecords']['source'],
+        sessionId: row.session_id as string | null,
+        note: row.note as string | null,
+        occurredAt: row.occurred_at as string,
+        localDate: row.local_date as string,
+        timezone: row.timezone as string,
+      };
+      return entity as SyncableEntityMap[S];
+    }
+    case STORE.unresolvedIntervals: {
+      const entity: SyncableEntityMap['unresolvedIntervals'] = {
+        ...base,
+        source: row.source as SyncableEntityMap['unresolvedIntervals']['source'],
+        startedAt: row.started_at as string,
+        endedAt: row.ended_at as string,
+        status: row.status as SyncableEntityMap['unresolvedIntervals']['status'],
+        localDate: row.local_date as string,
+        timezone: row.timezone as string,
+        classifiedAt: row.classified_at as string | null,
+        ignoredAt: row.ignored_at as string | null,
+        ignoreReason: row.ignore_reason as string | null,
+      };
+      return entity as SyncableEntityMap[S];
+    }
+    case STORE.settings: {
+      const entity: SyncableEntityMap['settings'] = {
+        ...base,
+        focusMinutes: row.focus_minutes as number,
+        shortBreakMinutes: row.short_break_minutes as number,
+        longBreakMinutes: row.long_break_minutes as number,
+        longBreakEvery: row.long_break_every as number,
+        restSuggestions: row.rest_suggestions as SyncableEntityMap['settings']['restSuggestions'],
+        dailyTaskTemplates: row.daily_task_templates as SyncableEntityMap['settings']['dailyTaskTemplates'],
+        lifetimePomodoroBaseline: row.lifetime_pomodoro_baseline as number,
+        restSuggestionDisplayMode:
+          row.rest_suggestion_display_mode as SyncableEntityMap['settings']['restSuggestionDisplayMode'],
+        appDayStartOffsetMinutes: row.app_day_start_offset_minutes as number,
+      };
+      return entity as SyncableEntityMap[S];
+    }
+    default:
+      throw new Error(`未知的可同步 store: ${String(store)}`);
+  }
+}
+
+/** Event：远端行 → 本地实体。Event 没有 syncedAt/deviceId 字段（append-only，同 toRemoteEventRow）。 */
+export function fromRemoteEventRow(row: RemoteRow): Event {
+  return {
+    id: row.id as string,
+    createdAt: row.created_at as string,
+    schemaVersion: row.schema_version as number,
+    type: row.type as Event['type'],
+    occurredAt: row.occurred_at as string,
+    localDate: row.local_date as string,
+    timezone: row.timezone as string,
+    payload: row.payload as Event['payload'],
+    taskId: row.task_id as string | null,
+    sessionId: row.session_id as string | null,
+    dayPlanId: row.day_plan_id as string | null,
+    energyRecordId: row.energy_record_id as string | null,
+    unresolvedIntervalId: row.unresolved_interval_id as string | null,
+    settingsId: row.settings_id as string | null,
+    correlationId: row.correlation_id as string | null,
+  } as Event;
+}
