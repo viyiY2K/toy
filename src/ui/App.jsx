@@ -4,6 +4,7 @@ import { Icon } from './Icon';
 import { SettingsView } from './SettingsView';
 import { StatsView } from './StatsView';
 import { TimerView } from './TimerView';
+import { APP_VERSION } from './version';
 import {
   shouldDetectAppReopened,
   pageForTimerSnapshot,
@@ -137,7 +138,10 @@ export function App() {
         <div className="brand">
           <div className="brand-mark"/>
           <div>
-            <span className="brand-title">番茄<span className="brand-badge">Beta</span></span>
+            <span className="brand-title">
+              番茄<span className="brand-badge">Beta</span>
+              <span className="brand-version">v{APP_VERSION}</span>
+            </span>
             <small>觉察 · 计划</small>
           </div>
         </div>

@@ -133,6 +133,13 @@ input[type="checkbox"]:checked::before {
   line-height: 1.6;
   transform: translateY(-0.5px);
 }
+.brand-version {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted-2);
+  font-family: "JetBrains Mono", monospace;
+}
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav-item {
   display: flex; align-items: center; justify-content: space-between;
