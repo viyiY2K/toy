@@ -49,12 +49,26 @@ export interface SessionStatsDay {
   rest: RestStats;
 }
 
+/**
+ * 统计范围内的一次计时参数变更（`settings.timerUpdated`，v4 §7.12）。
+ * 只用于提示用户"番茄大小变了、个数不再跨前后可比"，不改变任何统计口径本身
+ * ——有效番茄数 / 完整循环数一律按 Session 结构判定，与 focus/break 时长无关。
+ */
+export interface TimerSettingChangeEntry {
+  appDate: IsoDate;
+  occurredAt: string;
+  field: 'focusMinutes' | 'shortBreakMinutes' | 'longBreakMinutes';
+  oldValue: number;
+  newValue: number;
+}
+
 export interface SessionStats {
   range: StatsRange;
   focus: FocusStats;
   completeCycles: number;
   rest: RestStats;
   days: SessionStatsDay[];
+  timerSettingChanges: TimerSettingChangeEntry[];
   lifetime: {
     baselineCompleteCycles: number;
     inToolCompleteCycles: number;
@@ -149,6 +163,26 @@ function workEndedFocusIds(events: readonly Event[]): Set<string> {
 
 function emptySkipCounts(): Record<SkipKind, number> {
   return { explicitSkip: 0, noResponse: 0, missed: 0, appClosed: 0 };
+}
+
+function timerSettingChangesInRange(
+  events: readonly Event[],
+  settings: Settings,
+  range: StatsRange,
+): TimerSettingChangeEntry[] {
+  return events
+    .filter(
+      (event): event is Event<'settings.timerUpdated'> => event.type === 'settings.timerUpdated',
+    )
+    .map((event) => ({
+      appDate: statsAppDate(event.occurredAt, event.timezone, settings.appDayStartOffsetMinutes),
+      occurredAt: event.occurredAt,
+      field: event.payload.field,
+      oldValue: event.payload.oldValue,
+      newValue: event.payload.newValue,
+    }))
+    .filter((entry) => statsRangeContains(range, entry.appDate))
+    .sort((left, right) => Date.parse(left.occurredAt) - Date.parse(right.occurredAt));
 }
 
 function aggregateRange(
@@ -303,6 +337,7 @@ export function aggregateSessionStats(input: AggregateSessionStatsInput): Sessio
     range: input.range,
     ...rangeMetrics,
     days,
+    timerSettingChanges: timerSettingChangesInRange(input.events, input.settings, input.range),
     lifetime: {
       baselineCompleteCycles: input.settings.lifetimePomodoroBaseline,
       inToolCompleteCycles: cycleFocusIds.size,
