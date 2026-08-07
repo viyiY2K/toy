@@ -552,7 +552,7 @@ conservativePomodoros = 完整组番茄数 + 零头番茄数
 
 ### 3.3 Session（专注与休息会话）
 
-Session 表示一次用户行为执行单元，可以是一段专注计时（type 为 `focus` 或 `extraFocus`），或一次休息（type 为 `shortBreak`、`longBreak` 或 `extraRest`）。5 种 type 共用同一套字段；对某 type 不适用的字段，存储为 null，而非省略该字段。
+Session 表示一次用户行为执行单元，可以是一段专注计时（type 为 `focus` 或 `extraFocus`），或一次休息（type 为 `shortBreak`、`longBreak` 或 `extraRest`）。5 种 type 共用同一套字段；对某 type 不适用的字段，标量字段存储为 null、数组字段（`taskIds`）存储为空数组 `[]`，而非省略该字段。
 
 **完整字段定义**
 
@@ -561,12 +561,13 @@ Session 表示一次用户行为执行单元，可以是一段专注计时（typ
 | `id` | `string` (UUID v7) | 否 | 写入时生成 | 实体唯一标识；取值约束：UUID v7 格式 |
 | `type` | `string`（枚举） | 否 | 无 | 会话类型，枚举值见下方；取值约束：取值为 `'focus'` / `'shortBreak'` / `'longBreak'` / `'extraFocus'` / `'extraRest'` 之一 |
 | `status` | `string`（枚举） | 否 | `'active'` | 会话状态；focus 合法值为 `'active'` / `'completed'` / `'discarded'`；extraFocus 固定为 `'completed'`；shortBreak / longBreak 合法值为 `'active'` / `'completed'` / `'skipped'`；extraRest 固定为 `'completed'`；取值约束：必须取自该 type 对应的合法集合，且不得将 extraFocus / extraRest 写入其他状态。 |
-| `taskId` | `string \| null` | 是 | 见含义说明 | 关联任务 ID；focus / extraFocus 必填（不允许 null，产品不支持无任务自由专注）；shortBreak / longBreak / extraRest 固定 null；取值约束：null 或合法的 Task UUID v7 |
+| `taskIds` | `string[]` | 否 | `[]` | 关联任务 id 列表；focus 时长度必须 ≥ 1（不允许空数组，产品不支持无任务自由专注）——单任务专注时数组只有 1 个元素，合并番茄钟场景下数组可包含 2 个及以上元素，元素间完全平等、不区分主次（见 §3.8 MergeGroup）；extraFocus 不支持合并，长度固定为 1；shortBreak / longBreak / extraRest 固定为空数组 `[]`；取值约束：数组元素均为合法 Task UUID v7，数组内不允许重复 |
+| `mergeGroupId` | `string \| null` | 是 | `null` | 若本次专注由某个合并组（MergeGroup，见 §3.8）触发，则指向该合并组 id；未参与合并的普通单任务专注、以及 extraFocus / 全部休息类型固定为 null；取值约束：null 或合法的 MergeGroup UUID v7；非 null 时 `taskIds` 长度必须 ≥ 2 |
 | `startedAt` | `string` | 否 | 写入时生成 | session 开始时刻（session 创建即开始计时）；5 种 type 均必填；取值约束：ISO 8601 带时区格式，不允许 null |
 | `endedAt` | `string \| null` | 是 | `null` | session 终结时刻；status=`'active'` 时为 null；status ∈ {`'completed'`, `'discarded'`, `'skipped'`} 时必须非 null；extraFocus / extraRest（status 恒为 `'completed'`）的 endedAt 始终非 null；取值约束：ISO 8601 带时区格式或 null |
 | `plannedDuration` | `number \| null` | 是 | `null` | 计划时长，单位秒；focus / shortBreak / longBreak 必填，取写入时 Settings 对应时长配置（如 focus 默认 1500 秒 = 25 分钟）；extraFocus / extraRest 无计划时长概念，固定为 null；取值约束：type ∈ {`'focus'`, `'shortBreak'`, `'longBreak'`} 时必须为正整数（> 0）；type ∈ {`'extraFocus'`, `'extraRest'`} 时必须为 null |
 | `actualDuration` | `number \| null` | 是 | `null` | 实际持续时长，单位秒；status=`'active'` 时为 null；status=`'skipped'` 时固定存 `0`（明确表示 0 秒，区别于 null 的"未知"语义）；status ∈ {`'completed'`, `'discarded'`} 时为实际经过秒数；type=`'extraFocus'` 或 type=`'extraRest'` 时，由于 status 固定为 `'completed'`，actualDuration 必须为正整数（> 0），不得为 null 或 0；取值约束：null、0 或正整数 |
-| `pomodoroIndex` | `number \| null` | 是 | `null` | 该 Task 下当前 focus 的发生序号，从 1 起递增；focus 必填；shortBreak / longBreak / extraFocus / extraRest 固定 null；discarded 的 focus 也占用序号，不回收（序号记发生顺序，不等于有效番茄数）；取值约束：正整数（≥ 1）或 null |
+| `pomodoroIndex` | `number \| null` | 是 | `null` | 单任务专注（`taskIds` 长度为 1）时，该 Task 下当前 focus 的发生序号，从 1 起递增；合并番茄钟（`taskIds` 长度 ≥ 2）时固定为 null——多任务不再适用单一序号语义，各任务自己的发生序号由查询层按 §8 口径分别统计；shortBreak / longBreak / extraFocus / extraRest 固定 null；discarded 的单任务 focus 也占用序号，不回收（序号记发生顺序，不等于有效番茄数）；取值约束：正整数（≥ 1）或 null |
 | `skipKind` | `string \| null` | 是 | `null` | 休息未完成的原因；仅 shortBreak / longBreak 在 status=`'skipped'` 时适用（此时必须非 null），status=`'completed'` 时必须为 null；extraRest 虽属休息类，但 status 固定为 `'completed'`，因此 skipKind 固定 null；focus / extraFocus 固定 null；枚举值见下方；取值约束：null 或枚举值之一 |
 | `originIntervalId` | `string \| null` | 是 | `null` | 产生该 extra session 的 UnresolvedInterval 的 id；extraFocus / extraRest 必填（不允许 null）；同一 UnresolvedInterval 拆多 segment 时多条 extra session 可共享同一 originIntervalId；focus / shortBreak / longBreak 固定 null；取值约束：null 或合法的 UnresolvedInterval UUID v7 |
 | `sourceFocusSessionId` | `string \| null` | 是 | `null` | 触发该休息的上一段 focus session 的 id；shortBreak / longBreak 必填；focus / extraFocus / extraRest 固定 null；引用目标必须是一条已存在的标准 focus Session（type=`'focus'` 且 status=`'completed'`），不得引用 extraFocus、shortBreak、longBreak、extraRest，也不得引用 status=`'active'` 或 status=`'discarded'` 的 focus；取值约束：null 或合法的 focus Session UUID v7（且该 Session 满足 type=`'focus'` 且 status=`'completed'`） |
@@ -630,12 +631,13 @@ shortBreak / longBreak / extraRest 适用值：
 | `id` | 必填 | 必填 | 必填 | 必填 | 必填 |
 | `type` | 必填 | 必填 | 必填 | 必填 | 必填 |
 | `status` | 必填 | 必填 | 必填 | 必填（固定 `'completed'`） | 必填（固定 `'completed'`） |
-| `taskId` | 必填 | 不适用（固定 null） | 不适用（固定 null） | 必填 | 不适用（固定 null） |
+| `taskIds` | 必填（长度 ≥ 1） | 不适用（固定 `[]`） | 不适用（固定 `[]`） | 必填（长度固定为 1） | 不适用（固定 `[]`） |
+| `mergeGroupId` | 可选 | 不适用（固定 null） | 不适用（固定 null） | 不适用（固定 null） | 不适用（固定 null） |
 | `startedAt` | 必填 | 必填 | 必填 | 必填 | 必填 |
 | `endedAt` | 可选 | 可选 | 可选 | 必填 | 必填 |
 | `plannedDuration` | 必填 | 必填 | 必填 | 不适用（固定 null） | 不适用（固定 null） |
 | `actualDuration` | 可选 | 可选 | 可选 | 必填（正整数 > 0） | 必填（正整数 > 0） |
-| `pomodoroIndex` | 必填 | 不适用（固定 null） | 不适用（固定 null） | 不适用（固定 null） | 不适用（固定 null） |
+| `pomodoroIndex` | 单任务时必填，合并时固定 null | 不适用（固定 null） | 不适用（固定 null） | 不适用（固定 null） | 不适用（固定 null） |
 | `skipKind` | 不适用（固定 null） | 可选 | 可选 | 不适用（固定 null） | 不适用（固定 null） |
 | `originIntervalId` | 不适用（固定 null） | 不适用（固定 null） | 不适用（固定 null） | 必填 | 必填 |
 | `sourceFocusSessionId` | 不适用（固定 null） | 必填 | 必填 | 不适用（固定 null） | 不适用（固定 null） |
@@ -656,13 +658,15 @@ shortBreak / longBreak / extraRest 适用值：
 1. 5 种 type 共用同一套字段；不适用字段存 null，不省略。数据层写入时，所有 type 的字段集完全相同。
 2. status 枚举按 type 分流：focus / extraFocus 只可取 `'active'` / `'completed'` / `'discarded'`；shortBreak / longBreak / extraRest 只可取 `'active'` / `'completed'` / `'skipped'`；两组状态集不得混用。
 3. extraFocus 和 extraRest 的 status 恒为 `'completed'`，写入时直接设定，不经过 `'active'` 状态。
-4. 产品不支持无任务的自由专注；focus 的 taskId 不允许为 null。extraFocus 的 taskId 继承归类时确认的 Task（已有 Task 或快捷创建的新 Task）。
-5. pomodoroIndex 记该 Task 下 focus 的发生序号，从 1 起递增；discarded 的 focus 占用序号不回收。pomodoroIndex 不等于有效番茄数（有效番茄统计规则见 §8.3）。
+4. 产品不支持无任务的自由专注；focus 的 `taskIds` 长度必须 ≥ 1。单任务专注时数组只有 1 个元素；合并番茄钟场景下数组可以包含 2 个及以上元素，元素间完全平等、不分主次，具体规则见 §3.8 MergeGroup。extraFocus 不支持合并，`taskIds` 长度固定为 1，继承归类时确认的 Task（已有 Task 或快捷创建的新 Task）。
+5. pomodoroIndex 仅在单任务专注（`taskIds` 长度为 1）时记该 Task 下 focus 的发生序号，从 1 起递增；合并番茄钟（`taskIds` 长度 ≥ 2）时固定为 null，各任务自己的发生序号改由查询层按 §8 口径统计。discarded 的单任务 focus 占用序号不回收。pomodoroIndex 不等于有效番茄数（有效番茄统计规则见 §8.3）。
 6. sourceFocusSessionId 用于关联 shortBreak / longBreak 和其上一段 focus，供统计"完整番茄循环"使用；普通 focus 之间的先后顺序不通过此字段表达，通过 startedAt 计算。
 7. 打扰次数不存在 Session 字段上；通过 interrupt.internal / interrupt.external 事件（含 sessionId）写入 Event，次数从事件派生（见 §7.8 interrupt 事件）。
 8. `dayPlanId` 虽允许为 null，但对标准 focus / shortBreak / longBreak，写入时若存在与该 Session 产品日 `appDate` 对应的有效 DayPlan，则**必须**写入该 DayPlan.id；仅在不存在对应 DayPlan、extraFocus / extraRest、历史迁移、数据修复等场景下才为 null。详见字段说明。
 9. dayPlanId 不作为按日统计依据；今日番茄数、今日专注时长、今日休息统计等按 §8 口径归属（用户可见的"今日 / 当日"按产品日 `appDate` 派生，见 §2.5、§8.2；`appDayStartOffsetMinutes = 0` 时与 `localDate` 一致）。dayPlanId 仅用于分析计划偏差，例如"计划内执行情况"。
 10. `actualDuration` 是 Session 实际时长的**唯一事实源**。所有依赖"实际专注 / 休息时长"的统计（§8）一律以 `actualDuration` 为准，**不得**用 `endedAt − startedAt` 重算。`endedAt` 仅为终结时刻的事实记录；因倒计时漂移、浏览器后台节流等原因，`(endedAt − startedAt)` 与 `actualDuration` 可存在差异，数据层不要求二者严格相等，也不据此校验或拒绝写入。
+11. 若一次 focus 由 MergeGroup 触发，其 `taskIds` 是该 Session 终结（`status` 变为 `'completed'` 或 `'discarded'`）那一刻 MergeGroup.taskIds 的快照；此后 MergeGroup 成员如何变化，都不影响这条已终结 Session 的 `taskIds`——Session 是历史事实记录，不随之后的合并组状态变化而改变。
+12. 合并番茄钟场景下，参与的每个 Task 各自都记一个完整的有效标准 focus，不做平分或折算；由此导致"各任务有效番茄数之和"可能大于"全局有效番茄总数"，这是设计如此，具体统计口径见 §8.3、§8.5。
 
 **字段一致性约束**
 
@@ -672,16 +676,17 @@ shortBreak / longBreak / extraRest 适用值：
 2. status ∈ {`'completed'`, `'discarded'`, `'skipped'`} 时，`endedAt` 必须非 null，`actualDuration` 必须非 null。
 3. status=`'skipped'` 时，`actualDuration` 必须为 `0`，`skipKind` 必须非 null。
 4. status ∈ {`'active'`, `'completed'`, `'discarded'`} 时，`skipKind` 必须为 null。
-5. type=`'focus'` 时：`taskId` 必须非 null；`pomodoroIndex` 必须非 null（≥ 1）；`sourceFocusSessionId` / `originIntervalId` / `skipKind` / `suggestedRest` / `actualRest` 必须为 null。
-6. type=`'extraFocus'` 时：`taskId` 必须非 null；`status` 必须为 `'completed'`；`originIntervalId` 必须非 null；`pomodoroIndex` / `sourceFocusSessionId` / `skipKind` / `suggestedRest` / `actualRest` 必须为 null。
-7. type ∈ {`'shortBreak'`, `'longBreak'`} 时：`taskId` / `pomodoroIndex` / `originIntervalId` 必须为 null；`sourceFocusSessionId` 必须非 null，且其引用的 Session 必须满足 type=`'focus'` 且 status=`'completed'`。
-8. type=`'extraRest'` 时：`taskId` / `pomodoroIndex` / `sourceFocusSessionId` / `skipKind` 必须为 null；`status` 必须为 `'completed'`；`originIntervalId` 必须非 null。
+5. type=`'focus'` 时：`taskIds` 长度必须 ≥ 1；`pomodoroIndex` 按关键规则 5（单任务时非 null 且 ≥ 1，合并时必须为 null）；`sourceFocusSessionId` / `originIntervalId` / `skipKind` / `suggestedRest` / `actualRest` 必须为 null。
+6. type=`'extraFocus'` 时：`taskIds` 长度必须固定为 1；`mergeGroupId` 必须为 null（extraFocus 不支持合并）；`status` 必须为 `'completed'`；`originIntervalId` 必须非 null；`pomodoroIndex` / `sourceFocusSessionId` / `skipKind` / `suggestedRest` / `actualRest` 必须为 null。
+7. type ∈ {`'shortBreak'`, `'longBreak'`} 时：`taskIds` 必须为空数组 `[]`；`mergeGroupId` / `pomodoroIndex` / `originIntervalId` 必须为 null；`sourceFocusSessionId` 必须非 null，且其引用的 Session 必须满足 type=`'focus'` 且 status=`'completed'`。
+8. type=`'extraRest'` 时：`taskIds` 必须为空数组 `[]`；`mergeGroupId` / `pomodoroIndex` / `sourceFocusSessionId` / `skipKind` 必须为 null；`status` 必须为 `'completed'`；`originIntervalId` 必须非 null。
 9. status=`'discarded'` 只允许出现在 type=`'focus'` 中（extraFocus 恒为 `'completed'`）。
 10. status=`'skipped'` 只允许出现在 type ∈ {`'shortBreak'`, `'longBreak'`} 中（extraRest 恒为 `'completed'`）。
 11. `localDate` 必须与 `startedAt` 及 `timezone` 保持一致（localDate = 按 timezone 从 startedAt 派生的本地日期）。
 12. type ∈ {`'extraFocus'`, `'extraRest'`} 时，`actualDuration` 必须为正整数（> 0），不得为 null 或 0。
 13. type ∈ {`'focus'`, `'shortBreak'`, `'longBreak'`} 时，`plannedDuration` 必须为正整数（> 0）；type ∈ {`'extraFocus'`, `'extraRest'`} 时，`plannedDuration` 必须为 null。
 14. **不**校验 `actualDuration` 与 `(endedAt − startedAt)` 的一致性；validator 仅按字段表规则校验 `actualDuration` 自身的非空与范围（active=null、skipped=0、completed / discarded 为实际经过秒数、extraFocus / extraRest 为正整数 > 0）。`actualDuration` 为实际时长唯一事实源，见关键规则第 10 条。
+15. `mergeGroupId` 非 null 时，`type` 必须为 `'focus'`，且 `taskIds` 长度必须 ≥ 2。
 
 ---
 
