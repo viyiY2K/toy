@@ -1079,6 +1079,70 @@ Settings 在建立每天 DayPlan 时以快照形式（`settingsSnapshot`）写�
 
 ---
 
+### 3.8 MergeGroup（合并组）
+
+MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番茄的零碎任务拖到一起，用**一段**专注时间同时推进，每个任务各自都记一个完整的有效番茄。这是**平等的集合关系**，不是 §3.1 `parentId` 表达的母子从属关系——一个任务可以同时既是某个母任务的子任务，又是某个合并组的成员，两个维度互不影响（见 §3.1 关键规则 12）。
+
+**完整字段定义**
+
+| 字段名 | 类型 | 可空 | 默认值 | 含义说明 |
+|---|---|---|---|---|
+| `id` | `string`（UUID v7） | 否 | 写入时生成 | 实体唯一标识；取值约束：UUID v7 格式 |
+| `taskIds` | `string[]` | 否 | 创建时的初始成员 | 当前组内成员 Task id 列表，有序，数组顺序即合并卡片内的展示顺序；可动态增删（见关键规则 1）；取值约束：数组元素均为合法 Task UUID v7，数组内不允许重复；`status='active'` 时长度必须 ≥ 2 |
+| `estimatedPomodoros` | `number` | 否 | `1` | 当前预估这组总共要花几个番茄；创建时默认为 1，可通过追加预估上调；取值范围与 §3.1 Task.estimatedPomodoros 完全一致；取值约束：整数，1–7 |
+| `estimateRounds` | `array` | 否 | 创建时写入第一轮 | 每次预估的完整记录，结构与 §3.1 Task.estimateRounds 完全一致（`index` / `pomodoros` / `occurredAt`）；取值约束：数组，元素须符合 §3.1 estimateRounds 结构定义，`index` 最多为 3 |
+| `status` | `string`（枚举） | 否 | `'active'` | 合并组状态；`'active'` = 进行中；`'dissolved'` = 已解散；取值约束：`'active'` / `'dissolved'` 之一 |
+| `dissolvedAt` | `string \| null` | 是 | `null` | 解散时间；`status='dissolved'` 时必须非 null，否则必须为 null；取值约束：ISO 8601 带时区格式或 null |
+| `dissolvedReason` | `string \| null` | 是 | `null` | 解散原因，枚举值见下方；`status='dissolved'` 时必须非 null，否则必须为 null；取值约束：null 或枚举值之一 |
+| `createdAt` | `string` | 否 | 写入时生成 | 记录首次写入时间；取值约束：ISO 8601 带时区格式，不允许缺省时区 |
+| `updatedAt` | `string` | 否 | 写入时生成 | 记录最近修改时间（成员变化、预估追加、状态变化均更新此字段）；取值约束：ISO 8601 带时区格式，不允许缺省时区 |
+| `deletedAt` | `string \| null` | 是 | `null` | 软删除时间戳（见 §2.4），仅用于数据同步层面的 tombstone，与业务意义上的"已解散"是两回事；`null` = 未删除；取值约束：ISO 8601 带时区格式或 null |
+| `schemaVersion` | `number` | 否 | 写入时取当前 schema 版本 | 该条记录写入时的 schema 版本号（见 §2.3）；取值约束：正整数，≥ 1 |
+| `deviceId` | `string \| null` | 是 | `null` | （可选预留）写入设备标识（见 §2.3，Phase 5+ 启用）；取值约束：null 或非空字符串 |
+| `syncedAt` | `string \| null` | 是 | `null` | （可选预留）最近一次同步成功时间（见 §2.3，Phase 5+ 启用）；取值约束：ISO 8601 带时区格式或 null |
+
+**status 枚举值说明**
+
+| 值 | 含义 |
+|---|---|
+| `'active'` | 进行中，`taskIds` 长度 ≥ 2，可继续增删成员、追加预估、发起 focus Session |
+| `'dissolved'` | 已解散，组内不再有任何任务归属于本组，历史记录保留供回溯 |
+
+**dissolvedReason 枚举值说明**（仅 `status='dissolved'` 时适用）
+
+| 值 | 含义 |
+|---|---|
+| `'membersBelowMinimum'` | 自动解散：成员逐个被移出，`taskIds` 长度掉到 1（含）以下 |
+| `'sessionEndedByUser'` | focus Session 响铃到点、组内仍有未完成任务时，用户选择"结束"而非"追加预估" |
+| `'manualDissolved'` | 用户未经"到点选择"流程，主动整体取消本次合并 |
+
+**关键规则**
+
+1. `taskIds` 是有序数组，顺序即合并卡片内的展示顺序；可动态增删：加入触发 `mergeGroup.taskAdded`，移出触发 `mergeGroup.taskRemoved`（见 §7.19）。加入 / 移出既可以发生在还没开始计时的规划阶段，也可以发生在 focus Session 进行中（如计时途中往组里补充新任务）。
+2. `taskIds` 长度掉到 1（含）以下时，MergeGroup 自动解散（`dissolvedReason='membersBelowMinimum'`），若还剩最后 1 个任务，其 `Task.mergeGroupId` 一并清空。
+3. 组内任务被标记完成（`Task.status='completed'`），**不会**触发合并组自动解散，即使组内全部成员当时都已完成——focus Session 仍在进行时，用户可能继续往组里添加新任务丰满这个番茄。只有当该 focus Session 响铃到点（终结）时，才进入关键规则 4 的分叉判断。
+4. focus Session 响铃到点、组内仍有未完成任务时，用户二选一：
+   - **结束**：整个合并组解散（`dissolvedReason='sessionEndedByUser'`），组内所有任务（不论当时是否已完成）的 `mergeGroupId` 清空；未完成的任务保持 `Task.status='active'`，作为独立任务重新出现在今日待办 / 活动清单，不再以合并卡片形式展示。
+   - **追加预估番茄**：合并组保持 `'active'`，`estimatedPomodoros` 递增、`estimateRounds` 新增一条记录（规则见关键规则 6），已完成的任务从组里移出（`mergeGroupId` 清空，视为这一轮已交割完毕）；只保留未完成的任务在组内，紧接着开启下一个 focus Session，其 `taskIds` 取移出已完成任务后的剩余成员。
+5. 用户也可以在未到点、未经"到点选择"流程的情况下随时主动整体解散合并组（`dissolvedReason='manualDissolved'`），效果等同于把组内全部任务逐个移出。
+6. `estimatedPomodoros` / `estimateRounds` 的取值范围、三轮上限、超限强制拆分提示，**完全照搬** §3.1 Task 对应规则（关键规则 9/10/11，1–7 番茄封顶、最多三轮、第三轮后强制触发拆分提示），只是承载事件换成 `mergeGroup.estimateAdjusted`（§7.19），不是 `task.estimateAdjusted`。
+7. MergeGroup **不物理删除**；`deletedAt` 遵循 §2.4 软删除规则，仅用于数据同步层面的 tombstone。业务意义上的"已解散"由 `status='dissolved'` 表达，是正常的生命周期终点，不等于删除；已解散的 MergeGroup 历史记录默认保留（不写 `deletedAt`），供事后回溯"这组当时有哪些任务、花了几个番茄"。
+
+**字段一致性约束**
+
+以下跨字段一致性规则必须由数据层强制保证，任何写入操作不得违反：
+
+1. `status='active'` 时，`taskIds` 长度必须 ≥ 2，`dissolvedAt` / `dissolvedReason` 必须为 null。
+2. `status='dissolved'` 时，`dissolvedAt` 必须非 null，`dissolvedReason` 必须非 null。
+3. `dissolvedReason` 非 null 时，取值必须为 `'membersBelowMinimum'` / `'sessionEndedByUser'` / `'manualDissolved'` 之一。
+4. `estimatedPomodoros` 必须满足 `1 ≤ estimatedPomodoros ≤ 7`（同 §3.1 Task 约束）。
+5. `estimateRounds` 数组每个元素的 `pomodoros` 必须满足 `1 ≤ pomodoros ≤ 7`；`index` 必须为 1 / 2 / 3；不允许写入 `index > 3` 或 `pomodoros > 7` 的记录。
+6. `taskIds` 数组内不允许重复。
+
+实现端在写入或更新 MergeGroup 时，必须验证以上规则，违反规则的写入操作应被拒绝。
+
+---
+
 ## 6. Event type 命名规范
 
 本章规定所有事件类型的命名格式与约束。§7 完整事件分类表中的所有事件类型命名，以及所有实现端写入 Event 时选取的 `type` 值，均须遵守本章规则。
