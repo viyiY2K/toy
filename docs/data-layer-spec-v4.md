@@ -712,6 +712,7 @@ Event 的完整事件类型分类表见 §7；命名规范见 §6；统计口径
 | `energyRecordId` | `string \| null` | 是 | `null` | 关联 EnergyRecord 的 id；适用于与某条能量记录相关的事件；不适用时存 null；取值约束：null 或合法的 EnergyRecord UUID v7 |
 | `unresolvedIntervalId` | `string \| null` | 是 | `null` | 关联 UnresolvedInterval 的 id；适用于与某个待归类时段相关的事件；不适用时存 null；取值约束：null 或合法的 UnresolvedInterval UUID v7 |
 | `settingsId` | `string \| null` | 是 | `null` | 关联 Settings 的 id；适用于设置变更等事件；不适用时存 null；取值约束：null 或合法的 Settings UUID v7 |
+| `mergeGroupId` | `string \| null` | 是 | `null` | 关联 MergeGroup（§3.8）的 id；适用于与某个合并组相关的事件（`mergeGroup.*` 事件本身，以及由合并组触发的 `focus.started` / `focus.completed` 等）；不适用时存 null；取值约束：null 或合法的 MergeGroup UUID v7 |
 | `correlationId` | `string \| null` | 是 | `null` | 同一次用户操作产生多条 Event 时共享的关联 id（如"每日模板生成任务并加入 DayPlan"同时产生 `task.created` 和 `dayPlan.taskAdded`，两条 Event 共享同一 `correlationId`）；单事件操作可为 null；取值约束：null 或 UUID v7 格式 |
 | `createdAt` | `string` | 否 | 写入时生成 | 记录写入存储的时刻；正常情况下与 `occurredAt` 相近；取值约束：ISO 8601 带时区格式，不允许缺省时区 |
 | `schemaVersion` | `number` | 否 | 写入时取当前 schema 版本 | 该条记录写入时的 schema 版本号（见 §2.3）；取值约束：正整数，≥ 1 |
@@ -721,8 +722,8 @@ Event 的完整事件类型分类表见 §7；命名规范见 §6；统计口径
 1. Event 是 append-only 不可变历史记录。写入后不允许修改任何字段，不允许软删除（无 `deletedAt` 字段），不允许物理删除。
 2. 如需"撤销"已写入的 Event，正确做法是**追加一条修正性 Event**（如 `task.completed` 被错误写入后，追加 `task.uncompleted` 修正），而非删除或修改原事件。任何为 Event 实现修改或删除逻辑的代码属违反本规范，应在 code review 阶段拒绝。
 3. `payload` 统一存放事件专属数据（如旧值、新值、原因等）；顶层关联字段（`taskId` / `sessionId` 等）只存实体 id，不在顶层存名称、状态等派生属性。
-4. 所有顶层关联字段（`taskId` / `sessionId` / `dayPlanId` / `energyRecordId` / `unresolvedIntervalId` / `settingsId`）不适用时一律存 null，字段本身不省略。这样可稳定查询"某个实体相关的所有事件"，也便于未来在 SQLite 中按 id 建立索引。
-5. 一个 Event 可以同时填写多个顶层关联字段，不要求只能有一个非 null。例：`dayPlan.taskAdded` 可同时填写 `dayPlanId` 和 `taskId`；与某段专注相关的任务事件，可同时填写 `sessionId` 和 `taskId`；同一次操作引发多条 Event 时，这些 Event 可共享同一个 `correlationId`。
+4. 所有顶层关联字段（`taskId` / `sessionId` / `dayPlanId` / `energyRecordId` / `unresolvedIntervalId` / `settingsId` / `mergeGroupId`）不适用时一律存 null，字段本身不省略。这样可稳定查询"某个实体相关的所有事件"，也便于未来在 SQLite 中按 id 建立索引。
+5. 一个 Event 可以同时填写多个顶层关联字段，不要求只能有一个非 null。例：`dayPlan.taskAdded` 可同时填写 `dayPlanId` 和 `taskId`；与某段专注相关的任务事件，可同时填写 `sessionId` 和 `taskId`；同一次操作引发多条 Event 时，这些 Event 可共享同一个 `correlationId`。合并番茄钟完成时，`focus.completed` 按参与任务数量各发一条（`taskId` 各不相同），但共享同一个 `sessionId`、同一个 `mergeGroupId`、同一个 `correlationId`——这是预期行为，不是数据异常，见 §7.5、§7.19。
 6. `occurredAt` 是事件的业务发生时刻；`createdAt` 是记录写入存储的时刻。统计一律以 `occurredAt` 为准，`createdAt` 仅用于审计和同步参考。
 7. Event 不挂 `updatedAt`、`deletedAt`、`deviceId`、`syncedAt`。Phase 5 如需同步状态，在同步层另行处理，不修改 Event schema。
 8. **原子写入**：当一次业务操作同时产生"实体变更（创建 / 更新 / 软删除可同步实体）"与"对应 Event 写入"时，二者必须在同一存储事务内原子提交；任一步失败则整体回滚，不允许出现"实体已变更但 Event 缺失"或"Event 已写入但其引用的实体变更未生效"的中间状态。一次操作产生多条 Event（共享 `correlationId`）时，这些 Event 与相关实体变更同属一个原子事务。该约束在 Web（IndexedDB transaction）与未来 SQLite 端均适用；具体事务 API 由各端实现，但原子性语义不可降级。
@@ -733,7 +734,7 @@ Event 的完整事件类型分类表见 §7；命名规范见 §6；统计口径
 
 1. `payload` 不允许为 null。§7 中每个事件列出的 payload 字段集即该事件的**完整 schema**：如 §7 对该 `type` 定义了必填 payload 字段，则必须按 §7 写入，不允许省略；实现端**不得**向 payload 添加 §7 未定义的字段（确需新增字段必须先修订 v4 文档，见 §7 开头"payload 即完整 schema"）；只有该事件类型确实没有专属数据时，`payload` 才允许为空对象 `{}`。
 2. `localDate` 必须与 `occurredAt` 及 `timezone` 保持一致（localDate = 按 timezone 从 occurredAt 派生的本地日期）。
-3. 顶层关联字段（`taskId` / `sessionId` / `dayPlanId` / `energyRecordId` / `unresolvedIntervalId` / `settingsId`）如写入非 null 值，写入完成后必须能通过该 id 找到对应实体。对 `task.created` 等新建类事件，允许在同一次写入流程中先生成实体 id、再写入 Event，不要求实体在 Event 写入前已长期存在；写入完成后仍找不到对应实体的，视为悬空引用，应被拒绝。
+3. 顶层关联字段（`taskId` / `sessionId` / `dayPlanId` / `energyRecordId` / `unresolvedIntervalId` / `settingsId` / `mergeGroupId`）如写入非 null 值，写入完成后必须能通过该 id 找到对应实体。对 `task.created` 等新建类事件，允许在同一次写入流程中先生成实体 id、再写入 Event，不要求实体在 Event 写入前已长期存在；写入完成后仍找不到对应实体的，视为悬空引用，应被拒绝。
 4. `type` 必须取自 §7 中已定义的事件类型，不允许写入未定义类型。
 
 实现端在写入 Event 时，必须验证以上规则，违反任意一条的写入操作应被拒绝。
