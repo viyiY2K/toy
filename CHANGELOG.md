@@ -3,6 +3,13 @@
 本文件记录每个可发布版本面向使用者的主要变化。版本号遵循
 [Semantic Versioning](https://semver.org/)。
 
+## [0.1.1] - 2026-08-07
+
+### Added
+
+- 新增设置页：可调整专注、短休、长休时长，并可手动校正累计番茄基数。
+- 侧边栏 Beta 徽章旁展示当前版本号。
+
 ## [0.1.0] - 2026-08-07
 
 首个基本可用版本。
@@ -20,4 +27,5 @@
 
 - 完成计时页、清单页和统计页的可用性与信息层级打磨。
 
+[0.1.1]: https://github.com/viyiY2K/toy/releases/tag/v0.1.1
 [0.1.0]: https://github.com/viyiY2K/toy/releases/tag/v0.1.0
