@@ -1259,6 +1259,17 @@ input[type="checkbox"]:checked::before {
   color: var(--muted);
   font-size: 13px;
 }
+.stats-notice {
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.stats-notice-lines { display: flex; flex-direction: column; gap: 2px; color: var(--accent-ink); }
+.stats-notice-caveat { margin-top: 4px; color: var(--muted); }
 .stats-summary-grid { margin-bottom: 14px; }
 .stats-two-col {
   display: grid;

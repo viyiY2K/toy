@@ -125,6 +125,28 @@ export function energyTrendPresentation(kind, energy) {
   };
 }
 
+const TIMER_FIELD_LABELS = {
+  focusMinutes: '专注时长',
+  shortBreakMinutes: '短休时长',
+  longBreakMinutes: '长休时长',
+};
+
+// 番茄大小（专注/休息时长）变过之后，「个数」就不再是跨前后可比的固定单位——
+// 有效番茄数 / 完整循环数只看流程是否走完，不看时长，这是数据层的既定口径（不在这里重算）。
+// 这里只负责把「统计范围内发生过几次计时参数变更」翻成人话，提醒用户别拿个数直接比强度。
+export function timerSettingChangeNotice(kind, timerSettingChanges) {
+  if (!timerSettingChanges || timerSettingChanges.length === 0) return null;
+  const lines = timerSettingChanges.map((change) => {
+    const label = TIMER_FIELD_LABELS[change.field] ?? change.field;
+    const prefix = kind === 'day' ? '' : `${change.appDate.slice(5)} `;
+    return `${prefix}${label} ${change.oldValue} → ${change.newValue} 分钟`;
+  });
+  const caveat = kind === 'day'
+    ? '如果「有效番茄」个数比预算少，可能是因为番茄变大了，不代表这段时间没在专注。'
+    : `${kind === 'week' ? '本周' : '本月'}内番茄大小不完全一样，用"个数"直接比较前后专注量时要注意这一点。`;
+  return { lines, caveat };
+}
+
 export function statsHasRangeActivity({
   focusSeconds,
   restSeconds,

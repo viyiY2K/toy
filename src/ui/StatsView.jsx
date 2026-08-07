@@ -9,6 +9,7 @@ import {
   formatStatsRange,
   shiftStatsAnchor,
   statsHasRangeActivity,
+  timerSettingChangeNotice,
 } from './statsViewModel';
 
 const React = window.React;
@@ -159,6 +160,7 @@ function Dashboard({ stats }) {
   // 反过来，日内能量点在周/月视图里是 7~31 个芯片，和上面那条折线讲同一件事。
   // 所以按范围只画对这个范围成立的那张图。
   const isDay = session.range.kind === 'day';
+  const settingChangeNotice = timerSettingChangeNotice(session.range.kind, session.timerSettingChanges);
 
   return (
     <>
@@ -170,6 +172,15 @@ function Dashboard({ stats }) {
         energyCount: energy.timeline.length,
       }) && (
         <div className="stats-empty-range" role="status">这段时间还没有可统计的活动。</div>
+      )}
+
+      {settingChangeNotice && (
+        <div className="stats-notice" role="note">
+          <div className="stats-notice-lines">
+            {settingChangeNotice.lines.map((line, index) => <div key={index}>{line}</div>)}
+          </div>
+          <div className="stats-notice-caveat">{settingChangeNotice.caveat}</div>
+        </div>
       )}
 
       <div className="stat-grid stats-summary-grid">
