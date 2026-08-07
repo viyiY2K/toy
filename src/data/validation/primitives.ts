@@ -220,10 +220,18 @@ export const SYNCABLE_BASE_KEYS = [
   'syncedAt',
 ] as const;
 
-/** Phase 1 普通写入的可同步实体公共字段校验。 */
+/**
+ * 写入来源模式：'local'（默认）为本地普通写入，deviceId/syncedAt 必须为 null；
+ * 'sync' 为同步写入（本地上传成功回写 / 接收远端数据落地本地），deviceId/syncedAt 必须为合法非空值。
+ * 见 src/data/sync/ADR-0034-sync-s1-device-identity-and-sync-write-mode.md。
+ */
+export type SyncWriteMode = 'local' | 'sync';
+
+/** 可同步实体公共字段校验；mode 默认 'local'，行为与此前完全一致。 */
 export function validateSyncableBase(
   value: Record<string, unknown>,
   collector: ValidationCollector,
+  mode: SyncWriteMode = 'local',
 ): void {
   validateUuidV7(value.id, 'id', collector);
   validateIsoDateTime(value.createdAt, 'createdAt', collector);
@@ -235,8 +243,13 @@ export function validateSyncableBase(
     `Phase 1 普通写入必须为 ${CURRENT_SCHEMA_VERSION}`,
   );
   validateIsoDateTime(value.deletedAt, 'deletedAt', collector, true);
-  collector.check(value.deviceId === null, 'sync.deviceId.reserved', 'deviceId', 'Phase 1 必须为 null');
-  collector.check(value.syncedAt === null, 'sync.syncedAt.reserved', 'syncedAt', 'Phase 1 必须为 null');
+  if (mode === 'sync') {
+    validateUuidV7(value.deviceId, 'deviceId', collector);
+    validateIsoDateTime(value.syncedAt, 'syncedAt', collector);
+  } else {
+    collector.check(value.deviceId === null, 'sync.deviceId.reserved', 'deviceId', 'Phase 1 必须为 null');
+    collector.check(value.syncedAt === null, 'sync.syncedAt.reserved', 'syncedAt', 'Phase 1 必须为 null');
+  }
 }
 
 export function validateStoredLocalDate(

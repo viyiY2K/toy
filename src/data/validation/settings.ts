@@ -9,6 +9,7 @@ import {
   validateInteger,
   validateSyncableBase,
   validateUuidV7,
+  type SyncWriteMode,
   type ValidationIssue,
 } from './primitives';
 
@@ -191,12 +192,13 @@ async function validatePreviousSettings(
 export async function collectSettingsValidationIssues(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<readonly ValidationIssue[]> {
   const collector = new ValidationCollector();
   const settings = requireRecord(value, 'Settings', collector);
   if (!settings) return collector.issues;
   validateExactKeys(settings, SETTINGS_KEYS, 'Settings', collector);
-  validateSyncableBase(settings, collector);
+  validateSyncableBase(settings, collector, mode);
   validateInteger(settings.focusMinutes, 'focusMinutes', collector, 5, 120);
   validateInteger(settings.shortBreakMinutes, 'shortBreakMinutes', collector, 1, 30);
   collector.check(settings.longBreakMinutes === 15 || settings.longBreakMinutes === 20 || settings.longBreakMinutes === 30, 'settings.longBreakMinutes', 'longBreakMinutes', '只允许 15/20/30');
@@ -227,8 +229,12 @@ export async function collectSettingsValidationIssues(
   return collector.issues;
 }
 
-export async function validateSettings(value: unknown, context?: ValidationContext): Promise<Settings> {
-  const issues = await collectSettingsValidationIssues(value, context);
+export async function validateSettings(
+  value: unknown,
+  context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
+): Promise<Settings> {
+  const issues = await collectSettingsValidationIssues(value, context, mode);
   if (issues.length > 0) throw new EntityValidationError('Settings', issues);
   return value as Settings;
 }

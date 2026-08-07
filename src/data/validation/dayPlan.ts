@@ -12,6 +12,7 @@ import {
   validateStoredLocalDate,
   validateSyncableBase,
   validateUuidV7,
+  type SyncWriteMode,
   type ValidationIssue,
 } from './primitives';
 
@@ -111,12 +112,13 @@ function validateSettingsSnapshot(value: unknown, collector: ValidationCollector
 export async function collectDayPlanValidationIssues(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<readonly ValidationIssue[]> {
   const collector = new ValidationCollector();
   const dayPlan = requireRecord(value, 'DayPlan', collector);
   if (!dayPlan) return collector.issues;
   validateExactKeys(dayPlan, DAY_PLAN_KEYS, 'DayPlan', collector);
-  validateSyncableBase(dayPlan, collector);
+  validateSyncableBase(dayPlan, collector, mode);
   validateStoredLocalDate(dayPlan.localDate, dayPlan.createdAt, dayPlan.timezone, collector);
   validateIsoDate(dayPlan.appDate, 'appDate', collector);
 
@@ -177,8 +179,9 @@ export async function collectDayPlanValidationIssues(
 export async function validateDayPlan(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<DayPlan> {
-  const issues = await collectDayPlanValidationIssues(value, context);
+  const issues = await collectDayPlanValidationIssues(value, context, mode);
   if (issues.length > 0) throw new EntityValidationError('DayPlan', issues);
   return value as DayPlan;
 }
