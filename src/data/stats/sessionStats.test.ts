@@ -15,7 +15,7 @@ function focus(id: string, minute: number, overrides: Partial<Session> = {}): Se
     timezone: ZONE,
     type: 'focus',
     status: 'completed',
-    taskId: 'task',
+    taskIds: ['task'],
     endedAt: `2026-06-01T08:${String(minute + 1).padStart(2, '0')}:00+08:00`,
     plannedDuration: 1500,
     actualDuration: 100,
@@ -60,12 +60,12 @@ describe('Phase 3 S3a session aggregation', () => {
       standardBreak('b6', focuses[5]!, 'shortBreak', 'skipped', 'appClosed'),
       makeSession({
         id: 'discarded', now: base, startedAt: base, timezone: ZONE, type: 'focus',
-        status: 'discarded', taskId: 'task', endedAt: base, plannedDuration: 1500,
+        status: 'discarded', taskIds: ['task'], endedAt: base, plannedDuration: 1500,
         actualDuration: 40, pomodoroIndex: 20,
       }),
       makeSession({
         id: 'extra-focus', now: base, startedAt: base, timezone: ZONE, type: 'extraFocus',
-        status: 'completed', taskId: 'task', endedAt: base, actualDuration: 50,
+        status: 'completed', taskIds: ['task'], endedAt: base, actualDuration: 50,
         originIntervalId: 'interval-focus',
       }),
       makeSession({
@@ -123,7 +123,7 @@ describe('Phase 3 S3a session aggregation', () => {
     const third = focus('third', 6);
     const extra = makeSession({
       id: 'extra', now: third.endedAt!, startedAt: third.endedAt!, timezone: ZONE,
-      type: 'extraFocus', status: 'completed', taskId: 'task', endedAt: third.endedAt!,
+      type: 'extraFocus', status: 'completed', taskIds: ['task'], endedAt: third.endedAt!,
       actualDuration: 1, originIntervalId: 'interval',
     });
     const thirdBreak = standardBreak('third-break', third, 'shortBreak', 'completed');
@@ -147,7 +147,7 @@ describe('Phase 3 S3a session aggregation', () => {
   it('uses focus appDate for cycles but break appDate for rest counts and respects offset', () => {
     const crossFocus = makeSession({
       id: 'cross-focus', now: '2026-05-31T23:50:00+08:00', startedAt: '2026-05-31T23:50:00+08:00',
-      timezone: ZONE, type: 'focus', status: 'completed', taskId: 'task',
+      timezone: ZONE, type: 'focus', status: 'completed', taskIds: ['task'],
       endedAt: '2026-06-01T00:05:00+08:00', plannedDuration: 1500, actualDuration: 900, pomodoroIndex: 1,
     });
     const crossBreak = makeSession({
@@ -214,12 +214,12 @@ describe('Phase 3 S3a session aggregation', () => {
   it('keeps Session appDate membership correct across Monday and calendar-month boundaries', () => {
     const sunday = makeSession({
       id: 'sunday', now: '2026-05-31T23:00:00+08:00', startedAt: '2026-05-31T23:00:00+08:00',
-      timezone: ZONE, type: 'focus', status: 'completed', taskId: 'task',
+      timezone: ZONE, type: 'focus', status: 'completed', taskIds: ['task'],
       endedAt: '2026-05-31T23:25:00+08:00', plannedDuration: 1500, actualDuration: 10, pomodoroIndex: 1,
     });
     const monday = makeSession({
       id: 'monday', now: '2026-06-01T08:00:00+08:00', startedAt: '2026-06-01T08:00:00+08:00',
-      timezone: ZONE, type: 'focus', status: 'completed', taskId: 'task',
+      timezone: ZONE, type: 'focus', status: 'completed', taskIds: ['task'],
       endedAt: '2026-06-01T08:25:00+08:00', plannedDuration: 1500, actualDuration: 20, pomodoroIndex: 2,
     });
     const settings = makeSettings({ now: base });

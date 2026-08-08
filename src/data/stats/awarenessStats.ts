@@ -109,11 +109,12 @@ function aggregateTaskStats(input: AwarenessStatsInput) {
     (left, right) => left.sortIndex - right.sortIndex || left.id.localeCompare(right.id),
   );
   const taskIds = new Set(tasks.map(({ id }) => id));
-  const sessions = visible(input.sessions).filter(
-    (session) => session.taskId !== null && taskIds.has(session.taskId),
+  const sessions = visible(input.sessions).filter((session) =>
+    session.taskIds.some((taskId) => taskIds.has(taskId)),
   );
   const tasksStats: TaskFocusStats[] = tasks.map((task) => {
-    const taskSessions = sessions.filter(({ taskId }) => taskId === task.id);
+    // §8.5：任务维度按 taskIds 命中计数，一次合并 Session 会被每个成员各自完整计一遍。
+    const taskSessions = sessions.filter((session) => session.taskIds.includes(task.id));
     const rangeSessions = taskSessions.filter((session) =>
       inRange(session.startedAt, session.timezone, input.settings, input.range));
     const historicalValidFocus = taskSessions.filter(

@@ -26,9 +26,9 @@ function compareCompleted(left: Session, right: Session): number {
 
 function referencedTaskId(session: Session | null, sessionById: Map<string, Session>): string | null {
   if (!session) return null;
-  if (session.type === 'focus') return session.taskId;
+  if (session.type === 'focus') return session.taskIds[0] ?? null;
   if (session.sourceFocusSessionId) {
-    return sessionById.get(session.sourceFocusSessionId)?.taskId ?? null;
+    return sessionById.get(session.sourceFocusSessionId)?.taskIds[0] ?? null;
   }
   return null;
 }

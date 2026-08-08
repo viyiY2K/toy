@@ -2,19 +2,22 @@
  * IndexedDB 物理存储元信息（单一来源）。
  *
  * v4 §1.1 明确"不规定 objectStore 名称/事务写法"，故 store 命名、DB 名/版本属实现方决策（D1，稳定最小）。
- * 下方 7 个 store 与 v4 §3 的 7 个实体一一对应（§3.1–§3.7）。
+ * 下方 8 个 store 与 v4.1 §3 的 8 个实体一一对应（§3.1–§3.8，§3.8 MergeGroup 为 v4.1 新增）。
  *
  * 主键：全部以 `id` 为 keyPath（UUID v7，§2.2）。
  * S1 边界：只建主键，不建二级索引；二级索引（如 events.occurredAt / dayPlans.appDate / tasks.status）
  * 留到需要它们的步骤（S5/S10）届时 bump DB 版本 + onupgradeneeded 增量添加。
+ *
+ * DB_VERSION 2（合并番茄钟功能批次）：新增 `mergeGroups` store，并把既有 tasks/sessions
+ * 记录迁移到 v4.1 形状（Session.taskId → taskIds、补 mergeGroupId），见 `migrations.ts`。
  */
 export const DB_NAME = 'pomodoro';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 /** 全部 store 共用的主键 keyPath（UUID v7）。 */
 export const PRIMARY_KEY = 'id';
 
-/** 7 个实体的 objectStore 名（值即 IndexedDB store 名）。 */
+/** 8 个实体的 objectStore 名（值即 IndexedDB store 名）。 */
 export const STORE = {
   tasks: 'tasks',
   dayPlans: 'dayPlans',
@@ -23,6 +26,7 @@ export const STORE = {
   energyRecords: 'energyRecords',
   unresolvedIntervals: 'unresolvedIntervals',
   settings: 'settings',
+  mergeGroups: 'mergeGroups',
 } as const;
 
 export type StoreName = (typeof STORE)[keyof typeof STORE];
@@ -34,7 +38,7 @@ export const STORE_NAMES: readonly StoreName[] = Object.values(STORE);
 export const EVENT_STORE = STORE.events;
 
 /**
- * 可同步实体 store 名（除 events 外的 6 个）。
+ * 可同步实体 store 名（除 events 外的 7 个）。
  * 这些 store 允许覆盖写（创建/更新）；Event 不在此列，只能 append。
  */
 export type SyncableStoreName = Exclude<StoreName, typeof STORE.events>;

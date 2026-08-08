@@ -81,14 +81,18 @@ export async function recordEnergy(
           throw new Error(`${input.source} 必须关联对应的 completed Session`);
         }
         dayPlanId = session.dayPlanId;
+        /*
+         * 能量记录的 taskId 只是"这条记录挨着哪个任务"的关联，不参与统计口径；
+         * 合并 Session 有多个成员，取第一个作代表（§7.9 payload 不按成员拆条）。
+         */
         if (session.type === 'focus') {
-          taskId = session.taskId;
+          taskId = session.taskIds[0] ?? null;
         } else if (session.sourceFocusSessionId) {
           const sourceFocus = await transaction.getIncludingDeleted<Session>(
             STORE.sessions,
             session.sourceFocusSessionId,
           );
-          taskId = sourceFocus?.taskId ?? null;
+          taskId = sourceFocus?.taskIds[0] ?? null;
         }
       }
 
@@ -147,14 +151,15 @@ export async function recordInterrupt(
         !session ||
         session.type !== 'focus' ||
         session.status !== 'active' ||
-        session.taskId === null
+        session.taskIds.length === 0
       ) {
         throw new Error('打扰只能记录在 active focus Session 中');
       }
       await assertSessionHasNoPendingRecovery(transaction, session.id);
       const common = {
         ...eventFields(input, transaction.correlationId),
-        taskId: session.taskId,
+        // §7.8 interrupt 是一条按 Session 记的事件，不按合并成员拆条；取首个成员作关联。
+        taskId: session.taskIds[0]!,
         sessionId: session.id,
         dayPlanId: session.dayPlanId,
         payload: { offsetSeconds: input.offsetSeconds, note: input.note ?? null },

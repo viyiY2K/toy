@@ -18,8 +18,8 @@ function sourceFiles(): string[] {
 }
 
 describe('schemaVersion (S4, §2.3)', () => {
-  it('CURRENT_SCHEMA_VERSION 为整数 1', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(1);
+  it('CURRENT_SCHEMA_VERSION 为整数 2（合并番茄钟功能批次改了记录形状）', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(2);
     expect(Number.isInteger(CURRENT_SCHEMA_VERSION)).toBe(true);
   });
 
@@ -31,8 +31,9 @@ describe('schemaVersion (S4, §2.3)', () => {
     expect(isLegacySchemaVersion(undefined)).toBe(true);
     expect(isLegacySchemaVersion(null)).toBe(true);
     expect(isLegacySchemaVersion(0)).toBe(true);
-    expect(isLegacySchemaVersion(1)).toBe(false);
+    expect(isLegacySchemaVersion(1)).toBe(true);
     expect(isLegacySchemaVersion(2)).toBe(false);
+    expect(isLegacySchemaVersion(3)).toBe(false);
   });
 
   describe('集中化守卫（§2.3：常量集中、无散落字面量、不写文档版本号）', () => {

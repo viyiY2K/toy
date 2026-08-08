@@ -174,7 +174,8 @@ export async function detectRecoveryInterval(
       const detected = makeEvent({
         ...eventFields(input, transaction.correlationId),
         type: 'interval.detected',
-        taskId: activeSession.taskId,
+        // 检测事件按 Session 记一条，不按合并成员拆条；取首个成员作关联（break 类为 null）。
+        taskId: activeSession.taskIds[0] ?? null,
         sessionId: activeSession.id,
         dayPlanId: activeSession.dayPlanId,
         unresolvedIntervalId: interval.id,
@@ -255,33 +256,40 @@ async function appendStandardResolutionEvent(
   session: ResolvedStandardSession,
 ): Promise<void> {
   const common = eventFields(input, transaction.correlationId);
+  // §7.5：合并 focus 按 taskIds 每个成员各发一条，共享 sessionId / mergeGroupId / correlationId。
   if (session.type === 'focus' && session.status === 'completed') {
-    await transaction.appendEvent(makeEvent({
-      ...common,
-      type: 'focus.completed',
-      taskId: session.taskId!,
-      sessionId: session.id,
-      dayPlanId: session.dayPlanId,
-      payload: {
-        pomodoroIndex: session.pomodoroIndex!,
-        plannedDuration: session.plannedDuration!,
-        actualDuration: session.actualDuration!,
-      },
-    }));
+    for (const taskId of session.taskIds) {
+      await transaction.appendEvent(makeEvent({
+        ...common,
+        type: 'focus.completed',
+        taskId,
+        sessionId: session.id,
+        dayPlanId: session.dayPlanId,
+        mergeGroupId: session.mergeGroupId,
+        payload: {
+          pomodoroIndex: session.pomodoroIndex!,
+          plannedDuration: session.plannedDuration!,
+          actualDuration: session.actualDuration!,
+        },
+      }));
+    }
   } else if (session.type === 'focus' && session.status === 'discarded') {
-    await transaction.appendEvent(makeEvent({
-      ...common,
-      type: 'focus.discarded',
-      taskId: session.taskId!,
-      sessionId: session.id,
-      dayPlanId: session.dayPlanId,
-      payload: {
-        pomodoroIndex: session.pomodoroIndex!,
-        actualDuration: session.actualDuration!,
-        reason: 'userConfirmedAfterRecovery',
-        triggeredByInterruptEventId: null,
-      },
-    }));
+    for (const taskId of session.taskIds) {
+      await transaction.appendEvent(makeEvent({
+        ...common,
+        type: 'focus.discarded',
+        taskId,
+        sessionId: session.id,
+        dayPlanId: session.dayPlanId,
+        mergeGroupId: session.mergeGroupId,
+        payload: {
+          pomodoroIndex: session.pomodoroIndex!,
+          actualDuration: session.actualDuration!,
+          reason: 'userConfirmedAfterRecovery',
+          triggeredByInterruptEventId: null,
+        },
+      }));
+    }
   } else if (
     (session.type === 'shortBreak' || session.type === 'longBreak')
     && session.status === 'completed'
@@ -384,7 +392,7 @@ export async function resolveRecoveryInterval(
             timezone: interval.timezone,
             type: 'extraFocus',
             status: 'completed',
-            taskId: task.id,
+            taskIds: [task.id],
             actualDuration: input.remainder.actualDuration,
             originIntervalId: interval.id,
             dayPlanId: dayPlan?.id ?? null,
@@ -425,7 +433,7 @@ export async function resolveRecoveryInterval(
       await transaction.appendEvent(makeEvent({
         ...eventFields(input, transaction.correlationId),
         type: 'interval.sessionResolved',
-        taskId: resolved.taskId,
+        taskId: resolved.taskIds[0] ?? null,
         sessionId: resolved.id,
         dayPlanId: resolved.dayPlanId,
         unresolvedIntervalId: interval.id,
@@ -442,7 +450,7 @@ export async function resolveRecoveryInterval(
         await transaction.appendEvent(makeEvent({
           ...eventFields(input, transaction.correlationId),
           type: 'interval.classified',
-          taskId: extraSession!.taskId,
+          taskId: extraSession!.taskIds[0] ?? null,
           sessionId: extraSession!.id,
           dayPlanId: extraSession!.dayPlanId,
           unresolvedIntervalId: interval.id,

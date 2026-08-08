@@ -23,6 +23,7 @@ const ALL_EVENT_KEYS = [
   'energyRecordId',
   'unresolvedIntervalId',
   'settingsId',
+  'mergeGroupId',
   'correlationId',
 ].sort();
 

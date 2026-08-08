@@ -151,7 +151,7 @@ describe('Phase 2 S2a interval detection and atomic recovery', () => {
       skipKind: 'missed', actualRest: null,
     });
     expect(resolved.extraSession).toMatchObject({
-      type: 'extraRest', status: 'completed', taskId: null,
+      type: 'extraRest', status: 'completed', taskIds: [],
       startedAt: '2027-03-08T00:20:00.000Z',
       endedAt: '2027-03-08T00:22:00.000Z',
       actualDuration: 120, actualRest: rest.key,
@@ -186,7 +186,7 @@ describe('Phase 2 S2a interval detection and atomic recovery', () => {
       status: 'discarded', endedAt: '2027-03-08T01:01:00.000Z', actualDuration: 60,
     });
     expect(resolved.extraSession).toMatchObject({
-      type: 'extraFocus', status: 'completed', taskId: task.value.id,
+      type: 'extraFocus', status: 'completed', taskIds: [task.value.id],
       startedAt: '2027-03-08T01:01:00.000Z',
       endedAt: '2027-03-08T01:04:00.000Z', actualDuration: 180,
       originIntervalId: detected.interval!.id,
@@ -300,7 +300,7 @@ describe('Phase 2 S2a interval detection and atomic recovery', () => {
       startedAt: at(12, 0),
       timezone: TIMEZONE,
       type: 'focus',
-      taskId: missingTaskId,
+      taskIds: [missingTaskId],
       plannedDuration: 1_500,
       pomodoroIndex: 1,
     });

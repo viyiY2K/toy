@@ -79,3 +79,12 @@ export { makeSettings } from './settings';
 
 // S5d: 内置种子（§3.7 内置默认清单）
 export { BUILTIN_REST_SUGGESTIONS, BUILTIN_DAILY_TASK_TEMPLATES } from './builtins';
+
+// 合并番茄钟功能批次: MergeGroup（§3.8）
+export type {
+  MergeGroup,
+  MergeGroupStatus,
+  MergeGroupDissolvedReason,
+  MakeMergeGroupInput,
+} from './mergeGroup';
+export { makeMergeGroup } from './mergeGroup';

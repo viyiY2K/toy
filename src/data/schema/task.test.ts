@@ -31,6 +31,7 @@ const ALL_TASK_KEYS = [
   'lineageId',
   'splitFromTaskId',
   'splitIndex',
+  'mergeGroupId',
 ].sort();
 
 describe('makeTask (S5b, §3.1)', () => {

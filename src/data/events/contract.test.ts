@@ -6,9 +6,9 @@ const NOW = '2026-06-05T14:37:12+08:00';
 const TZ = 'Asia/Shanghai';
 
 describe('Event contract (S7a, v4 §7)', () => {
-  it('包含完整且无重复的 78 个事件类型', () => {
-    expect(EVENT_TYPES).toHaveLength(78);
-    expect(new Set(EVENT_TYPES).size).toBe(78);
+  it('包含完整且无重复的 84 个事件类型（78 个 v4 事件 + 6 个 v4.1 mergeGroup.*）', () => {
+    expect(EVENT_TYPES).toHaveLength(84);
+    expect(new Set(EVENT_TYPES).size).toBe(84);
     expect(EVENT_TYPES[0]).toBe('task.created');
     expect(EVENT_TYPES.at(-1)).toBe('diagnosticLog.exported');
   });
@@ -37,6 +37,7 @@ describe('Event contract (S7a, v4 §7)', () => {
       demo: 2,
       notification: 1,
       prompt: 2,
+      mergeGroup: 6,
       error: 2,
       diagnosticLog: 1,
     });

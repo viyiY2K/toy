@@ -1,19 +1,26 @@
+import { migrateToVersion2 } from './migrations';
 import type { AtomicStorageTransaction, StorageAdapter } from './storageAdapter';
 import { DB_NAME, DB_VERSION, PRIMARY_KEY, STORE_NAMES } from './stores';
 
 /**
- * 打开（必要时升级）IndexedDB 数据库，按 stores.ts 建齐 7 个 objectStore。
- * onupgradeneeded 内只创建尚不存在的 store，且只设主键 keyPath（S1 不建二级索引）。
+ * 打开（必要时升级）IndexedDB 数据库，按 stores.ts 建齐 8 个 objectStore。
+ * onupgradeneeded 内只创建尚不存在的 store，且只设主键 keyPath（S1 不建二级索引）；
+ * 建完 store 后按 oldVersion 跑对应的就地数据迁移（见 `migrations.ts`）。
+ * 全新库 oldVersion === 0，没有历史记录，直接跳过迁移。
  */
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
       for (const name of STORE_NAMES) {
         if (!db.objectStoreNames.contains(name)) {
           db.createObjectStore(name, { keyPath: PRIMARY_KEY });
         }
+      }
+      const upgrade = request.transaction;
+      if (upgrade && event.oldVersion >= 1 && event.oldVersion < 2) {
+        migrateToVersion2(upgrade);
       }
     };
     request.onsuccess = () => resolve(request.result);

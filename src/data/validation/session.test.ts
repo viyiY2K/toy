@@ -30,7 +30,7 @@ const sourceFocus = makeSession({
   timezone: TZ,
   type: 'focus',
   status: 'completed',
-  taskId: task.id,
+  taskIds: [task.id],
   endedAt: ENDED,
   plannedDuration: 1500,
   actualDuration: 600,
@@ -56,7 +56,7 @@ function focus(overrides: Partial<Session> = {}): Session {
       startedAt: NOW,
       timezone: TZ,
       type: 'focus',
-      taskId: task.id,
+      taskIds: [task.id],
       plannedDuration: 1500,
       pomodoroIndex: 1,
       dayPlanId: dayPlan.id,
@@ -110,7 +110,7 @@ describe('validateSession (S6b, v4 §3.3)', () => {
         timezone: TZ,
         type: 'extraFocus',
         status: 'completed',
-        taskId: task.id,
+        taskIds: [task.id],
         endedAt: ENDED,
         actualDuration: 61,
         originIntervalId: interval.id,
@@ -145,7 +145,7 @@ describe('validateSession (S6b, v4 §3.3)', () => {
   });
 
   it('enforces type-specific required and null fields', async () => {
-    await expectCode(focus({ taskId: null }), 'session.task.required');
+    await expectCode(focus({ taskIds: [] }), 'session.task.required');
     await expectCode(focus({ pomodoroIndex: null }), 'session.pomodoroIndex.required');
     await expectCode(focus({ actualRest: 'short_scalp_massage' }), 'session.field.notApplicable');
     await expectCode(
@@ -155,7 +155,7 @@ describe('validateSession (S6b, v4 §3.3)', () => {
         timezone: TZ,
         type: 'extraFocus',
         status: 'completed',
-        taskId: task.id,
+        taskIds: [task.id],
         endedAt: ENDED,
         actualDuration: 1,
       }),
@@ -184,13 +184,13 @@ describe('validateSession (S6b, v4 §3.3)', () => {
       timezone: TZ,
       type: 'extraFocus',
       status: 'completed',
-      taskId: task.id,
+      taskIds: [task.id],
       endedAt: ENDED,
       actualDuration: 1,
       originIntervalId: interval.id,
     });
     await expectCode({ ...validExtraFocus, status: 'active', endedAt: null, actualDuration: null }, 'session.extra.status');
-    await expectCode({ ...validExtraFocus, taskId: null }, 'session.task.required');
+    await expectCode({ ...validExtraFocus, taskIds: [] }, 'session.task.required');
     await expectCode({ ...validExtraFocus, actualRest: 'short_scalp_massage' }, 'session.field.notApplicable');
 
     const validExtraRest = makeSession({
@@ -204,7 +204,7 @@ describe('validateSession (S6b, v4 §3.3)', () => {
       originIntervalId: interval.id,
     });
     await expectCode({ ...validExtraRest, status: 'active', endedAt: null, actualDuration: null }, 'session.extra.status');
-    await expectCode({ ...validExtraRest, taskId: task.id }, 'session.field.notApplicable');
+    await expectCode({ ...validExtraRest, taskIds: [task.id] }, 'session.taskIds.notApplicable');
 
     const discardedBreak = makeSession({
       now: NOW,
@@ -251,7 +251,7 @@ describe('validateSession (S6b, v4 §3.3)', () => {
     });
     await expectCode(shortBreak, 'session.restKey.appliesTo', context([sourceFocus]));
     await expectCode(shortBreak, 'session.sourceFocus.invalid', context());
-    await expectCode(focus({ taskId: makeTask({ now: NOW, title: 'missing' }).id }), 'session.task.missing');
+    await expectCode(focus({ taskIds: [makeTask({ now: NOW, title: 'missing' }).id] }), 'session.task.missing');
     await expectCode(focus({ dayPlanId: null }), 'session.dayPlan.current');
   });
 

@@ -10,12 +10,12 @@ describe('Phase 3 S3a persisted session stats query', () => {
     const settings = makeSettings({ id: 'stats-settings', now, lifetimePomodoroBaseline: 3 });
     const focus = makeSession({
       id: 'stats-focus', now, startedAt: now, timezone: 'Asia/Shanghai', type: 'focus',
-      status: 'completed', taskId: 'stats-task', endedAt: '2028-02-10T09:25:00+08:00',
+      status: 'completed', taskIds: ['stats-task'], endedAt: '2028-02-10T09:25:00+08:00',
       plannedDuration: 1500, actualDuration: 1200, pomodoroIndex: 1,
     });
     const deleted = makeSession({
       id: 'stats-deleted', now, startedAt: now, timezone: 'Asia/Shanghai', type: 'extraFocus',
-      status: 'completed', taskId: 'stats-task', endedAt: now, actualDuration: 600,
+      status: 'completed', taskIds: ['stats-task'], endedAt: now, actualDuration: 600,
       originIntervalId: 'stats-interval', deletedAt: now,
     });
     await internalDataStore.put(STORE.settings, settings);

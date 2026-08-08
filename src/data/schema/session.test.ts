@@ -18,7 +18,8 @@ const ALL_SESSION_KEYS = [
   'localDate',
   'type',
   'status',
-  'taskId',
+  'taskIds',
+  'mergeGroupId',
   'startedAt',
   'endedAt',
   'plannedDuration',
@@ -51,7 +52,8 @@ describe('makeSession (S5c, §3.3)', () => {
   it('默认值：status=active，不适用字段默认 null，同步预留正确', () => {
     const s = makeSession({ now: NOW, startedAt: STARTED, timezone: TZ, type: 'focus' });
     expect(s.status).toBe('active');
-    expect(s.taskId).toBeNull();
+    expect(s.taskIds).toEqual([]);
+    expect(s.mergeGroupId).toBeNull();
     expect(s.endedAt).toBeNull();
     expect(s.plannedDuration).toBeNull();
     expect(s.actualDuration).toBeNull();
@@ -76,17 +78,17 @@ describe('makeSession (S5c, §3.3)', () => {
     expect(s.startedAt).toBe(STARTED);
   });
 
-  it('覆盖入口生效：focus 携带 taskId/pomodoroIndex/plannedDuration', () => {
+  it('覆盖入口生效：focus 携带 taskIds/pomodoroIndex/plannedDuration', () => {
     const s = makeSession({
       now: NOW,
       startedAt: STARTED,
       timezone: TZ,
       type: 'focus',
-      taskId: 'task-1',
+      taskIds: ['task-1'],
       pomodoroIndex: 1,
       plannedDuration: 1500,
     });
-    expect(s.taskId).toBe('task-1');
+    expect(s.taskIds).toEqual(['task-1']);
     expect(s.pomodoroIndex).toBe(1);
     expect(s.plannedDuration).toBe(1500);
   });
@@ -98,7 +100,7 @@ describe('makeSession (S5c, §3.3)', () => {
       timezone: TZ,
       type: 'extraFocus',
       status: 'completed',
-      taskId: 'task-1',
+      taskIds: ['task-1'],
       originIntervalId: 'interval-1',
       endedAt: NOW,
       actualDuration: 900,

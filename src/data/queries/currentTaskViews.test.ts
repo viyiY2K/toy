@@ -160,7 +160,7 @@ describe('S10 当前任务派生视图', () => {
       timezone: TIMEZONE,
       type: 'focus',
       status: 'completed',
-      taskId: task.id,
+      taskIds: [task.id],
       plannedDuration: 1500,
       actualDuration: 1200,
       pomodoroIndex,
@@ -193,7 +193,7 @@ describe('S10 当前任务派生视图', () => {
       timezone: TIMEZONE,
       type: 'focus',
       status: 'discarded',
-      taskId: active.id,
+      taskIds: [active.id],
       plannedDuration: 1500,
       actualDuration: 600,
       pomodoroIndex: 4,
@@ -217,7 +217,7 @@ describe('S10 当前任务派生视图', () => {
       timezone: TIMEZONE,
       type: 'extraFocus',
       status: 'completed',
-      taskId: active.id,
+      taskIds: [active.id],
       actualDuration: 1200,
       originIntervalId: interval.id,
     });
@@ -375,7 +375,7 @@ describe('S10 当前任务派生视图', () => {
     });
     const focusSession = makeSession({
       now: focusEndedAt, startedAt: focusStartedAt, endedAt: focusEndedAt, timezone: TIMEZONE,
-      type: 'focus', status: 'completed', taskId: pomodoroTask.id,
+      type: 'focus', status: 'completed', taskIds: [pomodoroTask.id],
       plannedDuration: 1500, actualDuration: 1500, pomodoroIndex: 1,
     });
     const manualContextSession = makeSession({
@@ -385,7 +385,7 @@ describe('S10 当前任务派生视图', () => {
       timezone: TIMEZONE,
       type: 'focus',
       status: 'discarded',
-      taskId: manualTask.id,
+      taskIds: [manualTask.id],
       plannedDuration: 1500,
       actualDuration: 60,
       pomodoroIndex: 1,

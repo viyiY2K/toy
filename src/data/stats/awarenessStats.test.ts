@@ -23,7 +23,7 @@ function task(id: string, title: string, estimatedPomodoros: number, overrides: 
 function completedFocus(id: string, taskId: string, startedAt = NOW, actualDuration = 100): Session {
   return makeSession({
     id, now: startedAt, startedAt, timezone: ZONE, type: 'focus', status: 'completed',
-    taskId, endedAt: startedAt, plannedDuration: 1500, actualDuration, pomodoroIndex: 1,
+    taskIds: [taskId], endedAt: startedAt, plannedDuration: 1500, actualDuration, pomodoroIndex: 1,
   });
 }
 
@@ -73,11 +73,11 @@ describe('Phase 3 S3b task, energy, interrupt, and budget aggregation', () => {
       completedFocus('a-history', accurate.id, '2026-05-31T08:00:00+08:00'),
       makeSession({
         id: 'a-extra', now: NOW, startedAt: NOW, timezone: ZONE, type: 'extraFocus', status: 'completed',
-        taskId: accurate.id, endedAt: NOW, actualDuration: 50, originIntervalId: 'interval',
+        taskIds: [accurate.id], endedAt: NOW, actualDuration: 50, originIntervalId: 'interval',
       }),
       makeSession({
         id: 'a-discard', now: NOW, startedAt: NOW, timezone: ZONE, type: 'focus', status: 'discarded',
-        taskId: accurate.id, endedAt: NOW, plannedDuration: 1500, actualDuration: 20, pomodoroIndex: 3,
+        taskIds: [accurate.id], endedAt: NOW, plannedDuration: 1500, actualDuration: 20, pomodoroIndex: 3,
       }),
       completedFocus('deleted-focus', deleted.id),
     ];
@@ -187,7 +187,7 @@ describe('Phase 3 S3b task, energy, interrupt, and budget aggregation', () => {
     const done = completedFocus('done-focus', 'task', '2026-06-01T01:00:00+08:00');
     const discarded = makeSession({
       id: 'discarded-focus', now: '2026-06-01T05:00:00+08:00', startedAt: '2026-06-01T05:00:00+08:00',
-      timezone: ZONE, type: 'focus', status: 'discarded', taskId: 'task', endedAt: NOW,
+      timezone: ZONE, type: 'focus', status: 'discarded', taskIds: ['task'], endedAt: NOW,
       plannedDuration: 1500, actualDuration: 1, pomodoroIndex: 2,
     });
     const deleted = completedFocus('deleted-focus', 'task', NOW);

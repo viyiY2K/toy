@@ -14,6 +14,7 @@ const NOW = '2026-06-05T14:37:12+08:00';
 const TZ = 'Asia/Shanghai';
 const ID = newId();
 const ID_2 = newId();
+const ID_3 = newId();
 
 const VALID_PAYLOADS = {
   'task.created': { title: 'Task', parentId: null, estimatedPomodoros: 1, source: 'manual' },
@@ -91,6 +92,12 @@ const VALID_PAYLOADS = {
   'notification.shown': { notificationType: 'breakCompleted' },
   'prompt.shown': { promptType: 'energyRecording', promptContext: 'dayStart' },
   'prompt.dismissed': { promptType: 'energyRecording', promptContext: 'onReturn' },
+  'mergeGroup.created': { taskIds: [ID, ID_2], estimatedPomodoros: 1 },
+  'mergeGroup.taskAdded': { addedAtIndex: 1, source: 'drag' },
+  'mergeGroup.taskRemoved': { removedAtIndex: 0, reason: 'manualUnmerge' },
+  'mergeGroup.reordered': { fromIndex: 1, toIndex: 0 },
+  'mergeGroup.estimateAdjusted': { round: 2, oldEstimate: 1, newEstimate: 2 },
+  'mergeGroup.dissolved': { finalTaskIds: [ID, ID_2], dissolvedReason: 'manualDissolved' },
   'error.dataWriteFailed': { errorCode: 'ERR_WRITE_FAILED', errorMessage: null, context: {} },
   'error.unexpectedState': { errorCode: 'ERR_UNEXPECTED_STATE', errorMessage: null, context: {} },
   'diagnosticLog.exported': { format: 'json', rangeDays: 30, includedEventTypes: ['error.dataWriteFailed', 'error.unexpectedState'], exportedEventCount: 2 },
@@ -171,7 +178,8 @@ function contextFor(event: Event): ValidationContext {
       id: event.sessionId,
       type: 'focus',
       status: event.type === 'focus.started' ? 'active' : event.type === 'focus.completed' ? 'completed' : 'discarded',
-      taskId: event.taskId,
+      taskIds: event.taskId === null ? [] : [event.taskId],
+      mergeGroupId: event.mergeGroupId,
       dayPlanId: event.dayPlanId,
       pomodoroIndex: payload.pomodoroIndex,
       plannedDuration: payload.plannedDuration ?? 1500,
@@ -182,7 +190,7 @@ function contextFor(event: Event): ValidationContext {
       id: event.sessionId,
       type: payload.breakType,
       status: event.type === 'break.started' ? 'active' : event.type === 'break.completed' ? 'completed' : 'skipped',
-      taskId: null,
+      taskIds: [],
       dayPlanId: event.dayPlanId,
       plannedDuration: payload.plannedDuration,
       actualDuration: payload.actualDuration ?? (event.type === 'break.skipped' ? 0 : null),
@@ -191,13 +199,13 @@ function contextFor(event: Event): ValidationContext {
       sourceFocusSessionId: payload.sourceFocusSessionId ?? ID_2,
     };
   } else if (event.type.startsWith('interrupt.')) {
-    session = { id: event.sessionId, type: 'focus', status: 'active', taskId: event.taskId, dayPlanId: event.dayPlanId };
+    session = { id: event.sessionId, type: 'focus', status: 'active', taskIds: [event.taskId], dayPlanId: event.dayPlanId };
   } else if (event.type === 'triage.captured') {
-    session = { id: event.sessionId, type: 'focus', status: 'active', taskId: ID_2, dayPlanId: event.dayPlanId };
+    session = { id: event.sessionId, type: 'focus', status: 'active', taskIds: [ID_2], dayPlanId: event.dayPlanId };
   } else if (event.type === 'restItem.shown' || event.type === 'restItem.shuffled' || event.type === 'restItem.selected' || event.type === 'restItem.selectionChanged') {
-    session = { id: event.sessionId, type: payload.breakType, status: 'active', taskId: null, dayPlanId: null, actualRest: event.type === 'restItem.selected' ? payload.selectedKey : event.type === 'restItem.selectionChanged' ? payload.newKey : null };
+    session = { id: event.sessionId, type: payload.breakType, status: 'active', taskIds: [], dayPlanId: null, actualRest: event.type === 'restItem.selected' ? payload.selectedKey : event.type === 'restItem.selectionChanged' ? payload.newKey : null };
   } else if (event.type === 'task.completed' && payload.completionSource === 'pomodoro') {
-    session = { id: event.sessionId, type: 'focus', status: 'completed', taskId: event.taskId, dayPlanId: event.dayPlanId };
+    session = { id: event.sessionId, type: 'focus', status: 'completed', taskIds: [event.taskId], dayPlanId: event.dayPlanId };
   } else if (event.type === 'energy.recorded' && typeof payload.source === 'string' && payload.source.startsWith('after')) {
     const types: Record<string, string> = { afterFocus: 'focus', afterShortBreak: 'shortBreak', afterLongBreak: 'longBreak', afterExtraFocus: 'extraFocus', afterExtraRest: 'extraRest' };
     session = { id: event.sessionId, type: types[payload.source], status: 'completed' };
@@ -205,12 +213,29 @@ function contextFor(event: Event): ValidationContext {
     const types: Record<string, string> = { afterFocus: 'focus', afterShortBreak: 'shortBreak', afterLongBreak: 'longBreak', afterExtraFocus: 'extraFocus', afterExtraRest: 'extraRest' };
     session = { id: event.sessionId, type: types[payload.promptContext], status: 'completed' };
   } else if (event.type === 'interval.detected' && payload.detectedSessionType !== null) {
-    session = { id: event.sessionId, type: payload.detectedSessionType, status: 'active', taskId: event.taskId, dayPlanId: event.dayPlanId };
+    session = { id: event.sessionId, type: payload.detectedSessionType, status: 'active', taskIds: event.taskId === null ? [] : [event.taskId], dayPlanId: event.dayPlanId };
   } else if (event.type === 'interval.sessionResolved') {
-    session = { id: event.sessionId, type: payload.sessionType, status: payload.resolvedAs, taskId: event.taskId, dayPlanId: event.dayPlanId };
+    session = { id: event.sessionId, type: payload.sessionType, status: payload.resolvedAs, taskIds: event.taskId === null ? [] : [event.taskId], dayPlanId: event.dayPlanId };
   } else if (event.type === 'interval.classified') {
-    session = { id: event.sessionId, type: payload.classificationType, status: 'completed', originIntervalId: event.unresolvedIntervalId, taskId: event.taskId, dayPlanId: event.dayPlanId };
+    session = { id: event.sessionId, type: payload.classificationType, status: 'completed', originIntervalId: event.unresolvedIntervalId, taskIds: event.taskId === null ? [] : [event.taskId], dayPlanId: event.dayPlanId };
   }
+
+  // 合并组 fixture 按事件类型倒推出一份与 payload 自洽的实体（§7.19 一致性校验要对得上）。
+  const mergeGroup = {
+    id: event.mergeGroupId,
+    taskIds: event.type === 'mergeGroup.created' ? payload.taskIds
+      : event.type === 'mergeGroup.taskAdded' ? [ID_2, event.taskId]
+      : event.type === 'mergeGroup.taskRemoved' ? [ID_2, ID_3]
+      : event.type === 'mergeGroup.reordered' ? [event.taskId, ID_2]
+      : event.type === 'mergeGroup.dissolved' ? payload.finalTaskIds
+      : [ID, ID_2],
+    estimatedPomodoros: payload.newEstimate ?? payload.estimatedPomodoros ?? 1,
+    estimateRounds: Array.from({ length: typeof payload.round === 'number' ? payload.round : 1 }, (_, index) => ({ index: index + 1, pomodoros: 1, occurredAt: NOW })),
+    status: event.type === 'mergeGroup.dissolved' ? 'dissolved'
+      : payload.promptType === 'mergeGroupLimitReached' ? 'limitReached'
+      : 'active',
+    dissolvedReason: event.type === 'mergeGroup.dissolved' ? payload.dissolvedReason : null,
+  };
 
   const energy = { id: event.energyRecordId, source: payload.source, energyLevel: payload.energyLevel, mood: payload.mood, note: payload.note, sessionId: event.sessionId };
   const interval = { id: event.unresolvedIntervalId, source: payload.source, status: event.type === 'interval.ignored' ? 'ignored' : 'pending', ignoreReason: payload.ignoreReason ?? null };
@@ -265,6 +290,7 @@ function contextFor(event: Event): ValidationContext {
     getEnergyRecord: async () => energy as never,
     getUnresolvedInterval: async () => interval as never,
     getSettings: async () => settings as never,
+    getMergeGroup: async () => mergeGroup as never,
     getEvent: async () => undefined,
   };
 }

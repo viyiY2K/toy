@@ -82,6 +82,12 @@ export const EVENT_TYPES = [
   'notification.shown',
   'prompt.shown',
   'prompt.dismissed',
+  'mergeGroup.created',
+  'mergeGroup.taskAdded',
+  'mergeGroup.taskRemoved',
+  'mergeGroup.reordered',
+  'mergeGroup.estimateAdjusted',
+  'mergeGroup.dissolved',
   'error.dataWriteFailed',
   'error.unexpectedState',
   'diagnosticLog.exported',
@@ -102,7 +108,11 @@ type EnergySource =
   | 'afterExtraRest'
   | 'onReturn'
   | 'manual';
-type PromptType = 'taskCompletionCheck' | 'energyRecording' | 'taskSplitSuggestion';
+type PromptType =
+  | 'taskCompletionCheck'
+  | 'energyRecording'
+  | 'taskSplitSuggestion'
+  | 'mergeGroupLimitReached';
 type EnergyPromptContext = Exclude<EnergySource, 'manual'>;
 type ErrorContext = Record<string, unknown>;
 
@@ -324,6 +334,19 @@ export interface EventPayloadMap {
   'prompt.dismissed':
     | { promptType: 'energyRecording'; promptContext: EnergyPromptContext }
     | { promptType: Exclude<PromptType, 'energyRecording'>; promptContext: null };
+  // 合并番茄钟功能批次（§7.19）；不套用 P1–P5 编号，Phase 归属见 §10.7。
+  'mergeGroup.created': { taskIds: string[]; estimatedPomodoros: number };
+  'mergeGroup.taskAdded': { addedAtIndex: number; source: 'drag' | 'duringActiveSession' };
+  'mergeGroup.taskRemoved': {
+    removedAtIndex: number;
+    reason: 'manualUnmerge' | 'sessionEndedIncomplete';
+  };
+  'mergeGroup.reordered': { fromIndex: number; toIndex: number };
+  'mergeGroup.estimateAdjusted': { round: 2 | 3; oldEstimate: number; newEstimate: number };
+  'mergeGroup.dissolved': {
+    finalTaskIds: string[];
+    dissolvedReason: 'membersBelowMinimum' | 'manualDissolved';
+  };
   'error.dataWriteFailed': { errorCode: string; errorMessage: string | null; context: ErrorContext };
   'error.unexpectedState': { errorCode: string; errorMessage: string | null; context: ErrorContext };
   'diagnosticLog.exported': {
@@ -342,7 +365,7 @@ export type EventOf<T extends EventType> = T extends EventType
     }
   : never;
 
-/** 78 个事件的判别联合。 */
+/** 84 个事件的判别联合（78 个 v4 事件 + 6 个 v4.1 mergeGroup.* 事件）。 */
 export type EventContract = { [T in EventType]: EventOf<T> }[EventType];
 
 // 编译期双向守卫：payload map 不得漏键，也不得包含 EVENT_TYPES 之外的键。

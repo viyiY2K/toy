@@ -139,7 +139,7 @@ describe('Phase 2 S3a Task lifecycle commands', () => {
       timezone: TIMEZONE,
       type: 'focus',
       status,
-      taskId: task.value.id,
+      taskIds: [task.value.id],
       plannedDuration: 1500,
       actualDuration: 60,
       pomodoroIndex: minute - 19,

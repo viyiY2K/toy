@@ -33,6 +33,7 @@ const TASK_KEYS = [
   'lineageId',
   'splitFromTaskId',
   'splitIndex',
+  'mergeGroupId',
 ] as const;
 
 const TASK_STATUS = new Set(['active', 'completed', 'splitNeeded', 'archived', 'deleted']);
@@ -151,6 +152,7 @@ export async function collectTaskValidationIssues(
   validateUuidV7(task.lineageId, 'lineageId', collector);
   validateUuidV7(task.splitFromTaskId, 'splitFromTaskId', collector, true);
   validateInteger(task.splitIndex, 'splitIndex', collector, 0);
+  validateUuidV7(task.mergeGroupId, 'mergeGroupId', collector, true);
 
   const requiresCompletionFacts =
     task.status === 'completed' || (task.status === 'archived' && task.outcome === 'completed');
@@ -214,6 +216,35 @@ export async function collectTaskValidationIssues(
     }
   } else if (typeof task.id === 'string') {
     collector.check(task.lineageId === task.id, 'task.lineage.original', 'lineageId', '原始任务 lineageId 必须等于自身 id');
+  }
+
+  /*
+   * §3.1 mergeGroupId 取值约束：所指合并组必须存在，且其 taskIds 必须包含本 Task
+   * （双向一致，另一半在 validation/mergeGroup.ts）。因此写合并关系时必须先写
+   * MergeGroup、再写 Task，否则本校验在同一事务内会读不到回指关系。
+   * `parentId` 与 `mergeGroupId` 互不影响、可同时非 null（§3.1 关键规则 12），不作互斥校验。
+   */
+  if (typeof task.mergeGroupId === 'string') {
+    if (context?.getMergeGroup) {
+      const group = await context.getMergeGroup(task.mergeGroupId);
+      collector.check(group !== undefined, 'task.mergeGroup.missing', 'mergeGroupId', '引用的合并组不存在');
+      if (group && typeof task.id === 'string') {
+        collector.check(
+          group.taskIds.includes(task.id),
+          'task.mergeGroup.membership',
+          'mergeGroupId',
+          '合并组的 taskIds 必须包含本 Task',
+        );
+        collector.check(
+          group.status !== 'dissolved',
+          'task.mergeGroup.dissolved',
+          'mergeGroupId',
+          '已解散的合并组不得再有成员',
+        );
+      }
+    } else {
+      collector.add('validation.context.required', 'mergeGroupId', '校验合并组引用需要事务查询上下文');
+    }
   }
 
   return collector.issues;

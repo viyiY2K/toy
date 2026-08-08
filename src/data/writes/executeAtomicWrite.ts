@@ -22,6 +22,7 @@ import {
   validateDayPlan,
   validateEnergyRecord,
   validateEvent,
+  validateMergeGroup,
   validateSession,
   validateSettings,
   validateTask,
@@ -39,6 +40,7 @@ export type WriteEntityType =
   | 'EnergyRecord'
   | 'UnresolvedInterval'
   | 'Settings'
+  | 'MergeGroup'
   | 'AtomicWrite';
 
 /** S12 error Event 允许写入 context 的封闭字段集；不接受标题、备注或实体快照。 */
@@ -117,6 +119,7 @@ const ENTITY_TYPE: Record<SyncableStoreName, WriteEntityType> = {
   energyRecords: 'EnergyRecord',
   unresolvedIntervals: 'UnresolvedInterval',
   settings: 'Settings',
+  mergeGroups: 'MergeGroup',
 };
 
 const WRITE_CONTEXT_KEYS = [
@@ -146,6 +149,7 @@ const ENTITY_TYPES = new Set<WriteEntityType>([
   'EnergyRecord',
   'UnresolvedInterval',
   'Settings',
+  'MergeGroup',
   'AtomicWrite',
 ]);
 
@@ -286,6 +290,7 @@ function makeValidationContext(transaction: AtomicDataTransaction): ValidationCo
       (
         await transaction.getAllIncludingDeleted<Session>(STORE.sessions)
       ).some((session) => session.suggestedRest === key || session.actualRest === key),
+    getMergeGroup: (id) => transaction.getIncludingDeleted(STORE.mergeGroups, id),
   };
 }
 
@@ -312,6 +317,9 @@ async function validateEntity<S extends SyncableStoreName>(
       return;
     case STORE.settings:
       await validateSettings(value, context);
+      return;
+    case STORE.mergeGroups:
+      await validateMergeGroup(value, context);
   }
 }
 

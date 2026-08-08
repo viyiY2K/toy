@@ -840,7 +840,7 @@ export async function completeTaskManually(
         (session) =>
           session.type === 'focus' &&
           session.status === 'completed' &&
-          session.taskId === task.id,
+          session.taskIds.includes(task.id),
       ).length;
       const completed: Task = {
         ...task,

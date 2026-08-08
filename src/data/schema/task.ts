@@ -66,6 +66,12 @@ export interface Task extends SyncableBaseFields {
   lineageId: string;
   splitFromTaskId: string | null;
   splitIndex: number;
+  /**
+   * 当前所属合并组 id（§3.1，合并番茄钟功能批次）；`null` = 未参与任何合并组。
+   * 与 `parentId` 是两个互不影响的维度，可同时非 null（§3.1 关键规则 12）：
+   * `parentId` 表达血缘拆分，`mergeGroupId` 表达执行层面的临时并归。
+   */
+  mergeGroupId: string | null;
 }
 
 /** `makeTask` 入参。`title` / `now` 必填；其余按 v4 默认值。 */
@@ -98,6 +104,8 @@ export interface MakeTaskInput {
   lineageId?: string;
   splitFromTaskId?: string | null;
   splitIndex?: number;
+  /** 默认 null（新建任务不属于任何合并组）；合并由 mergeGroupCommands 事后写入。 */
+  mergeGroupId?: string | null;
   /** 软删除时间戳覆盖（§2.4）；默认 null。 */
   deletedAt?: IsoDateTime | null;
 }
@@ -129,5 +137,6 @@ export function makeTask(input: MakeTaskInput): Task {
     lineageId: input.lineageId ?? base.id,
     splitFromTaskId: input.splitFromTaskId ?? null,
     splitIndex: input.splitIndex ?? 0,
+    mergeGroupId: input.mergeGroupId ?? null,
   };
 }

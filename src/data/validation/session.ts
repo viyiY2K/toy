@@ -22,7 +22,8 @@ const SESSION_KEYS = [
   'localDate',
   'type',
   'status',
-  'taskId',
+  'taskIds',
+  'mergeGroupId',
   'startedAt',
   'endedAt',
   'plannedDuration',
@@ -50,6 +51,31 @@ function checkNull(
   code = 'session.field.notApplicable',
 ): void {
   collector.check(value === null, code, path, '此 type/status 下必须为 null');
+}
+
+/** 关联任务列表的通用形状校验（§3.3 taskIds 取值约束）；按 type 的长度要求在下方分流。 */
+function validateTaskIds(value: unknown, collector: ValidationCollector): void {
+  if (!Array.isArray(value)) {
+    collector.add('type.array', 'taskIds', '必须为数组');
+    return;
+  }
+  value.forEach((taskId, index) => validateUuidV7(taskId, `taskIds[${index}]`, collector));
+  collector.check(
+    new Set(value).size === value.length,
+    'session.taskIds.duplicate',
+    'taskIds',
+    '关联任务不得重复',
+  );
+}
+
+/** 不适用该 type 的 `taskIds`（break 类）必须是空数组，不是 null、不是省略（§3.3 关键规则 1）。 */
+function checkEmptyTaskIds(value: unknown, collector: ValidationCollector): void {
+  collector.check(
+    Array.isArray(value) && value.length === 0,
+    'session.taskIds.notApplicable',
+    'taskIds',
+    '此 type 下必须为空数组',
+  );
 }
 
 async function validateRestKeys(
@@ -91,11 +117,31 @@ async function validateReferences(
   context: ValidationContext | undefined,
   collector: ValidationCollector,
 ): Promise<void> {
-  if (typeof session.taskId === 'string') {
+  if (Array.isArray(session.taskIds) && session.taskIds.length > 0) {
     if (context?.getTask) {
-      collector.check((await context.getTask(session.taskId)) !== undefined, 'session.task.missing', 'taskId', '引用的 Task 不存在');
+      for (const [index, taskId] of session.taskIds.entries()) {
+        if (typeof taskId !== 'string') continue;
+        collector.check(
+          (await context.getTask(taskId)) !== undefined,
+          'session.task.missing',
+          `taskIds[${index}]`,
+          '引用的 Task 不存在',
+        );
+      }
     } else {
-      collector.add('validation.context.required', 'taskId', '校验 Task 引用需要事务查询上下文');
+      collector.add('validation.context.required', 'taskIds', '校验 Task 引用需要事务查询上下文');
+    }
+  }
+  if (typeof session.mergeGroupId === 'string') {
+    if (context?.getMergeGroup) {
+      collector.check(
+        (await context.getMergeGroup(session.mergeGroupId)) !== undefined,
+        'session.mergeGroup.missing',
+        'mergeGroupId',
+        '引用的 MergeGroup 不存在',
+      );
+    } else {
+      collector.add('validation.context.required', 'mergeGroupId', '校验合并组引用需要事务查询上下文');
     }
   }
   if (typeof session.originIntervalId === 'string') {
@@ -153,7 +199,7 @@ async function validateCreationFacts(
     'timezone',
     'localDate',
     'type',
-    'taskId',
+    'mergeGroupId',
     'startedAt',
     'plannedDuration',
     'pomodoroIndex',
@@ -162,6 +208,23 @@ async function validateCreationFacts(
     'dayPlanId',
   ] as const) {
     collector.check(session[field] === previous[field], `session.${field}.immutable`, field, '创建后不可修改');
+  }
+  /*
+   * taskIds 不是无条件不可变：合并番茄钟允许计时途中往组里补任务，其快照按 §3.3
+   * 关键规则 11 取"Session 终结那一刻"的成员，因此 active 的合并 Session 可以改。
+   * 非合并 Session、以及任何已终结的 Session，taskIds 都是固定的历史事实。
+   */
+  const mutableTaskIds = previous.status === 'active' && previous.mergeGroupId !== null;
+  if (!mutableTaskIds) {
+    const current = Array.isArray(session.taskIds) ? session.taskIds : undefined;
+    collector.check(
+      current !== undefined &&
+        current.length === previous.taskIds.length &&
+        current.every((taskId, index) => taskId === previous.taskIds[index]),
+      'session.taskIds.immutable',
+      'taskIds',
+      '创建后不可修改（合并 Session 只在进行中可增删成员）',
+    );
   }
   return previous;
 }
@@ -235,7 +298,8 @@ export async function collectSessionValidationIssues(
   validateSyncableBase(session, collector);
   collector.check(typeof session.type === 'string' && TYPES.has(session.type), 'session.type', 'type', '非法 Session type');
   collector.check(typeof session.status === 'string' && STATUSES.has(session.status), 'session.status', 'status', '非法 Session status');
-  validateUuidV7(session.taskId, 'taskId', collector, true);
+  validateTaskIds(session.taskIds, collector);
+  validateUuidV7(session.mergeGroupId, 'mergeGroupId', collector, true);
   validateIsoDateTime(session.startedAt, 'startedAt', collector);
   validateIsoDateTime(session.endedAt, 'endedAt', collector, true);
   if (session.plannedDuration !== null) validateInteger(session.plannedDuration, 'plannedDuration', collector, 1);
@@ -270,22 +334,57 @@ export async function collectSessionValidationIssues(
 
   if (session.type === 'focus') {
     collector.check(session.status === 'active' || session.status === 'completed' || session.status === 'discarded', 'session.status.type', 'status', 'focus 状态非法');
-    collector.check(session.taskId !== null, 'session.task.required', 'taskId', 'focus 必须关联 Task');
+    collector.check(
+      Array.isArray(session.taskIds) && session.taskIds.length >= 1,
+      'session.task.required',
+      'taskIds',
+      'focus 必须关联至少 1 个 Task',
+    );
     collector.check(session.pomodoroIndex !== null, 'session.pomodoroIndex.required', 'pomodoroIndex', 'focus 必须非 null');
     for (const field of ['sourceFocusSessionId', 'originIntervalId', 'skipKind', 'suggestedRest', 'actualRest'] as const) checkNull(session[field], field, collector);
   } else if (session.type === 'extraFocus') {
     collector.check(session.status === 'completed', 'session.extra.status', 'status', 'extraFocus 固定 completed');
-    collector.check(session.taskId !== null, 'session.task.required', 'taskId', 'extraFocus 必须关联 Task');
+    collector.check(
+      Array.isArray(session.taskIds) && session.taskIds.length === 1,
+      'session.task.required',
+      'taskIds',
+      'extraFocus 必须恰好关联 1 个 Task（不支持合并）',
+    );
     collector.check(session.originIntervalId !== null, 'session.interval.required', 'originIntervalId', 'extraFocus 必须关联 interval');
     for (const field of ['pomodoroIndex', 'sourceFocusSessionId', 'skipKind', 'suggestedRest', 'actualRest'] as const) checkNull(session[field], field, collector);
   } else if (BREAK_TYPES.has(String(session.type))) {
     collector.check(session.status === 'active' || session.status === 'completed' || session.status === 'skipped', 'session.status.type', 'status', 'break 状态非法');
-    for (const field of ['taskId', 'pomodoroIndex', 'originIntervalId'] as const) checkNull(session[field], field, collector);
+    checkEmptyTaskIds(session.taskIds, collector);
+    for (const field of ['pomodoroIndex', 'originIntervalId'] as const) checkNull(session[field], field, collector);
     collector.check(session.sourceFocusSessionId !== null, 'session.sourceFocus.required', 'sourceFocusSessionId', 'break 必须关联来源 focus');
   } else if (session.type === 'extraRest') {
     collector.check(session.status === 'completed', 'session.extra.status', 'status', 'extraRest 固定 completed');
     collector.check(session.originIntervalId !== null, 'session.interval.required', 'originIntervalId', 'extraRest 必须关联 interval');
-    for (const field of ['taskId', 'pomodoroIndex', 'sourceFocusSessionId', 'skipKind'] as const) checkNull(session[field], field, collector);
+    checkEmptyTaskIds(session.taskIds, collector);
+    for (const field of ['pomodoroIndex', 'sourceFocusSessionId', 'skipKind'] as const) checkNull(session[field], field, collector);
+  }
+
+  // §3.3 字段一致性约束 15：合并只存在于标准 focus，且必须真的是"多个任务一起做"。
+  if (session.mergeGroupId === null) {
+    collector.check(
+      !Array.isArray(session.taskIds) || session.taskIds.length <= 1 || session.type !== 'focus',
+      'session.mergeGroup.required',
+      'mergeGroupId',
+      '多任务 focus 必须关联合并组',
+    );
+  } else {
+    collector.check(
+      session.type === 'focus',
+      'session.mergeGroup.type',
+      'mergeGroupId',
+      '只有标准 focus 可以关联合并组',
+    );
+    collector.check(
+      Array.isArray(session.taskIds) && session.taskIds.length >= 2,
+      'session.mergeGroup.taskIds',
+      'taskIds',
+      '合并 focus 必须关联至少 2 个 Task',
+    );
   }
 
   if (EXTRA_TYPES.has(String(session.type))) {

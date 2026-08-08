@@ -18,7 +18,7 @@ describe('Phase 3 S3b persisted stats dashboard query', () => {
     const task = makeTask({ id: 'dashboard-task', now, title: '统计任务', estimatedPomodoros: 1 });
     const focus = makeSession({
       id: 'dashboard-focus', now, startedAt: now, timezone: zone, type: 'focus', status: 'completed',
-      taskId: task.id, endedAt: now, plannedDuration: 1500, actualDuration: 1200, pomodoroIndex: 1,
+      taskIds: [task.id], endedAt: now, plannedDuration: 1500, actualDuration: 1200, pomodoroIndex: 1,
     });
     const energy = makeEnergyRecord({
       id: 'dashboard-energy', now, occurredAt: now, timezone: zone, source: 'manual', energyLevel: 6,

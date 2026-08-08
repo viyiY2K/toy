@@ -109,7 +109,19 @@ const energySource = enumRule([
   'onReturn',
   'manual',
 ] as const);
-const promptType = enumRule(['taskCompletionCheck', 'energyRecording', 'taskSplitSuggestion'] as const);
+const promptType = enumRule([
+  'taskCompletionCheck',
+  'energyRecording',
+  'taskSplitSuggestion',
+  'mergeGroupLimitReached',
+] as const);
+/** 合并组创建时的初始成员：≥ 2 个不重复 Task id（§7.19 mergeGroup.created）。 */
+const mergeMemberIds: Rule = (value, path, collector) => {
+  stringArrayRule({ nonEmpty: true, unique: true })(value, path, collector);
+  if (Array.isArray(value)) {
+    collector.check(value.length >= 2, 'array.minLength', path, '合并组初始成员至少 2 个');
+  }
+};
 const promptContext = enumRule([
   'beforeFocus',
   'afterFocus',
@@ -309,6 +321,13 @@ export const EVENT_PAYLOAD_SCHEMAS = {
   'notification.shown': schema({ notificationType: enumRule(['focusCompleted', 'breakCompleted'] as const) }),
   'prompt.shown': schema({ promptType, promptContext }, undefined, validatePrompt),
   'prompt.dismissed': schema({ promptType, promptContext }, undefined, validatePrompt),
+  // 合并番茄钟功能批次（§7.19）。数值上限完全照搬 Task 侧规则：1–7 封顶、最多三轮。
+  'mergeGroup.created': schema({ taskIds: mergeMemberIds, estimatedPomodoros: integerRule(1, 7) }),
+  'mergeGroup.taskAdded': schema({ addedAtIndex: nonNegativeInteger, source: enumRule(['drag', 'duringActiveSession'] as const) }),
+  'mergeGroup.taskRemoved': schema({ removedAtIndex: nonNegativeInteger, reason: enumRule(['manualUnmerge', 'sessionEndedIncomplete'] as const) }),
+  'mergeGroup.reordered': schema({ fromIndex: nonNegativeInteger, toIndex: nonNegativeInteger }, undefined, (p, c) => requireDifferent(p, 'fromIndex', 'toIndex', c)),
+  'mergeGroup.estimateAdjusted': schema({ round: literalRule([2, 3]), oldEstimate: integerRule(1, 7), newEstimate: integerRule(1, 7) }, undefined, (p, c) => requireDifferent(p, 'oldEstimate', 'newEstimate', c)),
+  'mergeGroup.dissolved': schema({ finalTaskIds: stringArrayRule({ unique: true }), dissolvedReason: enumRule(['membersBelowMinimum', 'manualDissolved'] as const) }),
   'error.dataWriteFailed': schema({ errorCode: nonEmptyString, errorMessage: nullableString, context: objectRule }),
   'error.unexpectedState': schema({ errorCode: nonEmptyString, errorMessage: nullableString, context: objectRule }),
   'diagnosticLog.exported': schema({ format: enumRule(['json'] as const), rangeDays: integerRule(1, 90), includedEventTypes: validateDiagnosticTypes, exportedEventCount: nullableNonNegativeInteger }),
@@ -316,10 +335,15 @@ export const EVENT_PAYLOAD_SCHEMAS = {
 
 export const EVENT_ENTITY_KEYS = [
   'id', 'createdAt', 'schemaVersion', 'timezone', 'localDate', 'type', 'occurredAt', 'payload',
-  'taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId', 'correlationId',
+  'taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId', 'mergeGroupId', 'correlationId',
 ] as const;
 
-type AssociationKey = 'taskId' | 'sessionId' | 'dayPlanId' | 'energyRecordId' | 'unresolvedIntervalId' | 'settingsId';
+/** §3.4 关键规则 4：全部顶层关联字段，不适用时一律存 null，字段本身不省略。 */
+const ASSOCIATION_KEYS = [
+  'taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId', 'mergeGroupId',
+] as const;
+
+type AssociationKey = (typeof ASSOCIATION_KEYS)[number];
 interface AssociationSchema { required: readonly AssociationKey[]; optional?: readonly AssociationKey[] }
 const a = (required: readonly AssociationKey[], optional?: readonly AssociationKey[]): AssociationSchema => ({ required, optional });
 
@@ -333,7 +357,8 @@ export const EVENT_ASSOCIATION_SCHEMAS = {
   'dayPlan.taskAdded': a(['dayPlanId', 'taskId'], ['unresolvedIntervalId']), 'dayPlan.taskRemoved': a(['dayPlanId', 'taskId']), 'dayPlan.taskReordered': a(['dayPlanId', 'taskId']),
   'dayPlan.workEnded': a(['dayPlanId'], ['taskId', 'sessionId']),
   'task.reordered': a(['taskId']), 'task.reparented': a(['taskId']), 'task.movedToToday': a(['taskId', 'dayPlanId']), 'task.movedToList': a(['taskId', 'dayPlanId']),
-  'focus.started': a(['taskId', 'sessionId'], ['dayPlanId']), 'focus.completed': a(['taskId', 'sessionId'], ['dayPlanId']), 'focus.discarded': a(['taskId', 'sessionId'], ['dayPlanId']),
+  // 合并场景下 focus.* 按 Session.taskIds 每个成员各发一条，共享 sessionId / mergeGroupId（§7.5）。
+  'focus.started': a(['taskId', 'sessionId'], ['dayPlanId', 'mergeGroupId']), 'focus.completed': a(['taskId', 'sessionId'], ['dayPlanId', 'mergeGroupId']), 'focus.discarded': a(['taskId', 'sessionId'], ['dayPlanId', 'mergeGroupId']),
   'break.started': a(['sessionId'], ['dayPlanId']), 'break.completed': a(['sessionId'], ['dayPlanId']), 'break.skipped': a(['sessionId'], ['dayPlanId']),
   'restItem.shown': a(['sessionId', 'settingsId']), 'restItem.shuffled': a(['sessionId', 'settingsId']), 'restItem.selected': a(['sessionId', 'settingsId']), 'restItem.selectionChanged': a(['sessionId', 'settingsId']),
   'restItem.created': a(['settingsId']), 'restItem.updated': a(['settingsId']), 'restItem.disabled': a(['settingsId']), 'restItem.enabled': a(['settingsId']), 'restItem.deleted': a(['settingsId']), 'restItem.reordered': a(['settingsId']),
@@ -346,7 +371,10 @@ export const EVENT_ASSOCIATION_SCHEMAS = {
   'settings.dailyTaskTemplateAdded': a(['settingsId']), 'settings.dailyTaskTemplateUpdated': a(['settingsId']), 'settings.dailyTaskTemplateRemoved': a(['settingsId']),
   'settings.dailyTaskTemplateReordered': a(['settingsId']), 'settings.restSuggestionDisplayModeUpdated': a(['settingsId']), 'statsBaseline.updated': a(['settingsId']),
   'data.migrationCompleted': a([]), 'data.migrationFailed': a([]), 'data.exported': a([]), 'data.imported': a([]), 'data.cleared': a([]),
-  'demo.loaded': a([]), 'demo.cleared': a([]), 'notification.shown': a([], ['sessionId', 'taskId']), 'prompt.shown': a([], ['taskId', 'sessionId']), 'prompt.dismissed': a([], ['taskId', 'sessionId']),
+  'demo.loaded': a([]), 'demo.cleared': a([]), 'notification.shown': a([], ['sessionId', 'taskId']),
+  'prompt.shown': a([], ['taskId', 'sessionId', 'mergeGroupId']), 'prompt.dismissed': a([], ['taskId', 'sessionId', 'mergeGroupId']),
+  'mergeGroup.created': a(['mergeGroupId']), 'mergeGroup.taskAdded': a(['mergeGroupId', 'taskId']), 'mergeGroup.taskRemoved': a(['mergeGroupId', 'taskId']),
+  'mergeGroup.reordered': a(['mergeGroupId', 'taskId']), 'mergeGroup.estimateAdjusted': a(['mergeGroupId']), 'mergeGroup.dissolved': a(['mergeGroupId']),
   'error.dataWriteFailed': a([], ['taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId']),
   'error.unexpectedState': a([], ['taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId']), 'diagnosticLog.exported': a([]),
 } satisfies Record<EventType, AssociationSchema>;
@@ -376,23 +404,21 @@ function validatePayload(type: EventType, value: unknown, collector: ValidationC
 }
 
 async function validateTopReference(key: AssociationKey, id: string, context: ValidationContext | undefined, collector: ValidationCollector): Promise<void> {
-  const getter = key === 'taskId' ? context?.getTask : key === 'sessionId' ? context?.getSession : key === 'dayPlanId' ? context?.getDayPlan : key === 'energyRecordId' ? context?.getEnergyRecord : key === 'unresolvedIntervalId' ? context?.getUnresolvedInterval : context?.getSettings;
+  const getters: Record<AssociationKey, ((id: string) => Promise<unknown>) | undefined> = {
+    taskId: context?.getTask,
+    sessionId: context?.getSession,
+    dayPlanId: context?.getDayPlan,
+    energyRecordId: context?.getEnergyRecord,
+    unresolvedIntervalId: context?.getUnresolvedInterval,
+    settingsId: context?.getSettings,
+    mergeGroupId: context?.getMergeGroup,
+  };
+  const getter = getters[key];
   if (!getter) {
     collector.add('validation.context.required', key, `校验 ${key} 引用需要事务查询上下文`);
     return;
   }
-  const found = key === 'taskId'
-    ? await context?.getTask?.(id)
-    : key === 'sessionId'
-      ? await context?.getSession?.(id)
-      : key === 'dayPlanId'
-        ? await context?.getDayPlan?.(id)
-        : key === 'energyRecordId'
-          ? await context?.getEnergyRecord?.(id)
-          : key === 'unresolvedIntervalId'
-            ? await context?.getUnresolvedInterval?.(id)
-            : await context?.getSettings?.(id);
-  collector.check(found !== undefined, 'event.association.missing', key, `引用的 ${key} 实体不存在`);
+  collector.check(await getter(id) !== undefined, 'event.association.missing', key, `引用的 ${key} 实体不存在`);
 }
 
 async function getReferencedSession(id: string, path: string, context: ValidationContext | undefined, collector: ValidationCollector) {
@@ -456,6 +482,30 @@ function checkSame(actual: unknown, expected: unknown, code: string, path: strin
   collector.check(valuesEqual(actual, expected), code, path, '必须与事务内关联实体一致');
 }
 
+/**
+ * Event.taskId 与 Session.taskIds 的对应关系（§3.3 taskIds 数组化之后）。
+ * 单任务 Session 退化为"相等"；合并 Session 下同一 sessionId 会按成员各发一条事件，
+ * 每条只需命中成员之一（§7.5 Domain 级说明）。break 类 Session 没有关联任务，
+ * 此时事件的 taskId 必须为 null。
+ */
+function checkTaskAssociation(
+  session: { taskIds?: readonly string[] },
+  eventTaskId: unknown,
+  code: string,
+  collector: ValidationCollector,
+): void {
+  // 缺 taskIds 的记录是异常数据（迁移遗漏 / 手工写入），按"对不上"处理而不是抛异常。
+  const taskIds = Array.isArray(session.taskIds) ? session.taskIds : [];
+  collector.check(
+    eventTaskId === null
+      ? taskIds.length === 0
+      : typeof eventTaskId === 'string' && taskIds.includes(eventTaskId),
+    code,
+    'taskId',
+    '必须是该 Session 关联任务之一',
+  );
+}
+
 async function validateEntityConsistency(
   type: EventType,
   event: Record<string, unknown>,
@@ -469,6 +519,36 @@ async function validateEntityConsistency(
   const energy = typeof event.energyRecordId === 'string' ? await context?.getEnergyRecord?.(event.energyRecordId) : undefined;
   const interval = typeof event.unresolvedIntervalId === 'string' ? await context?.getUnresolvedInterval?.(event.unresolvedIntervalId) : undefined;
   const settings = typeof event.settingsId === 'string' ? await context?.getSettings?.(event.settingsId) : undefined;
+  const mergeGroup = typeof event.mergeGroupId === 'string' ? await context?.getMergeGroup?.(event.mergeGroupId) : undefined;
+
+  if (mergeGroup) {
+    // 事件描述的必须是事务内合并组的真实终态，不允许 payload 与实体各说各话（§7.19）。
+    if (type === 'mergeGroup.created') {
+      checkSame(mergeGroup.taskIds, payload.taskIds, 'event.mergeGroup.created.taskIds', 'payload.taskIds', collector);
+      checkSame(mergeGroup.estimatedPomodoros, payload.estimatedPomodoros, 'event.mergeGroup.created.estimate', 'payload.estimatedPomodoros', collector);
+    }
+    if (type === 'mergeGroup.taskAdded' && typeof event.taskId === 'string') {
+      collector.check(mergeGroup.taskIds.includes(event.taskId), 'event.mergeGroup.added.membership', 'taskId', '加入后合并组必须包含该 Task');
+      checkSame(mergeGroup.taskIds.indexOf(event.taskId), payload.addedAtIndex, 'event.mergeGroup.added.index', 'payload.addedAtIndex', collector);
+    }
+    if (type === 'mergeGroup.taskRemoved' && typeof event.taskId === 'string') {
+      collector.check(!mergeGroup.taskIds.includes(event.taskId), 'event.mergeGroup.removed.membership', 'taskId', '移出后合并组不得再包含该 Task');
+    }
+    if (type === 'mergeGroup.reordered' && typeof event.taskId === 'string') {
+      checkSame(mergeGroup.taskIds.indexOf(event.taskId), payload.toIndex, 'event.mergeGroup.reordered.index', 'payload.toIndex', collector);
+    }
+    if (type === 'mergeGroup.estimateAdjusted') {
+      checkSame(mergeGroup.estimatedPomodoros, payload.newEstimate, 'event.mergeGroup.estimate', 'payload.newEstimate', collector);
+      checkSame(mergeGroup.estimateRounds.length, payload.round, 'event.mergeGroup.estimateRound', 'payload.round', collector);
+    }
+    if (type === 'mergeGroup.dissolved') {
+      checkSame(mergeGroup.status, 'dissolved', 'event.mergeGroup.dissolved.status', 'mergeGroupId', collector);
+      checkSame(mergeGroup.dissolvedReason, payload.dissolvedReason, 'event.mergeGroup.dissolved.reason', 'payload.dissolvedReason', collector);
+    }
+    if (type === 'prompt.shown' && payload.promptType === 'mergeGroupLimitReached') {
+      checkSame(mergeGroup.status, 'limitReached', 'event.mergeGroup.limitReached.status', 'mergeGroupId', collector);
+    }
+  }
 
   if (task) {
     if (type === 'task.created') {
@@ -596,7 +676,8 @@ async function validateEntityConsistency(
     const focusType = type === 'focus.started' || type === 'focus.completed' || type === 'focus.discarded';
     if (focusType) {
       checkSame(session.type, 'focus', 'event.session.type', 'sessionId', collector);
-      checkSame(session.taskId, event.taskId, 'event.session.taskId', 'taskId', collector);
+      checkTaskAssociation(session, event.taskId, 'event.session.taskId', collector);
+      checkSame(session.mergeGroupId, event.mergeGroupId, 'event.session.mergeGroupId', 'mergeGroupId', collector);
       checkSame(session.dayPlanId, event.dayPlanId, 'event.session.dayPlanId', 'dayPlanId', collector);
       checkSame(session.pomodoroIndex, payload.pomodoroIndex, 'event.session.pomodoroIndex', 'payload.pomodoroIndex', collector);
       if ('plannedDuration' in payload) checkSame(session.plannedDuration, payload.plannedDuration, 'event.session.plannedDuration', 'payload.plannedDuration', collector);
@@ -622,7 +703,7 @@ async function validateEntityConsistency(
     if (type === 'interrupt.internal' || type === 'interrupt.external') {
       checkSame(session.type, 'focus', 'event.session.type', 'sessionId', collector);
       checkSame(session.status, 'active', 'event.session.status', 'sessionId', collector);
-      checkSame(session.taskId, event.taskId, 'event.session.taskId', 'taskId', collector);
+      checkTaskAssociation(session, event.taskId, 'event.session.taskId', collector);
       checkSame(session.dayPlanId, event.dayPlanId, 'event.session.dayPlanId', 'dayPlanId', collector);
     }
     if (type === 'triage.captured') {
@@ -639,7 +720,7 @@ async function validateEntityConsistency(
     if (type === 'task.completed' && payload.completionSource === 'pomodoro') {
       checkSame(session.type, 'focus', 'event.taskCompletion.sessionType', 'sessionId', collector);
       checkSame(session.status, 'completed', 'event.taskCompletion.sessionStatus', 'sessionId', collector);
-      checkSame(session.taskId, event.taskId, 'event.taskCompletion.taskId', 'taskId', collector);
+      checkTaskAssociation(session, event.taskId, 'event.taskCompletion.taskId', collector);
     }
     if (type === 'energy.recorded' && typeof payload.source === 'string' && payload.source.startsWith('after')) {
       const expectedType: Record<string, string> = { afterFocus: 'focus', afterShortBreak: 'shortBreak', afterLongBreak: 'longBreak', afterExtraFocus: 'extraFocus', afterExtraRest: 'extraRest' };
@@ -654,20 +735,20 @@ async function validateEntityConsistency(
     if (type === 'interval.detected' && payload.detectedSessionType !== null) {
       checkSame(session.type, payload.detectedSessionType, 'event.session.type', 'payload.detectedSessionType', collector);
       checkSame(session.status, 'active', 'event.session.status', 'sessionId', collector);
-      checkSame(session.taskId, event.taskId, 'event.session.taskId', 'taskId', collector);
+      checkTaskAssociation(session, event.taskId, 'event.session.taskId', collector);
       checkSame(session.dayPlanId, event.dayPlanId, 'event.session.dayPlanId', 'dayPlanId', collector);
     }
     if (type === 'interval.sessionResolved') {
       checkSame(session.type, payload.sessionType, 'event.session.type', 'payload.sessionType', collector);
       checkSame(session.status, payload.resolvedAs, 'event.session.status', 'payload.resolvedAs', collector);
-      checkSame(session.taskId, event.taskId, 'event.session.taskId', 'taskId', collector);
+      checkTaskAssociation(session, event.taskId, 'event.session.taskId', collector);
       checkSame(session.dayPlanId, event.dayPlanId, 'event.session.dayPlanId', 'dayPlanId', collector);
     }
     if (type === 'interval.classified') {
       checkSame(session.type, payload.classificationType, 'event.session.type', 'payload.classificationType', collector);
       checkSame(session.status, 'completed', 'event.session.status', 'sessionId', collector);
       checkSame(session.originIntervalId, event.unresolvedIntervalId, 'event.session.originIntervalId', 'unresolvedIntervalId', collector);
-      checkSame(session.taskId, event.taskId, 'event.session.taskId', 'taskId', collector);
+      checkTaskAssociation(session, event.taskId, 'event.session.taskId', collector);
       checkSame(session.dayPlanId, event.dayPlanId, 'event.session.dayPlanId', 'dayPlanId', collector);
     }
   }
@@ -774,7 +855,7 @@ async function validateAssociations(type: EventType, event: Record<string, unkno
   const associationSchema = EVENT_ASSOCIATION_SCHEMAS[type];
   const required = new Set(associationSchema.required);
   const allowed = new Set([...associationSchema.required, ...(associationSchema.optional ?? [])]);
-  for (const key of ['taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId'] as const) {
+  for (const key of ASSOCIATION_KEYS) {
     const value = event[key];
     const valid = validateUuidV7(value, key, collector, true);
     if (required.has(key)) collector.check(value !== null, 'event.association.required', key, `${type} 必须填写 ${key}`);
@@ -815,6 +896,9 @@ async function validateAssociations(type: EventType, event: Record<string, unkno
     collector.check((prompt === 'taskCompletionCheck' || prompt === 'taskSplitSuggestion') === (event.taskId !== null), 'event.association.promptTask', 'taskId', 'promptType 与 taskId 不匹配');
     if (prompt === 'taskCompletionCheck') collector.check(event.sessionId !== null, 'event.association.promptSession', 'sessionId', 'taskCompletionCheck 必须填写 sessionId');
     if (prompt === 'taskSplitSuggestion') collector.check(event.sessionId === null, 'event.association.promptSession', 'sessionId', 'taskSplitSuggestion 不填写 sessionId');
+    // §7.15：mergeGroupLimitReached 关联的是整个合并组，不是某个具体任务或某段 Session。
+    collector.check((prompt === 'mergeGroupLimitReached') === (event.mergeGroupId !== null), 'event.association.promptMergeGroup', 'mergeGroupId', 'promptType 与 mergeGroupId 不匹配');
+    if (prompt === 'mergeGroupLimitReached') collector.check(event.sessionId === null, 'event.association.promptSession', 'sessionId', 'mergeGroupLimitReached 不填写 sessionId');
     if (prompt === 'energyRecording') {
       const afterContext = typeof payload.promptContext === 'string' && payload.promptContext.startsWith('after');
       collector.check(afterContext === (event.sessionId !== null), 'event.association.energyPromptSession', 'sessionId', 'after* energy prompt 必须且仅能填写 sessionId');

@@ -9,13 +9,14 @@ import {
 } from '../dataStore';
 
 describe('dataStore over IndexedDB (S1 skeleton)', () => {
-  it('恰好 7 个 store，且与 §3 七实体一一对应', () => {
-    expect(STORE_NAMES).toHaveLength(7);
+  it('恰好 8 个 store，且与 §3 八实体一一对应', () => {
+    expect(STORE_NAMES).toHaveLength(8);
     expect([...STORE_NAMES].sort()).toEqual(
       [
         'dayPlans',
         'energyRecords',
         'events',
+        'mergeGroups',
         'sessions',
         'settings',
         'tasks',
@@ -24,8 +25,8 @@ describe('dataStore over IndexedDB (S1 skeleton)', () => {
     );
   });
 
-  it('可同步实体 store（6 个，剔除 events）能 put → get → put 覆盖更新 → getAll', async () => {
-    expect(SYNCABLE_STORE_NAMES).toHaveLength(6);
+  it('可同步实体 store（7 个，剔除 events）能 put → get → put 覆盖更新 → getAll', async () => {
+    expect(SYNCABLE_STORE_NAMES).toHaveLength(7);
     expect(SYNCABLE_STORE_NAMES).not.toContain(EVENT_STORE);
 
     for (const store of SYNCABLE_STORE_NAMES) {

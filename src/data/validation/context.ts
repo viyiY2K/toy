@@ -2,6 +2,7 @@ import type {
   DayPlan,
   EnergyRecord,
   Event,
+  MergeGroup,
   Session,
   Settings,
   Task,
@@ -26,4 +27,5 @@ export interface ValidationContext {
   getSettings?(id: string): Promise<Settings | undefined>;
   getActiveSettings?(): Promise<Settings | undefined>;
   isRestSuggestionReferenced?(key: string): Promise<boolean>;
+  getMergeGroup?(id: string): Promise<MergeGroup | undefined>;
 }

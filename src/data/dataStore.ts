@@ -4,6 +4,7 @@ import { newId } from './id';
 import type {
   DayPlan,
   EnergyRecord,
+  MergeGroup,
   Session,
   Settings,
   Task,
@@ -61,6 +62,7 @@ export interface SyncableEntityMap {
   energyRecords: EnergyRecord;
   unresolvedIntervals: UnresolvedInterval;
   settings: Settings;
+  mergeGroups: MergeGroup;
 }
 
 export interface TaskSoftDeleteOptions {

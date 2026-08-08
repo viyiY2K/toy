@@ -103,14 +103,14 @@ export async function startFocus(
       assertNoOpenBreakOpportunity(historicalSessions, events);
       const pomodoroIndex =
         historicalSessions
-          .filter((session) => session.type === 'focus' && session.taskId === task.id)
+          .filter((session) => session.type === 'focus' && session.taskIds.includes(task.id))
           .reduce((maximum, session) => Math.max(maximum, session.pomodoroIndex ?? 0), 0) + 1;
       const session = makeSession({
         now: input.now,
         startedAt: input.now,
         timezone: input.timezone,
         type: 'focus',
-        taskId: task.id,
+        taskIds: [task.id],
         plannedDuration: settings.focusMinutes * 60,
         pomodoroIndex,
         dayPlanId: dayPlan.id,
@@ -165,20 +165,24 @@ export async function completeFocus(
         updatedAt: input.now,
       };
       await transaction.put(STORE.sessions, completed);
-      await transaction.appendEvent(
-        makeEvent({
-          ...eventFields(input, transaction.correlationId),
-          type: 'focus.completed',
-          taskId: session.taskId!,
-          sessionId: session.id,
-          dayPlanId: session.dayPlanId,
-          payload: {
-            pomodoroIndex: session.pomodoroIndex!,
-            plannedDuration: session.plannedDuration!,
-            actualDuration: input.actualDuration,
-          },
-        }),
-      );
+      // §7.5：合并 focus 按 taskIds 每个成员各发一条，共享 sessionId / mergeGroupId / correlationId。
+      for (const taskId of session.taskIds) {
+        await transaction.appendEvent(
+          makeEvent({
+            ...eventFields(input, transaction.correlationId),
+            type: 'focus.completed',
+            taskId,
+            sessionId: session.id,
+            dayPlanId: session.dayPlanId,
+            mergeGroupId: session.mergeGroupId,
+            payload: {
+              pomodoroIndex: session.pomodoroIndex!,
+              plannedDuration: session.plannedDuration!,
+              actualDuration: input.actualDuration,
+            },
+          }),
+        );
+      }
       return { value: completed, correlationId: transaction.correlationId };
     },
   );
@@ -214,21 +218,24 @@ export async function discardFocus(
         updatedAt: input.now,
       };
       await transaction.put(STORE.sessions, discarded);
-      await transaction.appendEvent(
-        makeEvent({
-          ...eventFields(input, transaction.correlationId),
-          type: 'focus.discarded',
-          taskId: session.taskId!,
-          sessionId: session.id,
-          dayPlanId: session.dayPlanId,
-          payload: {
-            pomodoroIndex: session.pomodoroIndex!,
-            actualDuration: input.actualDuration,
-            reason: 'userInitiated',
-            triggeredByInterruptEventId: null,
-          },
-        }),
-      );
+      for (const taskId of session.taskIds) {
+        await transaction.appendEvent(
+          makeEvent({
+            ...eventFields(input, transaction.correlationId),
+            type: 'focus.discarded',
+            taskId,
+            sessionId: session.id,
+            dayPlanId: session.dayPlanId,
+            mergeGroupId: session.mergeGroupId,
+            payload: {
+              pomodoroIndex: session.pomodoroIndex!,
+              actualDuration: input.actualDuration,
+              reason: 'userInitiated',
+              triggeredByInterruptEventId: null,
+            },
+          }),
+        );
+      }
       return { value: discarded, correlationId: transaction.correlationId };
     },
   );
@@ -454,7 +461,7 @@ export async function endWorkAfterFocus(
       const workEnded = makeEvent({
         ...eventFields(input, transaction.correlationId),
         type: 'dayPlan.workEnded',
-        taskId: sourceFocus.taskId,
+        taskId: sourceFocus.taskIds[0] ?? null,
         sessionId: sourceFocus.id,
         dayPlanId: dayPlan.id,
         payload: {
@@ -523,7 +530,7 @@ export async function completeBreak(
 }
 
 export async function completeTaskFromPomodoro(
-  input: InitializationClock & { sessionId: string },
+  input: InitializationClock & { sessionId: string; taskId?: string },
 ): Promise<TaskCommandResult<Task>> {
   return executeAtomicWrite(
     {
@@ -538,11 +545,22 @@ export async function completeTaskFromPomodoro(
         !session ||
         session.type !== 'focus' ||
         session.status !== 'completed' ||
-        session.taskId === null
+        session.taskIds.length === 0
       ) {
         throw new Error('番茄完成确认必须关联 completed focus');
       }
-      const task = await transaction.get<Task>(STORE.tasks, session.taskId);
+      /*
+       * 合并 focus 一次涉及多个任务，必须由调用方点名确认的是哪一个；
+       * 单任务 focus 只有一个成员，允许省略以保持既有调用方不变。
+       */
+      const targetTaskId = input.taskId ?? (session.taskIds.length === 1 ? session.taskIds[0]! : null);
+      if (targetTaskId === null) {
+        throw new Error('合并 focus 完成确认必须指明 taskId');
+      }
+      if (!session.taskIds.includes(targetTaskId)) {
+        throw new Error('taskId 不在本次 focus 的关联任务中');
+      }
+      const task = await transaction.get<Task>(STORE.tasks, targetTaskId);
       if (!task || (task.status !== 'active' && task.status !== 'splitNeeded')) {
         throw new Error('只有未完成的有效 Task 可以确认番茄完成');
       }
@@ -551,7 +569,7 @@ export async function completeTaskFromPomodoro(
         (candidate) =>
           candidate.type === 'focus' &&
           candidate.status === 'completed' &&
-          candidate.taskId === task.id,
+          candidate.taskIds.includes(task.id),
       ).length;
       const completed: Task = {
         ...task,

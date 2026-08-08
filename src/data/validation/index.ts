@@ -7,3 +7,4 @@ export * from './energyRecord';
 export * from './unresolvedInterval';
 export * from './settings';
 export * from './event';
+export * from './mergeGroup';

@@ -35,7 +35,14 @@ export type SkipKind = 'explicitSkip' | 'noResponse' | 'appClosed' | 'missed';
 export interface Session extends SyncableBaseFields, LocalDateFields {
   type: SessionType;
   status: SessionStatus;
-  taskId: string | null;
+  /**
+   * 关联任务 id 列表（§3.3）。focus 长度 ≥ 1——单任务专注只有 1 个元素，
+   * 合并番茄钟场景下可含 2 个及以上元素，元素间完全平等、不分主次（见 §3.8 MergeGroup）；
+   * extraFocus 不支持合并，长度固定 1；shortBreak / longBreak / extraRest 固定空数组。
+   */
+  taskIds: string[];
+  /** 触发本次专注的合并组 id（§3.3）；非 null 时 type 必须为 focus 且 taskIds 长度 ≥ 2。 */
+  mergeGroupId: string | null;
   startedAt: IsoDateTime;
   endedAt: IsoDateTime | null;
   plannedDuration: number | null;
@@ -62,7 +69,9 @@ export interface MakeSessionInput {
   type: SessionType;
   /** 默认 'active'（§3.3 默认值）；extra* 恒为 'completed' 由调用方传入，校验留 S6。 */
   status?: SessionStatus;
-  taskId?: string | null;
+  /** 默认空数组（不适用 type 的固定值）；focus 由调用方传入，长度校验留 S6。 */
+  taskIds?: string[];
+  mergeGroupId?: string | null;
   endedAt?: IsoDateTime | null;
   plannedDuration?: number | null;
   actualDuration?: number | null;
@@ -90,7 +99,8 @@ export function makeSession(input: MakeSessionInput): Session {
     localDate,
     type: input.type,
     status: input.status ?? 'active',
-    taskId: input.taskId ?? null,
+    taskIds: input.taskIds === undefined ? [] : [...input.taskIds],
+    mergeGroupId: input.mergeGroupId ?? null,
     startedAt: input.startedAt,
     endedAt: input.endedAt ?? null,
     plannedDuration: input.plannedDuration ?? null,

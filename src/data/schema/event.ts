@@ -18,7 +18,7 @@ import {
 } from './common';
 import type { EventPayloadMap, EventType } from '../events/contract';
 
-/** Event 完整实体（§3.4 顶层字段 + §7 判别 payload）。默认类型即 78 分支判别联合。 */
+/** Event 完整实体（§3.4 顶层字段 + §7 判别 payload）。默认类型即 84 分支判别联合。 */
 export type Event<T extends EventType = EventType> = T extends EventType
   ? EventBaseFields &
       LocalDateFields & {
@@ -31,6 +31,8 @@ export type Event<T extends EventType = EventType> = T extends EventType
         energyRecordId: string | null;
         unresolvedIntervalId: string | null;
         settingsId: string | null;
+        /** 关联 MergeGroup（§3.8）；mergeGroup.* 事件本身，以及由合并组触发的 focus.* 均填写。 */
+        mergeGroupId: string | null;
         correlationId: string | null;
       }
   : never;
@@ -51,6 +53,7 @@ interface MakeEventBaseInput<T extends EventType> {
   energyRecordId?: string | null;
   unresolvedIntervalId?: string | null;
   settingsId?: string | null;
+  mergeGroupId?: string | null;
   correlationId?: string | null;
 }
 
@@ -81,6 +84,7 @@ export function makeEvent<T extends EventType>(input: MakeEventInput<T>): Event<
     energyRecordId: input.energyRecordId ?? null,
     unresolvedIntervalId: input.unresolvedIntervalId ?? null,
     settingsId: input.settingsId ?? null,
+    mergeGroupId: input.mergeGroupId ?? null,
     correlationId: input.correlationId ?? null,
   } as Event<T>;
 }

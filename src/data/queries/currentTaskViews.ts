@@ -154,11 +154,15 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
   const completedValidFocusCountByTaskId: Record<string, number> = {};
   let completedFocusCountToday = 0;
   for (const session of sessions) {
-    if (session.type !== 'focus' || session.status !== 'completed' || session.taskId === null) {
+    if (session.type !== 'focus' || session.status !== 'completed' || session.taskIds.length === 0) {
       continue;
     }
-    completedValidFocusCountByTaskId[session.taskId] =
-      (completedValidFocusCountByTaskId[session.taskId] ?? 0) + 1;
+    // §8.5.1：任务维度下，一次合并 Session 给每个成员各记 +1，不平分。
+    for (const taskId of session.taskIds) {
+      completedValidFocusCountByTaskId[taskId] =
+        (completedValidFocusCountByTaskId[taskId] ?? 0) + 1;
+    }
+    // §8.3.1：全局有效番茄数按 Session 记录数计，不因 taskIds 长度重复计数。
     if (
       deriveAppDate(
         session.startedAt,
