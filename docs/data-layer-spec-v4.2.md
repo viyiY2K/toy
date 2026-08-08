@@ -3890,6 +3890,33 @@ validFocusCountAtCompletion > estimateRounds[0].pomodoros
 
 **预算占用**：跨天继续任务时，DayPlan 预算按 `remainingPomodoros` 占用、不按总预估重复占用，相关口径见 §8.10。
 
+#### 8.5.6 按分类统计投入时长（v4.2 新增）
+
+**定义**：按 `Task.category`（工作 / 学习 / 副业 / 生活 / 未分类）对 §8.5.2 定义的「Task 专注总时长」进行分组求和，用于统计页展示用户在各大类上的时间投入比例。**本口径只统计时长，不定义"按分类的有效番茄数"**——有效番茄数只反映当日专注节奏，与任务分类无关，不在此维度展开。
+
+**分组求和口径**（沿用 §8.5.2 的标准 / 额外 / 作废三段式定义，逐 Session 按 `appDate` 筛选后再按 `Task.category` 分组求和）：
+
+```
+某分类 C 在目标区间（appDate ∈ 目标区间）的投入时长 =
+  sum(Session.actualDuration
+      where taskIds 中存在某个 taskId 满足 Task(taskId).category === C
+        and appDate(Session) ∈ 目标区间
+        and (
+              (type='focus' and status='completed')   // 标准专注
+           or type='extraFocus'                        // 额外专注
+           or (type='focus' and status='discarded')    // 作废专注
+        )
+        and Session.deletedAt === null)
+```
+
+`C` 取值：`'work'` / `'study'` / `'side'` / `'life'` / `null`。`Task.category === null` 的任务归入独立的"未分类"分组，不强制用户分类，不从统计中剔除（见 §3.1 category 枚举值说明）。
+
+**范围扩展**：日统计按目标 `appDate` 筛选；周 / 月 / 年统计按 §8.2.3 口径将 `appDate` 筛选范围扩展至对应时段，分类分组逻辑不变。
+
+**与 Task 分类字段的关系（读取当前值，不做时点快照）**：本节按 Task **当前**的 `category` 值分组，不对历史 Session 做"发生时的分类"快照。若某 Task 的分类在专注发生之后被用户改过，改分类前后产生的所有 Session，重新统计时都按该 Task **当前** `category` 归类；`task.categoryChanged`（§7.1）留痕"何时因何改变"，供审计与"为什么这次统计数字变了"的回溯，但不影响本节聚合口径本身。
+
+**合并番茄钟场景**：一次 Session 的 `taskIds` 可能包含分类不同的多个任务（如一次合并专注同时挂了一个"工作"任务和一个"副业"任务）。此时该 Session 的 `actualDuration` 会被**各自命中的分类桶完整计入一遍**，不按参与任务数平分——与 §8.5.2 关键规则"合并番茄钟场景下，一次 Session 的 actualDuration 会被 taskIds 内每个任务的专注时长明细各自完整计入一遍（不平分）"保持一致的口径；这意味着跨分类求和可能大于该时间范围内的全局总专注时长（§8.3 口径），属于已知且刻意保留的口径差异，不是数据重复写入。
+
 ---
 
 **§8.5 范围边界说明（任务生命周期统计本轮不展开）**
