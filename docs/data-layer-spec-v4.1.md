@@ -2939,7 +2939,7 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
   **5–6 软提醒区**（非阻断式）：用户创建任务或调整预估后，`estimatedPomodoros` 为 5 或 6 时，允许写入，不阻断用户；UI 可给出非阻断式软提醒（如"此任务已偏大，建议拆分"），**不必触发 `prompt.shown`**，不要求用户强制回应，不阻止继续操作。
 
   **边界说明**：`taskSplitSuggestion` 是产品内需要用户回应的提示，只记录"系统提示用户重新评估 / 拆分"这一行为，不表示拆分已发生；真正拆分 / 归档时，由 `task.split`、`task.archived`（outcome=`'split'`）、`task.created`（source=`'splitChild'`）承接；它不是 `notification.*`、`restItem.*` 或 `error.*`。
-- promptType=`'mergeGroupLimitReached'`（**强触发**）：合并组 `estimateRounds` 第三轮（`index=3`）对应的 focus Session 终结后，组内仍有未完成任务时触发。文案语义**不同于** `taskSplitSuggestion`：应说明"这些零碎事项已经占满一个多番茄的量，建议拆开单独处理，而不是继续合并"，不使用子母任务语境下的"拆分"表述（合并组不支持拆分成子任务，只能解散或移出成员）。与 `taskSplitSuggestion` 不同，本提示**不阻断**继续追加预估或继续合并——它只是提醒，不像 Task 那样禁止开启下一个标准 focus。
+- promptType=`'mergeGroupLimitReached'`（**强触发**）：合并组 `estimateRounds` 第三轮（`index=3`）对应的 focus Session 终结后、或该组已完成的 focus 轮次达到 7 次后，组内仍有未完成任务时触发。文案语义**不同于** `taskSplitSuggestion`：应说明"这些零碎事项已经占满一个多番茄的量，建议拆开单独处理，而不是继续合并"，不使用子母任务语境下的"拆分"表述（合并组不支持拆分成子任务，只能解散或移出成员）。文案独立，但**阻断行为与 `taskSplitSuggestion` 一致**：触发本提示的同时 `MergeGroup.status` 变为 `'limitReached'`，**强阻断**——不允许继续追加预估（拒绝新的 `mergeGroup.estimateAdjusted`）、不允许开启新一轮 focus Session，直至用户移出剩余未完成成员或整体解散才解除（见 §3.8 关键规则 6、§7.19）。用户关闭 / 跳过该提示（→ `prompt.dismissed`）**不解除阻塞**。
 
 **不应触发**：休息建议选择界面（→ §7.7 `restItem.*`）；恢复流程弹窗（→ §7.11 `interval.*`）；危险操作二次确认弹窗（→ 最终结果由业务事件表达）；普通 UI 弹窗、铃声、全屏提示（属 UI 表现，不记录为事件）；用户已有效回应后再次展示同类弹窗（每次展示独立触发）；合并组预估未到第三轮（→ 不触发 `mergeGroupLimitReached`）。
 
