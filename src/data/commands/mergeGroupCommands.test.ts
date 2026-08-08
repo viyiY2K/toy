@@ -286,9 +286,11 @@ describe('mergeGroupCommands（v4.1 §3.8 / §7.19）', () => {
     });
   });
 
-  it('正在跑的合并 Session 不会因为成员被移到只剩 1 个而退化成单任务 Session', async () => {
-    const [a, b] = [await chore('A'), await chore('B')];
-    const group = (await createMergeGroup({ now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id] })).value;
+  it('计时途中移出成员会同步进正在跑的 Session，但组的归属不变（§3.3 约束 15 放宽到 ≥ 1）', async () => {
+    const [a, b, c] = [await chore('A'), await chore('B'), await chore('C')];
+    const group = (await createMergeGroup({
+      now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id, c.id],
+    })).value;
     const session = await seedActiveMergedFocus(group);
 
     await removeTaskFromMergeGroup({
@@ -296,7 +298,22 @@ describe('mergeGroupCommands（v4.1 §3.8 / §7.19）', () => {
     });
 
     const stored = (await dataStore.get<Session>(STORE.sessions, session.id))!;
-    expect(stored.taskIds).toEqual([a.id, b.id]);
+    expect(stored.taskIds).toEqual([b.id, c.id]);
+    expect(stored.mergeGroupId).toBe(group.id);
+  });
+
+  it('成员被移空时正在跑的 Session 保留移出前的名单——不能变成无任务专注', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    const group = (await createMergeGroup({ now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id] })).value;
+    const session = await seedActiveMergedFocus(group);
+
+    // 移出 a 触发自动解散（剩 1 个），两个成员的归属都被清空。
+    await removeTaskFromMergeGroup({
+      now: at(), timezone: TIMEZONE, mergeGroupId: group.id, taskId: a.id, reason: 'manualUnmerge',
+    });
+
+    const stored = (await dataStore.get<Session>(STORE.sessions, session.id))!;
+    expect(stored.taskIds).toEqual([b.id]);
     expect(stored.mergeGroupId).toBe(group.id);
   });
 });

@@ -78,9 +78,9 @@ async function activeSessionOf(
  * 把成员变化同步进正在跑的那条合并 Session。
  *
  * §3.3 关键规则 11 规定 Session.taskIds 取"终结那一刻组内本轮尚未拿 credit 的成员"，
- * 所以计时途中的增删要跟进。唯一的下限是 2：一条已经在跑的合并 Session 不能退化成
- * 单任务 Session（§3.3 字段一致性约束 15），因此成员被移到只剩 2 个以下时，这条
- * Session 保留移出前的名单——用户已经在这段时间里做过这些事，不该被抹掉。
+ * 所以计时途中的增删要跟进。唯一的下限是 1：focus 必须至少关联一个 Task（产品不支持
+ * 无任务自由专注），因此成员被移空时这条 Session 保留移出前的名单——用户已经在这段
+ * 时间里做过这些事，不该被抹掉。
  */
 async function syncActiveSessionMembers(
   transaction: ValidatedAtomicWriteTransaction,
@@ -93,7 +93,7 @@ async function syncActiveSessionMembers(
   const kept = session.taskIds.filter((taskId) => nextMembers.includes(taskId));
   const added = nextMembers.filter((taskId) => !session.taskIds.includes(taskId));
   const taskIds = [...kept, ...added];
-  if (taskIds.length < 2) return;
+  if (taskIds.length < 1) return;
   if (taskIds.length === session.taskIds.length && taskIds.every((id, i) => id === session.taskIds[i])) {
     return;
   }
@@ -198,6 +198,70 @@ export async function addTaskToMergeGroup(
 }
 
 /**
+ * 移出一批成员的共用实现（§7.19 mergeGroup.taskRemoved）。
+ *
+ * 逐个发 `taskRemoved`（组整体解散那条路径由 `mergeGroup.dissolved` 统一记录，不逐个发，
+ * 见 §7.19 说明）；移完后剩余 ≤ 1 时按 §3.8 关键规则 2 自动解散，全部事件共享
+ * 同一个 correlationId。`removedAtIndex` 取**移出那一刻**该成员在 taskIds 中的下标，
+ * 所以要一边移一边算，不能先算完再批量移。
+ */
+async function removeMembers(
+  transaction: ValidatedAtomicWriteTransaction,
+  clock: InitializationClock,
+  group: MergeGroup,
+  taskIds: readonly string[],
+  reason: 'manualUnmerge' | 'sessionEndedIncomplete',
+): Promise<MergeGroup> {
+  const common = eventFields(clock, transaction.correlationId);
+  let remaining = [...group.taskIds];
+  const removals: Array<{ taskId: string; removedAtIndex: number }> = [];
+  for (const taskId of taskIds) {
+    const removedAtIndex = remaining.indexOf(taskId);
+    if (removedAtIndex < 0) throw new Error('该 Task 不在此合并组中');
+    remaining = remaining.filter((candidate) => candidate !== taskId);
+    removals.push({ taskId, removedAtIndex });
+  }
+
+  const dissolving = remaining.length <= 1;
+  const updated: MergeGroup = dissolving
+    ? {
+        ...group,
+        taskIds: remaining,
+        status: 'dissolved',
+        dissolvedAt: clock.now,
+        dissolvedReason: 'membersBelowMinimum',
+        updatedAt: clock.now,
+      }
+    : { ...group, taskIds: remaining, updatedAt: clock.now };
+  await transaction.put(STORE.mergeGroups, updated);
+  await clearMembership(transaction, dissolving ? group.taskIds : taskIds, clock.now);
+  await syncActiveSessionMembers(transaction, group.id, remaining, clock.now);
+
+  for (const { taskId, removedAtIndex } of removals) {
+    await transaction.appendEvent(
+      makeEvent({
+        ...common,
+        type: 'mergeGroup.taskRemoved',
+        mergeGroupId: group.id,
+        taskId,
+        payload: { removedAtIndex, reason },
+      }),
+    );
+  }
+  if (dissolving) {
+    await transaction.appendEvent(
+      makeEvent({
+        ...common,
+        type: 'mergeGroup.dissolved',
+        mergeGroupId: group.id,
+        payload: { finalTaskIds: remaining, dissolvedReason: 'membersBelowMinimum' },
+      }),
+    );
+  }
+  return updated;
+}
+
+/**
  * 单个成员退出合并组（§7.19 mergeGroup.taskRemoved）。
  * 移出后剩余成员 ≤ 1 时按 §3.8 关键规则 2 自动解散，两条事件共享 correlationId。
  */
@@ -217,45 +281,7 @@ export async function removeTaskFromMergeGroup(
     },
     async (transaction) => {
       const group = await requireLiveGroup(transaction, input.mergeGroupId);
-      const removedAtIndex = group.taskIds.indexOf(input.taskId);
-      if (removedAtIndex < 0) throw new Error('该 Task 不在此合并组中');
-
-      const remaining = group.taskIds.filter((taskId) => taskId !== input.taskId);
-      const dissolving = remaining.length <= 1;
-      const updated: MergeGroup = dissolving
-        ? {
-            ...group,
-            taskIds: remaining,
-            status: 'dissolved',
-            dissolvedAt: input.now,
-            dissolvedReason: 'membersBelowMinimum',
-            updatedAt: input.now,
-          }
-        : { ...group, taskIds: remaining, updatedAt: input.now };
-      await transaction.put(STORE.mergeGroups, updated);
-      await clearMembership(transaction, dissolving ? group.taskIds : [input.taskId], input.now);
-      await syncActiveSessionMembers(transaction, group.id, remaining, input.now);
-
-      const common = eventFields(input, transaction.correlationId);
-      await transaction.appendEvent(
-        makeEvent({
-          ...common,
-          type: 'mergeGroup.taskRemoved',
-          mergeGroupId: group.id,
-          taskId: input.taskId,
-          payload: { removedAtIndex, reason: input.reason },
-        }),
-      );
-      if (dissolving) {
-        await transaction.appendEvent(
-          makeEvent({
-            ...common,
-            type: 'mergeGroup.dissolved',
-            mergeGroupId: group.id,
-            payload: { finalTaskIds: remaining, dissolvedReason: 'membersBelowMinimum' },
-          }),
-        );
-      }
+      const updated = await removeMembers(transaction, input, group, [input.taskId], input.reason);
       return { value: updated, correlationId: transaction.correlationId };
     },
   );
@@ -358,6 +384,101 @@ export async function adjustMergeGroupEstimate(
             oldEstimate: group.estimatedPomodoros,
             newEstimate: input.estimatedPomodoros,
           },
+        }),
+      );
+      return { value: updated, correlationId: transaction.correlationId };
+    },
+  );
+}
+
+/** 组内此刻仍未完成的成员（已完成的留在组里，只是不再计入后续轮次）。 */
+async function unfinishedMembers(
+  transaction: ValidatedAtomicWriteTransaction,
+  group: MergeGroup,
+): Promise<string[]> {
+  const unfinished: string[] = [];
+  for (const taskId of group.taskIds) {
+    const task = await transaction.get<Task>(STORE.tasks, taskId);
+    if (task && task.status !== 'completed') unfinished.push(taskId);
+  }
+  return unfinished;
+}
+
+/**
+ * 番茄到点、用户选「结束」（§3.8 关键规则 4 的第一个分叉）。
+ *
+ * 组内**未完成**的成员逐个退出组、`mergeGroupId` 清空、保持 `status='active'`，
+ * 作为独立任务回到今日待办 / 活动清单；**已完成**的成员不受影响，继续留在组里作为
+ * 这个合并组的历史成员。移出后剩余成员 ≤ 1 时按关键规则 2 自动解散。
+ *
+ * 组内全部成员都已完成时没有可移出的人，本命令是 no-op（不产生事件）。
+ */
+export async function endMergeGroupRound(
+  input: InitializationClock & { mergeGroupId: string },
+): Promise<TaskCommandResult<MergeGroup>> {
+  return executeAtomicWrite(
+    {
+      storeNames: MERGE_STORES,
+      now: input.now,
+      timezone: input.timezone,
+      diagnosticContext: { entityType: 'MergeGroup', entityId: input.mergeGroupId, operation: 'update' },
+    },
+    async (transaction) => {
+      const group = await requireLiveGroup(transaction, input.mergeGroupId);
+      const unfinished = await unfinishedMembers(transaction, group);
+      if (unfinished.length === 0) {
+        return { value: group, correlationId: transaction.correlationId };
+      }
+      const updated = await removeMembers(
+        transaction,
+        input,
+        group,
+        unfinished,
+        'sessionEndedIncomplete',
+      );
+      return { value: updated, correlationId: transaction.correlationId };
+    },
+  );
+}
+
+/**
+ * 转入硬上限阻塞态并提示（§3.8 关键规则 6、§7.15 `promptType='mergeGroupLimitReached'`）。
+ *
+ * 触发条件：三轮预估用满，或该组已完成的 focus 轮次达到 7 次，且组内仍有未完成成员。
+ * 转入后**强阻断**——不允许追加预估、不允许开启新一轮，必须移出剩余未完成成员或整体
+ * 解散才能解开；用户关掉提示**不解除阻塞**（与 §3.1 `taskSplitSuggestion` 同为强阻断
+ * 语义）。由计时页在收尾选择前调用；条件不满足时是 no-op，不产生事件。
+ */
+export async function markMergeGroupLimitReached(
+  input: InitializationClock & { mergeGroupId: string },
+): Promise<TaskCommandResult<MergeGroup>> {
+  return executeAtomicWrite(
+    {
+      storeNames: MERGE_STORES,
+      now: input.now,
+      timezone: input.timezone,
+      diagnosticContext: { entityType: 'MergeGroup', entityId: input.mergeGroupId, operation: 'update' },
+    },
+    async (transaction) => {
+      const group = await requireLiveGroup(transaction, input.mergeGroupId);
+      const unfinished = await unfinishedMembers(transaction, group);
+      const sessions = await transaction.getAllIncludingDeleted<Session>(STORE.sessions);
+      const completedRounds = sessions.filter(
+        (session) => session.mergeGroupId === group.id && session.status === 'completed',
+      ).length;
+      const capped = group.estimateRounds.length >= 3 || completedRounds >= 7;
+      if (group.status === 'limitReached' || unfinished.length === 0 || !capped) {
+        return { value: group, correlationId: transaction.correlationId };
+      }
+
+      const updated: MergeGroup = { ...group, status: 'limitReached', updatedAt: input.now };
+      await transaction.put(STORE.mergeGroups, updated);
+      await transaction.appendEvent(
+        makeEvent({
+          ...eventFields(input, transaction.correlationId),
+          type: 'prompt.shown',
+          mergeGroupId: group.id,
+          payload: { promptType: 'mergeGroupLimitReached', promptContext: null },
         }),
       );
       return { value: updated, correlationId: transaction.correlationId };

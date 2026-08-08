@@ -8,6 +8,7 @@ import {
   makeSession,
   type DayPlan,
   type Event,
+  type MergeGroup,
   type Session,
   type Settings,
   type Task,
@@ -130,6 +131,102 @@ export async function startFocus(
           },
         }),
       );
+      return { value: session, correlationId: transaction.correlationId };
+    },
+  );
+}
+
+/**
+ * 从合并卡片启动一轮合并专注（v4.1 §3.3 关键规则 5/11、§3.8 关键规则 4/6）。
+ *
+ * 与单任务 `startFocus` 的三点差别：
+ * 1. `taskIds` 是**快照**：取组内此刻尚未完成的成员——已经在更早一轮里完成过的成员
+ *    早就通过那一轮记过有效番茄，不再重复计（§3.3 关键规则 11）。本轮中途才完成的
+ *    成员仍留在快照里，照样拿这一轮的 credit。
+ * 2. `pomodoroIndex` 记的是**这个组的第几轮**，不是各成员各自的序号——合并组一旦成立
+ *    就被当作与标准任务同级别的一个整体来编号（§3.3 关键规则 5）。
+ * 3. `focus.started` 按快照里每个成员各发一条，共享 sessionId / mergeGroupId /
+ *    correlationId，`taskEstimateAtStart` 各自取自己的预估（§7.5）。
+ *
+ * `status='limitReached'` 的组不允许开启新一轮（§3.8 字段一致性约束 7），必须先移出
+ * 剩余未完成成员或整体解散。
+ */
+export async function startMergeGroupFocus(
+  input: InitializationClock & { mergeGroupId: string },
+): Promise<TaskCommandResult<Session>> {
+  const initialized = await ensureCurrentAppDateInitialized(input);
+  return executeAtomicWrite(
+    {
+      storeNames: [
+        STORE.tasks,
+        STORE.sessions,
+        STORE.settings,
+        STORE.dayPlans,
+        STORE.mergeGroups,
+        EVENT_STORE,
+      ],
+      now: input.now,
+      timezone: input.timezone,
+      diagnosticContext: { entityType: 'Session', operation: 'create' },
+    },
+    async (transaction) => {
+      const [group, settings, dayPlan, sessions, historicalSessions, events] = await Promise.all([
+        transaction.get<MergeGroup>(STORE.mergeGroups, input.mergeGroupId),
+        transaction.get<Settings>(STORE.settings, initialized.settings.id),
+        transaction.get<DayPlan>(STORE.dayPlans, initialized.dayPlan.id),
+        transaction.getAll<Session>(STORE.sessions),
+        transaction.getAllIncludingDeleted<Session>(STORE.sessions),
+        transaction.getAll<Event>(EVENT_STORE),
+      ]);
+      if (!group) throw new Error('合并组不存在');
+      if (group.status === 'dissolved') throw new Error('合并组已解散');
+      if (group.status === 'limitReached') {
+        throw new Error('合并组已达上限，必须先移出剩余成员或整体解散');
+      }
+      if (!settings || !dayPlan) throw new Error('当前 Settings/DayPlan 不可用');
+      assertNoActiveSession(sessions);
+      assertNoOpenBreakOpportunity(historicalSessions, events);
+
+      const members: Task[] = [];
+      for (const taskId of group.taskIds) {
+        const task = await transaction.get<Task>(STORE.tasks, taskId);
+        if (task && task.status === 'active') members.push(task);
+      }
+      if (members.length === 0) throw new Error('合并组已经没有未完成的成员，无法开启新一轮');
+
+      const pomodoroIndex =
+        historicalSessions
+          .filter((session) => session.mergeGroupId === group.id)
+          .reduce((maximum, session) => Math.max(maximum, session.pomodoroIndex ?? 0), 0) + 1;
+      const session = makeSession({
+        now: input.now,
+        startedAt: input.now,
+        timezone: input.timezone,
+        type: 'focus',
+        taskIds: members.map((task) => task.id),
+        mergeGroupId: group.id,
+        plannedDuration: settings.focusMinutes * 60,
+        pomodoroIndex,
+        dayPlanId: dayPlan.id,
+      });
+      await transaction.put(STORE.sessions, session);
+      for (const task of members) {
+        await transaction.appendEvent(
+          makeEvent({
+            ...eventFields(input, transaction.correlationId),
+            type: 'focus.started',
+            taskId: task.id,
+            sessionId: session.id,
+            dayPlanId: dayPlan.id,
+            mergeGroupId: group.id,
+            payload: {
+              pomodoroIndex,
+              plannedDuration: session.plannedDuration!,
+              taskEstimateAtStart: task.estimatedPomodoros,
+            },
+          }),
+        );
+      }
       return { value: session, correlationId: transaction.correlationId };
     },
   );
