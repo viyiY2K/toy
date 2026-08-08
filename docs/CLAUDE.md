@@ -14,7 +14,7 @@
 
 **A4.** 每个小节里"自己拍板但用户没明确授权的决定"和"推断/还原自历史文档的内容"，写进对应 commit message 的正文里存档，不需要每节单独找用户汇报。全部小节完成、进入最终验收时，必须在验收汇报里把所有小节的这两类内容汇总列出（逐条列，不得遗漏），供用户一次性审阅。
 
-**A5.** 写完或修订章节后，只更新 `docs/data-layer-spec-v4.md` 主文档。不生成独立 section 文件（`/tmp/section-X-X.md` 等）。section 文件的准备由用户自行处理。
+**A5.** 写完或修订章节后，只更新 `docs/data-layer-spec-v4.1.md` 主文档（`docs/data-layer-spec-v4.md` 为 v4.0 历史存档，不再编辑）。不生成独立 section 文件（`/tmp/section-X-X.md` 等）。section 文件的准备由用户自行处理。
 
 ---
 
@@ -67,7 +67,7 @@
 
 **E3.** 当前阶段：Web 原型。未来扩展 iOS/macOS 端，iOS 和 macOS 统一使用 SQLite（不用 Core Data）。Phase 1–4 数据不离开用户本地浏览器。
 
-**E4.** 数据规范文档：`docs/data-layer-spec-v4.md` 是唯一有效基准，v1/v2/v2.1/v3 已归档废止。所有后续开发以 v4 为唯一参考。
+**E4.** 数据规范文档：`docs/data-layer-spec-v4.1.md` 是唯一有效基准，v1/v2/v2.1/v3/v4.0（`docs/data-layer-spec-v4.md`）已归档废止。所有后续开发以 v4.1 为唯一参考。
 
 **E5.** 该项目在 `data-layer-refactor` 分支上进行数据层重构，方式为"只换数据地基，不改视觉、不改交互"，Phase 1 不要求接完所有业务逻辑。
 
