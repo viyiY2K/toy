@@ -1088,7 +1088,7 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 | 字段名 | 类型 | 可空 | 默认值 | 含义说明 |
 |---|---|---|---|---|
 | `id` | `string`（UUID v7） | 否 | 写入时生成 | 实体唯一标识；取值约束：UUID v7 格式 |
-| `taskIds` | `string[]` | 否 | 创建时的初始成员 | 当前组内成员 Task id 列表，有序，数组顺序即合并卡片内的展示顺序；可动态增删（见关键规则 1）；取值约束：数组元素均为合法 Task UUID v7，数组内不允许重复；`status='active'` 时长度必须 ≥ 2 |
+| `taskIds` | `string[]` | 否 | 创建时的初始成员 | 组内成员 Task id 列表，有序，数组顺序即合并卡片内的展示顺序；**是持续的成员名单，不因成员完成而自动移除**——已完成的任务仍保留在这里，只是不再计入后续 focus Session 的 credit（见 §3.3 关键规则 11）；可动态增删（见关键规则 1）；取值约束：数组元素均为合法 Task UUID v7，数组内不允许重复；`status='active'` 时长度必须 ≥ 2 |
 | `estimatedPomodoros` | `number` | 否 | `1` | 当前预估这组总共要花几个番茄；创建时默认为 1，可通过追加预估上调；取值范围与 §3.1 Task.estimatedPomodoros 完全一致；取值约束：整数，1–7 |
 | `estimateRounds` | `array` | 否 | 创建时写入第一轮 | 每次预估的完整记录，结构与 §3.1 Task.estimateRounds 完全一致（`index` / `pomodoros` / `occurredAt`）；取值约束：数组，元素须符合 §3.1 estimateRounds 结构定义，`index` 最多为 3 |
 | `status` | `string`（枚举） | 否 | `'active'` | 合并组状态；`'active'` = 进行中；`'dissolved'` = 已解散；取值约束：`'active'` / `'dissolved'` 之一 |
@@ -1112,9 +1112,8 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 
 | 值 | 含义 |
 |---|---|
-| `'membersBelowMinimum'` | 自动解散：成员逐个被移出，`taskIds` 长度掉到 1（含）以下 |
-| `'sessionEndedByUser'` | focus Session 响铃到点、组内仍有未完成任务时，用户选择"结束"而非"追加预估" |
-| `'manualDissolved'` | 用户未经"到点选择"流程，主动整体取消本次合并 |
+| `'membersBelowMinimum'` | 自动解散：成员逐个被移出（不论是用户手动拖出，还是 focus Session 到点用户选"结束"移出未完成成员），`taskIds` 长度掉到 1（含）以下（见关键规则 2、4） |
+| `'manualDissolved'` | 用户主动整体解散——一次性把整组连同其全部成员（不论完成与否）解散，与关键规则 4 的"结束"（只移出未完成成员）是不同的操作入口（见关键规则 5） |
 
 **关键规则**
 
@@ -1122,11 +1121,12 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 2. `taskIds` 长度掉到 1（含）以下时，MergeGroup 自动解散（`dissolvedReason='membersBelowMinimum'`），若还剩最后 1 个任务，其 `Task.mergeGroupId` 一并清空。
 3. 组内任务被标记完成（`Task.status='completed'`），**不会**触发合并组自动解散，即使组内全部成员当时都已完成——focus Session 仍在进行时，用户可能继续往组里添加新任务丰满这个番茄。只有当该 focus Session 响铃到点（终结）时，才进入关键规则 4 的分叉判断。
 4. focus Session 响铃到点、组内仍有未完成任务时，用户二选一：
-   - **结束**：整个合并组解散（`dissolvedReason='sessionEndedByUser'`），组内所有任务（不论当时是否已完成）的 `mergeGroupId` 清空；未完成的任务保持 `Task.status='active'`，作为独立任务重新出现在今日待办 / 活动清单，不再以合并卡片形式展示。
-   - **追加预估番茄**：合并组保持 `'active'`，`estimatedPomodoros` 递增、`estimateRounds` 新增一条记录（规则见关键规则 6），已完成的任务从组里移出（`mergeGroupId` 清空，视为这一轮已交割完毕）；只保留未完成的任务在组内，紧接着开启下一个 focus Session，其 `taskIds` 取移出已完成任务后的剩余成员。
-5. 用户也可以在未到点、未经"到点选择"流程的情况下随时主动整体解散合并组（`dissolvedReason='manualDissolved'`），效果等同于把组内全部任务逐个移出。
-6. `estimatedPomodoros` / `estimateRounds` 的取值范围、三轮上限、超限强制拆分提示，**完全照搬** §3.1 Task 对应规则（关键规则 9/10/11，1–7 番茄封顶、最多三轮、第三轮后强制触发拆分提示），只是承载事件换成 `mergeGroup.estimateAdjusted`（§7.19），不是 `task.estimateAdjusted`。
+   - **结束**：组内**未完成**的任务逐个退出组（`mergeGroup.taskRemoved`，`reason='sessionEndedIncomplete'`），`mergeGroupId` 清空，保持 `Task.status='active'`，作为独立任务重新出现在今日待办 / 活动清单；**已完成**的任务不受影响，`mergeGroupId` 不清空，继续留在 `taskIds` 里作为这个合并组的历史成员。若移出未完成成员后剩余成员（此时全是已完成的）数量掉到 1（含）以下，按关键规则 2 自动解散；否则合并组保持 `'active'`，只是当前没有未完成成员，`estimatedPomodoros` 与 `estimateRounds` 不再变化，直到用户再次往组里加入新任务。
+   - **追加预估番茄**：合并组保持 `'active'`，`estimatedPomodoros` 递增、`estimateRounds` 新增一条记录（规则见关键规则 6）；**已完成的任务不移出组**，继续留在 `taskIds` 里；紧接着开启下一个 focus Session，其 `taskIds` 快照按 §3.3 关键规则 11 自动排除本轮之前已经拿过 credit 的成员，因此不会被重复计有效番茄。
+5. 用户也可以在未到点、未经"到点选择"流程的情况下随时主动整体解散合并组（`dissolvedReason='manualDissolved'`），效果等同于把组内全部任务（不论完成与否）一次性逐个移出。**解散只清空这些任务的 `mergeGroupId`，不改变它们在今日待办 / 活动清单的归属，也不删除任务本身**——原来在今日待办里的任务解散后依旧留在今日待办，只是不再以合并卡片形式展示，回到独立任务展示。
+6. `estimatedPomodoros` / `estimateRounds` 的取值范围、三轮上限，**完全照搬** §3.1 Task 对应规则（关键规则 9/11，1–7 番茄封顶、最多三轮）；第三轮用满后**同样强制触发** `prompt.shown`，但使用专属的 `promptType='mergeGroupLimitReached'`（不复用 `taskSplitSuggestion`），提示文案说明"这些零碎事项已经占满一个多番茄的量，建议拆开处理"，而不是子母任务语境下的"拆分"表述（见 §7.15、§7.19 `mergeGroup.estimateAdjusted`）。承载追加动作的事件是 `mergeGroup.estimateAdjusted`（§7.19），不是 `task.estimateAdjusted`。
 7. MergeGroup **不物理删除**；`deletedAt` 遵循 §2.4 软删除规则，仅用于数据同步层面的 tombstone。业务意义上的"已解散"由 `status='dissolved'` 表达，是正常的生命周期终点，不等于删除；已解散的 MergeGroup 历史记录默认保留（不写 `deletedAt`），供事后回溯"这组当时有哪些任务、花了几个番茄"。
+8. 组内成员支持调整先后顺序（一个番茄内先做哪件杂事、后做哪件，与活动清单 / 今日待办的顶层排序是类似逻辑）：拖拽调整只重排 `taskIds` 数组，触发 `mergeGroup.reordered`（§7.19），不改变成员归属，不触发 `taskAdded` / `taskRemoved`。
 
 **字段一致性约束**
 
@@ -1134,7 +1134,7 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 
 1. `status='active'` 时，`taskIds` 长度必须 ≥ 2，`dissolvedAt` / `dissolvedReason` 必须为 null。
 2. `status='dissolved'` 时，`dissolvedAt` 必须非 null，`dissolvedReason` 必须非 null。
-3. `dissolvedReason` 非 null 时，取值必须为 `'membersBelowMinimum'` / `'sessionEndedByUser'` / `'manualDissolved'` 之一。
+3. `dissolvedReason` 非 null 时，取值必须为 `'membersBelowMinimum'` / `'manualDissolved'` 之一。
 4. `estimatedPomodoros` 必须满足 `1 ≤ estimatedPomodoros ≤ 7`（同 §3.1 Task 约束）。
 5. `estimateRounds` 数组每个元素的 `pomodoros` 必须满足 `1 ≤ pomodoros ≤ 7`；`index` 必须为 1 / 2 / 3；不允许写入 `index > 3` 或 `pomodoros > 7` 的记录。
 6. `taskIds` 数组内不允许重复。
