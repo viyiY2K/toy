@@ -2907,19 +2907,20 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 #### prompt.shown（P3）
 
-**顶层关联字段**：视 promptType 填写对应关联字段——`'taskCompletionCheck'` 填写 `taskId`、`sessionId`；`'energyRecording'` 填写 `sessionId`（session 后提示）或 null（`dayStart` / `onReturn` 类提示）；`'taskSplitSuggestion'` 填写 `taskId`。
+**顶层关联字段**：视 promptType 填写对应关联字段——`'taskCompletionCheck'` 填写 `taskId`、`sessionId`；`'energyRecording'` 填写 `sessionId`（session 后提示）或 null（`dayStart` / `onReturn` 类提示）；`'taskSplitSuggestion'` 填写 `taskId`；`'mergeGroupLimitReached'` 填写 `mergeGroupId`。
 
 **payload**：`{ promptType, promptContext }`
 
 | 字段 | 类型 | 可空 | 默认值 | 含义说明 | 取值约束 |
 |---|---|---|---|---|---|
-| `promptType` | `string` | 否 | 无 | 弹窗类型 | 枚举：`'taskCompletionCheck'`（番茄结束后"任务完成了吗？"任务完成确认提示，具体 UI 形态不限于弹窗）/ `'energyRecording'`（能量 / 状态记录提示弹窗）/ `'taskSplitSuggestion'`（任务超预估 / 重新评估 / 拆分引导提示）|
+| `promptType` | `string` | 否 | 无 | 弹窗类型 | 枚举：`'taskCompletionCheck'`（番茄结束后"任务完成了吗？"任务完成确认提示，具体 UI 形态不限于弹窗）/ `'energyRecording'`（能量 / 状态记录提示弹窗）/ `'taskSplitSuggestion'`（任务超预估 / 重新评估 / 拆分引导提示）/ `'mergeGroupLimitReached'`（合并组预估三轮用满提示，见下方典型触发）|
 | `promptContext` | `string \| null` | 是 | `null` | 弹窗触发节点；仅 `promptType='energyRecording'` 时必填，其余 promptType 固定为 null | 当 `promptType='energyRecording'` 时必须取以下 8 个枚举值之一：`'beforeFocus'`（标准专注开始前）/ `'afterFocus'`（标准 focus 结束后）/ `'afterShortBreak'`（短休结束后）/ `'afterLongBreak'`（长休结束后）/ `'afterExtraFocus'`（extraFocus 归类后）/ `'afterExtraRest'`（extraRest 归类后）/ `'dayStart'`（当天首次打开 App / 开始今日计划时）/ `'onReturn'`（用户离开后回到 App 时）；其他 promptType 固定为 null，不允许填写枚举值 |
 
 **说明**：产品内需要用户回应的弹窗被展示给用户时触发。各 promptType 对应的有效结果事件：
 - `'taskCompletionCheck'`：用户确认完成 → `task.completed`；用户点"还没完成"/ 关闭 / 跳过 → `prompt.dismissed`；
 - `'energyRecording'`：用户提交记录 → `energy.recorded`；用户跳过 / 关闭 / 超时未回应 → `prompt.dismissed`；
 - `'taskSplitSuggestion'`：用户执行拆分 / 归档 → 对应 `task.*` 事件；用户暂不处理 / 关闭 / 跳过 → `prompt.dismissed`。
+- `'mergeGroupLimitReached'`：用户主动整体解散合并组（→ `mergeGroup.dissolved`，`dissolvedReason='manualDissolved'`）或移出部分成员（→ `mergeGroup.taskRemoved`）；用户暂不处理 / 关闭 / 跳过 → `prompt.dismissed`。
 
 **典型触发**：
 - promptType=`'taskCompletionCheck'`：**仅当系统主动展示一个显著的、需要用户回应的任务完成确认提示时触发**（如番茄计时结束后系统主动询问"这个任务完成了吗？"）。典型形式可以是弹窗、收尾页中的显著确认模块、toast / 卡片式确认提示等，具体 UI 形态不限于弹窗。
@@ -2935,8 +2936,9 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
   **5–6 软提醒区**（非阻断式）：用户创建任务或调整预估后，`estimatedPomodoros` 为 5 或 6 时，允许写入，不阻断用户；UI 可给出非阻断式软提醒（如"此任务已偏大，建议拆分"），**不必触发 `prompt.shown`**，不要求用户强制回应，不阻止继续操作。
 
   **边界说明**：`taskSplitSuggestion` 是产品内需要用户回应的提示，只记录"系统提示用户重新评估 / 拆分"这一行为，不表示拆分已发生；真正拆分 / 归档时，由 `task.split`、`task.archived`（outcome=`'split'`）、`task.created`（source=`'splitChild'`）承接；它不是 `notification.*`、`restItem.*` 或 `error.*`。
+- promptType=`'mergeGroupLimitReached'`（**强触发**）：合并组 `estimateRounds` 第三轮（`index=3`）对应的 focus Session 终结后，组内仍有未完成任务时触发。文案语义**不同于** `taskSplitSuggestion`：应说明"这些零碎事项已经占满一个多番茄的量，建议拆开单独处理，而不是继续合并"，不使用子母任务语境下的"拆分"表述（合并组不支持拆分成子任务，只能解散或移出成员）。与 `taskSplitSuggestion` 不同，本提示**不阻断**继续追加预估或继续合并——它只是提醒，不像 Task 那样禁止开启下一个标准 focus。
 
-**不应触发**：休息建议选择界面（→ §7.7 `restItem.*`）；恢复流程弹窗（→ §7.11 `interval.*`）；危险操作二次确认弹窗（→ 最终结果由业务事件表达）；普通 UI 弹窗、铃声、全屏提示（属 UI 表现，不记录为事件）；用户已有效回应后再次展示同类弹窗（每次展示独立触发）。
+**不应触发**：休息建议选择界面（→ §7.7 `restItem.*`）；恢复流程弹窗（→ §7.11 `interval.*`）；危险操作二次确认弹窗（→ 最终结果由业务事件表达）；普通 UI 弹窗、铃声、全屏提示（属 UI 表现，不记录为事件）；用户已有效回应后再次展示同类弹窗（每次展示独立触发）；合并组预估未到第三轮（→ 不触发 `mergeGroupLimitReached`）。
 
 ---
 
@@ -2948,12 +2950,12 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 | 字段 | 类型 | 可空 | 默认值 | 含义说明 | 取值约束 |
 |---|---|---|---|---|---|
-| `promptType` | `string` | 否 | 无 | 被关闭 / 跳过的弹窗类型 | 与 `prompt.shown` 枚举一致：`'taskCompletionCheck'` / `'energyRecording'` / `'taskSplitSuggestion'` |
+| `promptType` | `string` | 否 | 无 | 被关闭 / 跳过的弹窗类型 | 与 `prompt.shown` 枚举一致：`'taskCompletionCheck'` / `'energyRecording'` / `'taskSplitSuggestion'` / `'mergeGroupLimitReached'` |
 | `promptContext` | `string \| null` | 是 | `null` | 弹窗触发节点；与对应 `prompt.shown` 保持一致 | 当 `promptType='energyRecording'` 时必须取与 `prompt.shown` 相同的枚举值（见 `prompt.shown` 约束）；其他 promptType 固定为 null |
 
 **说明**：用户关闭、跳过、忽略或超时未回应产品内弹窗，且未产生对应业务结果时触发。有效回应（如用户确认完成任务、提交能量记录、执行拆分）由对应业务事件表达，不触发本事件。
 
-**典型触发**：番茄结束后"任务完成了吗？"任务完成确认提示出现（具体 UI 形态不限于弹窗），用户点击"还没完成"或直接关闭（promptType=`'taskCompletionCheck'`）；能量记录弹窗出现，用户点击"跳过"或超时未操作（promptType=`'energyRecording'`）；任务拆分提示出现，用户点击"稍后处理"或直接关闭（promptType=`'taskSplitSuggestion'`）。
+**典型触发**：番茄结束后"任务完成了吗？"任务完成确认提示出现（具体 UI 形态不限于弹窗），用户点击"还没完成"或直接关闭（promptType=`'taskCompletionCheck'`）；能量记录弹窗出现，用户点击"跳过"或超时未操作（promptType=`'energyRecording'`）；任务拆分提示出现，用户点击"稍后处理"或直接关闭（promptType=`'taskSplitSuggestion'`）；合并组预估三轮用满提示出现，用户点击"知道了"或直接关闭、继续合并而不处理（promptType=`'mergeGroupLimitReached'`）。
 
 **不应触发**：用户实际有效回应（提交能量记录 → `energy.recorded`；确认任务完成 → `task.completed`；执行拆分 → 对应 `task.*` 事件）；弹窗从未展示即消失（不产生任何 prompt 事件）。
 
