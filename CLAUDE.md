@@ -2,9 +2,9 @@
 
 本文件是本项目的常驻工作约定与数据不变量。它统管「项目定位、文档权威层级、工作纪律、Git 提交」，并在末尾收录逐条强制的「数据层实现红线」。
 
-数据真值、字段、事件、payload、统计口径与 Phase 语义，始终以 `docs/data-layer-spec-v4.md` 为最高权威。本文件若与 v4 冲突，以 v4 为准。
+数据真值、字段、事件、payload、统计口径与 Phase 语义，始终以 `docs/data-layer-spec-v4.1.md` 为最高权威。本文件若与 v4.1 冲突，以 v4.1 为准。`docs/data-layer-spec-v4.md`（v4.0）已归档，仅供历史查阅，不再作为开发依据。
 
-> **现状（2026-07）**：数据层三个阶段（Phase 1 数据地基 / Phase 2 核心自用 / Phase 3 真实统计与完整任务管理）均已封板并通过独立 review，随后完成过一轮 UI 打磨并已合入 `main`。当前没有进行中的主线施工。下面第五节的「数据层实现红线」在任何碰数据的改动里长期有效，与阶段无关。文中出现的 “Phase 1 / P2 …” 指的是 v4 规范里的功能阶段语义（数据契约的一部分），不是施工进度。
+> **现状（2026-08）**：数据层三个阶段（Phase 1 数据地基 / Phase 2 核心自用 / Phase 3 真实统计与完整任务管理）均已封板并通过独立 review，随后完成过一轮 UI 打磨并已合入 `main`。v4.1 新增了"合并番茄钟"数据规范（MergeGroup 实体，见 `docs/data-layer-spec-v4.1.md` §3.8、§7.19），目前只完成数据层规范定义，真实 UI/代码实现尚未开工，交底文档见 `docs/merge-pomodoro-plan.md`。下面第五节的「数据层实现红线」在任何碰数据的改动里长期有效，与阶段无关。文中出现的 "Phase 1 / P2 …" 指的是 v4.1 规范里的功能阶段语义（数据契约的一部分），不是施工进度。
 
 ---
 
@@ -22,8 +22,8 @@
 
 下层文档不得覆盖上层文档。冲突时一律以更高层为准。
 
-1. **最高 —— `docs/data-layer-spec-v4.md`**
-   唯一权威数据规范。字段 / 事件 / payload / 约束 / 统计口径 / Phase 语义，全部以它为准。其他任何文档与它冲突，一律以 v4 为准。
+1. **最高 —— `docs/data-layer-spec-v4.1.md`**
+   唯一权威数据规范。字段 / 事件 / payload / 约束 / 统计口径 / Phase 语义，全部以它为准。其他任何文档与它冲突，一律以 v4.1 为准。`docs/data-layer-spec-v4.md`（v4.0）为历史存档，不再参与权威判断。
 
 2. **阶段计划 / 验收记录 —— `docs/phase{1,2,3}-plan.md`、`docs/phase{1,2,3}-checklist.md`、`docs/*-review-log.md`**
    历史施工计划与验收留痕。服从 v4，不得改写 v4 的数据语义；作为已完成阶段的事实记录保留，不要回头篡改。
@@ -92,6 +92,6 @@
 
 ### 补充红线（来自规范交叉项）
 20. restSuggestions 的短休/长休适用范围以 appliesTo 字段为准，不得靠 key 的 short_ / long_ 前缀推断；新增项由统一创建函数生成 key，不手拼前缀（§3.7、§7.7）。
-21. ui-behavior-backlog.md 不是数据真值，数据真值一律以 data-layer-spec-v4.md 正文为准；backlog 标"不阻塞"不等于可跳过正文要求的字段/结构预留。
+21. ui-behavior-backlog.md 不是数据真值，数据真值一律以 data-layer-spec-v4.1.md 正文为准；backlog 标"不阻塞"不等于可跳过正文要求的字段/结构预留。
 22. DayPlan 超载（今日预估总和 > budgetPomodoros）是派生状态，不写入字段、不发事件；数据层只是"不拒绝写入"，查询/UI 层按需派生超载提示（§3.2、§8.10）。
 23. actualDuration 是 Session 实际时长唯一事实源，统计不得用 endedAt − startedAt 重算（§3.3，本批修订 5）。

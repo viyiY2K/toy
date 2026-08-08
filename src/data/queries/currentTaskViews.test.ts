@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EVENT_STORE, STORE } from '../dataStore';
 import {
+  makeEvent,
   makeSession,
   makeTask,
   makeUnresolvedInterval,
@@ -355,5 +356,69 @@ describe('S10 当前任务派生视图', () => {
       archivedParent.id,
     ]);
     expect(views.archivedTasks.map(({ id }) => id)).not.toContain(initialized.todayTasks[0]!.id);
+  });
+
+  it('derives completionTimingByTaskId: focus start/end for pomodoro completion, timezone-only for manual completion', async () => {
+    const now = '2027-04-04T08:00:00+08:00';
+    const focusStartedAt = '2027-04-04T09:01:00+08:00';
+    const focusEndedAt = '2027-04-04T09:26:00+08:00';
+    const manualCompletedAt = '2027-04-04T08:01:00+08:00';
+    const pomodoroCompletedAt = '2027-04-04T09:27:00+08:00';
+
+    const manualTask = makeTask({
+      now, title: '手动完成验证', status: 'completed',
+      completedAt: manualCompletedAt, completionSource: 'manual', sortIndex: 100,
+    });
+    const pomodoroTask = makeTask({
+      now, title: '番茄完成验证', status: 'completed',
+      completedAt: pomodoroCompletedAt, completionSource: 'pomodoro', sortIndex: 101,
+    });
+    const focusSession = makeSession({
+      now: focusEndedAt, startedAt: focusStartedAt, endedAt: focusEndedAt, timezone: TIMEZONE,
+      type: 'focus', status: 'completed', taskId: pomodoroTask.id,
+      plannedDuration: 1500, actualDuration: 1500, pomodoroIndex: 1,
+    });
+    const manualContextSession = makeSession({
+      now: manualCompletedAt,
+      startedAt: '2027-04-04T08:00:00+08:00',
+      endedAt: manualCompletedAt,
+      timezone: TIMEZONE,
+      type: 'focus',
+      status: 'discarded',
+      taskId: manualTask.id,
+      plannedDuration: 1500,
+      actualDuration: 60,
+      pomodoroIndex: 1,
+    });
+    await executeAtomicWrite(
+      { storeNames: [STORE.tasks, STORE.sessions, EVENT_STORE], now, timezone: TIMEZONE },
+      async (transaction) => {
+        await transaction.put(STORE.tasks, manualTask);
+        await transaction.put(STORE.tasks, pomodoroTask);
+        await transaction.put(STORE.sessions, focusSession);
+        await transaction.put(STORE.sessions, manualContextSession);
+        await transaction.appendEvent(makeEvent({
+          now: manualCompletedAt, timezone: TIMEZONE, type: 'task.completed', taskId: manualTask.id,
+          // v4 allows manual completion to carry the surrounding Session as context; it must
+          // still render the task completion instant instead of impersonating pomodoro completion.
+          sessionId: manualContextSession.id,
+          correlationId: transaction.correlationId,
+          payload: { completionSource: 'manual', completedAt: manualCompletedAt, validFocusCountAtCompletion: 0 },
+        }));
+        await transaction.appendEvent(makeEvent({
+          now: pomodoroCompletedAt, timezone: TIMEZONE, type: 'task.completed', taskId: pomodoroTask.id,
+          sessionId: focusSession.id, correlationId: transaction.correlationId,
+          payload: { completionSource: 'pomodoro', completedAt: pomodoroCompletedAt, validFocusCountAtCompletion: 1 },
+        }));
+      },
+    );
+
+    const views = await loadCurrentTaskViews({ now: '2027-04-04T10:00:00+08:00', timezone: TIMEZONE });
+    expect(views.completionTimingByTaskId[manualTask.id]).toEqual({
+      timezone: TIMEZONE, focusStartedAt: null, focusEndedAt: null,
+    });
+    expect(views.completionTimingByTaskId[pomodoroTask.id]).toEqual({
+      timezone: TIMEZONE, focusStartedAt, focusEndedAt,
+    });
   });
 });

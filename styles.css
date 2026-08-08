@@ -133,6 +133,13 @@ input[type="checkbox"]:checked::before {
   line-height: 1.6;
   transform: translateY(-0.5px);
 }
+.brand-version {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted-2);
+  font-family: "JetBrains Mono", monospace;
+}
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav-item {
   display: flex; align-items: center; justify-content: space-between;
@@ -989,23 +996,26 @@ input[type="checkbox"]:checked::before {
 .completed-row-item:last-child { border-bottom: 0; }
 .completed-row-head {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 14px;
 }
 .completed-row-actions {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 .completed-done-name {
+  flex: 1;
+  min-width: 0;
   font-size: 13px; color: var(--muted);
   text-decoration: line-through;
 }
 .completed-done-date {
   font-size: 11px; color: var(--muted-2);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* === Phase 3 task hierarchy, details, and archive history === */
@@ -1252,6 +1262,17 @@ input[type="checkbox"]:checked::before {
   color: var(--muted);
   font-size: 13px;
 }
+.stats-notice {
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.stats-notice-lines { display: flex; flex-direction: column; gap: 2px; color: var(--accent-ink); }
+.stats-notice-caveat { margin-top: 4px; color: var(--muted); }
 .stats-summary-grid { margin-bottom: 14px; }
 .stats-two-col {
   display: grid;
@@ -1321,6 +1342,11 @@ input[type="checkbox"]:checked::before {
   font-weight: 400;
 }
 .stats-row > small { grid-column: 1; color: var(--muted); font-size: 11px; }
+.stats-row-warning, .stats-budget-days .stats-row-warning {
+  color: var(--accent-ink);
+  cursor: help;
+  font-size: 11px;
+}
 /* 「1 小时 30 分钟」= 两段，段间留一点气口，段内单位紧跟数字 */
 .duration-part + .duration-part { margin-left: 6px; }
 .stats-row > strong .unit { font-size: 11px; color: var(--muted); margin-left: 3px; }

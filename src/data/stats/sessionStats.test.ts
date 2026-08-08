@@ -230,4 +230,31 @@ describe('Phase 3 S3a session aggregation', () => {
     expect(aggregate('month', '2026-05-31').focus.validPomodoros).toBe(1);
     expect(aggregate('month', '2026-06-01').focus.validPomodoros).toBe(1);
   });
+
+  it('surfaces settings.timerUpdated Events that fall inside the query range, and only those', () => {
+    const settings = makeSettings({ now: base });
+    const inRange = makeEvent({
+      id: 'in-range', now: '2026-06-01T10:00:00+08:00', timezone: ZONE,
+      type: 'settings.timerUpdated', settingsId: settings.id,
+      payload: { field: 'focusMinutes', oldValue: 25, newValue: 45 },
+    });
+    const outOfRange = makeEvent({
+      id: 'out-of-range', now: '2026-06-10T10:00:00+08:00', timezone: ZONE,
+      type: 'settings.timerUpdated', settingsId: settings.id,
+      payload: { field: 'shortBreakMinutes', oldValue: 5, newValue: 10 },
+    });
+    const stats = aggregateSessionStats({
+      sessions: [], events: [inRange, outOfRange], settings,
+      range: makeStatsRange('day', '2026-06-01'),
+    });
+    expect(stats.timerSettingChanges).toMatchObject([
+      { appDate: '2026-06-01', field: 'focusMinutes', oldValue: 25, newValue: 45 },
+    ]);
+
+    const weekStats = aggregateSessionStats({
+      sessions: [], events: [inRange, outOfRange], settings,
+      range: makeStatsRange('week', '2026-06-01'),
+    });
+    expect(weekStats.timerSettingChanges).toHaveLength(1);
+  });
 });

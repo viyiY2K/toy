@@ -7,6 +7,7 @@ import {
   formatStatsRange,
   shiftStatsAnchor,
   statsHasRangeActivity,
+  timerSettingChangeNotice,
 } from './statsViewModel';
 
 describe('S4 stats view model', () => {
@@ -88,5 +89,24 @@ describe('S4 stats view model', () => {
       labels: ['07-20', '07-21'],
       rows: [{ key: '2026-07-21', label: '07-21', value: 6.5, detail: '7 条' }],
     });
+  });
+
+  it('turns timerSettingChanges into a plain-language notice, or nothing when there are none', () => {
+    expect(timerSettingChangeNotice('day', [])).toBeNull();
+    expect(timerSettingChangeNotice('day', [
+      { appDate: '2026-07-21', occurredAt: '2026-07-21T05:00:00Z', field: 'focusMinutes', oldValue: 25, newValue: 45 },
+    ])).toEqual({
+      lines: ['专注时长 25 → 45 分钟'],
+      caveat: '如果「有效番茄」个数比预算少，可能是因为番茄变大了，不代表这段时间没在专注。',
+    });
+    expect(timerSettingChangeNotice('week', [
+      { appDate: '2026-07-21', occurredAt: '2026-07-21T05:00:00Z', field: 'shortBreakMinutes', oldValue: 5, newValue: 10 },
+    ])).toEqual({
+      lines: ['07-21 短休时长 5 → 10 分钟'],
+      caveat: '本周内番茄大小不完全一样，用"个数"直接比较前后专注量时要注意这一点。',
+    });
+    expect(timerSettingChangeNotice('month', [
+      { appDate: '2026-07-21', occurredAt: '2026-07-21T05:00:00Z', field: 'longBreakMinutes', oldValue: 15, newValue: 20 },
+    ]).caveat).toContain('本月内');
   });
 });
