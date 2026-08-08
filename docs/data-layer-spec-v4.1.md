@@ -561,8 +561,8 @@ Session 表示一次用户行为执行单元，可以是一段专注计时（typ
 | `id` | `string` (UUID v7) | 否 | 写入时生成 | 实体唯一标识；取值约束：UUID v7 格式 |
 | `type` | `string`（枚举） | 否 | 无 | 会话类型，枚举值见下方；取值约束：取值为 `'focus'` / `'shortBreak'` / `'longBreak'` / `'extraFocus'` / `'extraRest'` 之一 |
 | `status` | `string`（枚举） | 否 | `'active'` | 会话状态；focus 合法值为 `'active'` / `'completed'` / `'discarded'`；extraFocus 固定为 `'completed'`；shortBreak / longBreak 合法值为 `'active'` / `'completed'` / `'skipped'`；extraRest 固定为 `'completed'`；取值约束：必须取自该 type 对应的合法集合，且不得将 extraFocus / extraRest 写入其他状态。 |
-| `taskIds` | `string[]` | 否 | `[]` | 关联任务 id 列表；focus 时长度必须 ≥ 1（不允许空数组，产品不支持无任务自由专注）——单任务专注时数组只有 1 个元素，合并番茄钟场景下数组可包含 2 个及以上元素，元素间完全平等、不区分主次（见 §3.8 MergeGroup）；extraFocus 不支持合并，长度固定为 1；shortBreak / longBreak / extraRest 固定为空数组 `[]`；取值约束：数组元素均为合法 Task UUID v7，数组内不允许重复 |
-| `mergeGroupId` | `string \| null` | 是 | `null` | 若本次专注由某个合并组（MergeGroup，见 §3.8）触发，则指向该合并组 id；未参与合并的普通单任务专注、以及 extraFocus / 全部休息类型固定为 null；取值约束：null 或合法的 MergeGroup UUID v7；非 null 时 `taskIds` 长度必须 ≥ 2 |
+| `taskIds` | `string[]` | 否 | `[]` | 关联任务 id 列表；focus 时长度必须 ≥ 1（不允许空数组，产品不支持无任务自由专注）——单任务专注时数组只有 1 个元素，合并番茄钟场景下数组可包含 2 个及以上元素，元素间完全平等、不区分主次（见 §3.8 MergeGroup）；**合并组的续轮例外**：追加预估后开启的下一轮，快照会排除本轮之前就已完成的成员，因此长度可能降到 1（见关键规则 11、§3.8 关键规则 4），此时它仍是该合并组的一轮，不退化为普通单任务专注；extraFocus 不支持合并，长度固定为 1；shortBreak / longBreak / extraRest 固定为空数组 `[]`；取值约束：数组元素均为合法 Task UUID v7，数组内不允许重复 |
+| `mergeGroupId` | `string \| null` | 是 | `null` | 若本次专注由某个合并组（MergeGroup，见 §3.8）触发，则指向该合并组 id；未参与合并的普通单任务专注、以及 extraFocus / 全部休息类型固定为 null；取值约束：null 或合法的 MergeGroup UUID v7；非 null 时 `taskIds` 长度必须 ≥ 1（≥ 2 是**组成合并组**的门槛，见 §3.8，不是每一轮 Session 的门槛——续轮可能只剩 1 个未完成成员） |
 | `startedAt` | `string` | 否 | 写入时生成 | session 开始时刻（session 创建即开始计时）；5 种 type 均必填；取值约束：ISO 8601 带时区格式，不允许 null |
 | `endedAt` | `string \| null` | 是 | `null` | session 终结时刻；status=`'active'` 时为 null；status ∈ {`'completed'`, `'discarded'`, `'skipped'`} 时必须非 null；extraFocus / extraRest（status 恒为 `'completed'`）的 endedAt 始终非 null；取值约束：ISO 8601 带时区格式或 null |
 | `plannedDuration` | `number \| null` | 是 | `null` | 计划时长，单位秒；focus / shortBreak / longBreak 必填，取写入时 Settings 对应时长配置（如 focus 默认 1500 秒 = 25 分钟）；extraFocus / extraRest 无计划时长概念，固定为 null；取值约束：type ∈ {`'focus'`, `'shortBreak'`, `'longBreak'`} 时必须为正整数（> 0）；type ∈ {`'extraFocus'`, `'extraRest'`} 时必须为 null |
@@ -686,7 +686,9 @@ shortBreak / longBreak / extraRest 适用值：
 12. type ∈ {`'extraFocus'`, `'extraRest'`} 时，`actualDuration` 必须为正整数（> 0），不得为 null 或 0。
 13. type ∈ {`'focus'`, `'shortBreak'`, `'longBreak'`} 时，`plannedDuration` 必须为正整数（> 0）；type ∈ {`'extraFocus'`, `'extraRest'`} 时，`plannedDuration` 必须为 null。
 14. **不**校验 `actualDuration` 与 `(endedAt − startedAt)` 的一致性；validator 仅按字段表规则校验 `actualDuration` 自身的非空与范围（active=null、skipped=0、completed / discarded 为实际经过秒数、extraFocus / extraRest 为正整数 > 0）。`actualDuration` 为实际时长唯一事实源，见关键规则第 10 条。
-15. `mergeGroupId` 非 null 时，`type` 必须为 `'focus'`，且 `taskIds` 长度必须 ≥ 2。
+15. `mergeGroupId` 非 null 时，`type` 必须为 `'focus'`，且 `taskIds` 长度必须 ≥ 1。反向亦然：`type='focus'` 且 `taskIds` 长度 ≥ 2 时，`mergeGroupId` 必须非 null（多任务专注只可能来自合并组）。
+
+    > **为什么不是 ≥ 2**：合并组**成立**的门槛是 ≥ 2 个成员（§3.8 字段一致性约束 1，由 `mergeGroup.created` / `mergeGroup.taskAdded` 保证），但单轮 Session 的成员是快照——追加预估后的续轮会排除本轮之前就已完成的成员（关键规则 11、§3.8 关键规则 4），只剩最后 1 个未完成成员是正常终局（§7.19 `mergeGroup.estimateAdjusted` 的典型触发即为此例）。这一轮仍归属该合并组：`pomodoroIndex` 记的是**组的**轮次，也照常计入 §3.8 关键规则 6 的 7 轮硬上限。
 
 ---
 
