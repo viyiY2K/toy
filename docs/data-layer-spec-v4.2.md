@@ -308,6 +308,8 @@ Task 是产品的核心实体，表示一个待办事项或子任务。子任务
 | `deviceId` | `string \| null` | 是 | `null` | （可选预留）写入设备标识（见 §2.3，Phase 5+ 启用）；取值约束：null 或非空字符串 |
 | `syncedAt` | `string \| null` | 是 | `null` | （可选预留）最近一次同步成功时间（见 §2.3，Phase 5+ 启用）；取值约束：ISO 8601 带时区格式或 null |
 | `mergeGroupId` | `string \| null` | 是 | `null` | 当前所属合并组（MergeGroup，见 §3.8）id；`null` 表示未参与任何合并组；有值表示该任务当前正被并入某个合并番茄钟，与其他共享同一 `mergeGroupId` 的任务地位完全平等，不构成父子关系；取值约束：null 或合法的 MergeGroup UUID v7，且该 id 对应的 MergeGroup 的 `taskIds` 必须包含本 Task 的 id |
+| `category` | `string \| null`（枚举） | 是 | `null` | 任务大类标签，用于统计投入时间比例（v4.2 新增）；`null` = 未分类；取值约束：取值为 `null` / `'work'` / `'study'` / `'side'` / `'life'` 之一 |
+| `categorySource` | `string \| null`（枚举） | 是 | `null` | `category` 的写入来源（v4.2 新增）；`null` = 尚未被自动或手动设置过；`'auto'` = 由系统自动判定写入；`'manual'` = 用户手动设置或修改；完整触发规则见 §7.1 `task.categoryChanged`；取值约束：取值为 `null` / `'auto'` / `'manual'` 之一 |
 
 **status 枚举值说明**
 
@@ -318,6 +320,16 @@ Task 是产品的核心实体，表示一个待办事项或子任务。子任务
 | `'splitNeeded'` | 已达到需要拆分 / 重新处理的状态（如已用满 7 个有效标准 focus 仍未完成，或第三轮预估后），尚未完成拆分 / 归档；处于该状态时**不允许直接开启新的标准 focus**，直至经拆分 / 归档 / 重新处理流程解除 |
 | `'archived'` | 已归档（拆分归档或完成归档），`outcome` 字段记录归档类型 |
 | `'deleted'` | 软删除，`deletedAt` 非 null，正常查询中不显示 |
+
+**category 枚举值说明（v4.2 新增）**
+
+| 值 | 含义 |
+|---|---|
+| `'work'` | 工作 |
+| `'study'` | 学习 |
+| `'side'` | 副业 |
+| `'life'` | 生活 |
+| `null` | 未分类；统计页归入独立的"未分类"分组，不强制用户分类（见 §8.5.6） |
 
 **estimateRounds 数组元素结构**
 
@@ -357,6 +369,7 @@ Task 是产品的核心实体，表示一个待办事项或子任务。子任务
 10. **达到 7 个有效标准 focus 后仍未完成，采用严格拆分路线（路线 A）**。第 7 个有效标准 focus 完成后，应等其对应 break 完成 / 跳过 / 经恢复流程收尾后，触发 `prompt.shown`（promptType=`'taskSplitSuggestion'`），并使该 Task 进入需要拆分 / 重新处理的状态（`splitNeeded` 语义见上方 status 枚举）。在用户完成拆分、完成归档，或通过明确的重新处理流程解除前，**不允许**该 Task 直接开启第 8 个标准 focus。用户关闭、跳过或暂不处理该提示**不等于解除限制**——`prompt.dismissed(taskSplitSuggestion)` 只记录提示被关闭，不放开第 8 个标准 focus（见 §7.15）。Phase 1 只要求数据结构、事件类型与字段可承载该规则，真实阻断逻辑在后续 Phase 接入。
 11. **`estimateRounds` 第一轮（`index=1`）在创建任务时写入**：用户创建任务时的初始预估也应作为 `estimateRounds` 第一轮记录写入，`index=1`，`pomodoros` 为创建时的初始总预估番茄数（与 `estimatedPomodoros` 一致），`occurredAt` 为创建时刻；后续二次 / 三次预估分别写 `index=2` / `index=3`（由 `task.estimateAdjusted` 承接，见 §7.1）。`estimateRounds[].pomodoros` 始终表示**该轮预估后的总预估番茄数**（不是增量）。历史旧数据 / 迁移数据若缺少第一轮记录，可在迁移说明中作为 legacy 兼容处理，但**新写入数据必须完整记录 `index=1`**。
 12. **`parentId`（子任务血缘）与 `mergeGroupId`（合并组归属）是两个互不影响的维度，可以同时非 null**。`parentId` 表达"为完成某个更大的事项而拆出的子任务"，用于事后回溯某母任务总共花了多少专注时间、拆了多少个子任务；`mergeGroupId` 表达"这个任务这次和其他任务被合并进同一个番茄钟一起做"，纯粹是执行层面的临时归并，不改变任务的血缘归属。一个子任务（`parentId` 非 null）可以被拉入合并组，一个顶层任务同样可以被拉入合并组；两个字段的写入与清空互不联动。
+13. **`category` / `categorySource` 是独立于 `parentId` / `mergeGroupId` 的第四个维度（v4.2 新增）**，用于粗粒度统计"工作 / 学习 / 副业 / 生活"投入时间比例；不是项目管理意义上的"项目"或"清单"，不提供改名、层级、颜色等扩展属性，就是一个受控枚举字段。自动判定的触发时机、判定算法与手动覆盖优先级见 §7.1 `task.categoryChanged`；今日主线分类的默认预填规则见 §3.2 DayPlan 关键规则第 11 条。
 
 **字段一致性约束**
 
@@ -373,6 +386,7 @@ Task 是产品的核心实体，表示一个待办事项或子任务。子任务
 7. 任务被取消完成（`task.uncompleted` 事件）时，以下字段必须同时改回 null：`completedAt`、`completionSource`；同时 `status` 改为 `'active'`。`task.uncompleted` **只适用于尚未归档的 `completed` 状态**；已归档任务（`status='archived'`，无论 `outcome` 为 `'completed'` 还是 `'split'`）若未来需要恢复，走 `task.restored`（§7.1，P4）或后续恢复流程，不通过 `task.uncompleted` 直接处理，以免清空完成归档保留的 `completedAt` / `completionSource` 追溯信息。
 8. `estimatedPomodoros` 必须满足 `1 ≤ estimatedPomodoros ≤ 7`；写入超出此范围的值应被拒绝。
 9. `estimateRounds` 数组每个元素的 `pomodoros` 必须满足 `1 ≤ pomodoros ≤ 7`；`index` 必须为 1 / 2 / 3；不允许写入 `index > 3` 或 `pomodoros > 7` 的记录。
+10. **（v4.2 新增）** `category` 为 `null` 时，`categorySource` 必须为 `null`；`category` 非 null 时，`categorySource` 必须非 null（`'auto'` 或 `'manual'`）。两者要么同时为空、要么同时有值，不允许"有分类无来源"或"有来源无分类"的中间态。
 
 实现端在写入或更新 Task 时，必须验证以上规则，违反规则的写入操作应被拒绝。
 
