@@ -11,6 +11,7 @@ import {
   validateStoredLocalDate,
   validateSyncableBase,
   validateUuidV7,
+  type SyncWriteMode,
   type ValidationIssue,
 } from './primitives';
 
@@ -39,12 +40,13 @@ const SOURCES = new Set([...STANDALONE_SOURCES, ...Object.keys(SOURCE_SESSION_TY
 export async function collectEnergyRecordValidationIssues(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<readonly ValidationIssue[]> {
   const collector = new ValidationCollector();
   const record = requireRecord(value, 'EnergyRecord', collector);
   if (!record) return collector.issues;
   validateExactKeys(record, ENERGY_RECORD_KEYS, 'EnergyRecord', collector);
-  validateSyncableBase(record, collector);
+  validateSyncableBase(record, collector, mode);
   validateInteger(record.energyLevel, 'energyLevel', collector, 1, 10);
   if (record.mood !== null) validateInteger(record.mood, 'mood', collector, 1, 10);
   collector.check(typeof record.source === 'string' && SOURCES.has(record.source), 'energy.source', 'source', '非法 EnergyRecord source');
@@ -86,8 +88,9 @@ export async function collectEnergyRecordValidationIssues(
 export async function validateEnergyRecord(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<EnergyRecord> {
-  const issues = await collectEnergyRecordValidationIssues(value, context);
+  const issues = await collectEnergyRecordValidationIssues(value, context, mode);
   if (issues.length > 0) throw new EntityValidationError('EnergyRecord', issues);
   return value as EnergyRecord;
 }

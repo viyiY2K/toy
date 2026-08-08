@@ -44,3 +44,16 @@ export * from './commands/dayPlanCommands';
 export * from './commands/intervalCommands';
 export * from './commands/batchTaskCommands';
 export * from './commands/settingsCommands';
+
+// S7: 多端同步 UI 接入面（登录 + 触发同步 + 冲突解决）。
+// 同步模块内部文件（src/data/sync/*）不直接对外，UI 只能从这里拿到这几个函数。
+export { isSyncConfigured } from './sync/supabaseClient';
+export { requestMagicLink, getAuthState, onAuthStateChange, signOut } from './sync/authFlow';
+export type { AuthState, AuthStatus } from './sync/authFlow';
+export {
+  runSync,
+  onSyncStateChange,
+  getSyncState,
+  resolveLifetimePomodoroBaselineConflict,
+} from './sync/syncEngine';
+export type { SyncRunResult, SyncState } from './sync/syncEngine';

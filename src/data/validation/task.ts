@@ -12,6 +12,7 @@ import {
   validateIsoDateTime,
   validateSyncableBase,
   validateUuidV7,
+  type SyncWriteMode,
 } from './primitives';
 
 const TASK_KEYS = [
@@ -102,12 +103,13 @@ function validateEstimateRounds(value: unknown, collector: ValidationCollector):
 export async function collectTaskValidationIssues(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<readonly import('./primitives').ValidationIssue[]> {
   const collector = new ValidationCollector();
   const task = requireRecord(value, 'Task', collector);
   if (!task) return collector.issues;
   validateExactKeys(task, TASK_KEYS, 'Task', collector);
-  validateSyncableBase(task, collector);
+  validateSyncableBase(task, collector, mode);
 
   validateUuidV7(task.parentId, 'parentId', collector, true);
   collector.check(
@@ -219,8 +221,12 @@ export async function collectTaskValidationIssues(
   return collector.issues;
 }
 
-export async function validateTask(value: unknown, context?: ValidationContext): Promise<Task> {
-  const issues = await collectTaskValidationIssues(value, context);
+export async function validateTask(
+  value: unknown,
+  context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
+): Promise<Task> {
+  const issues = await collectTaskValidationIssues(value, context, mode);
   if (issues.length > 0) throw new EntityValidationError('Task', issues);
   return value as Task;
 }

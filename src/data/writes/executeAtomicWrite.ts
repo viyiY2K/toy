@@ -26,6 +26,7 @@ import {
   validateSettings,
   validateTask,
   validateUnresolvedInterval,
+  type SyncWriteMode,
   type ValidationContext,
 } from '../validation';
 
@@ -62,6 +63,12 @@ export interface ExecuteAtomicWriteOptions {
   timezone: string;
   /** 可选补充诊断元信息；运行时仍会经过白名单，未知字段一律丢弃。 */
   diagnosticContext?: WriteDiagnosticContext;
+  /**
+   * 写入来源模式，默认 'local'。'sync' 用于同步引擎写入
+   * （本地上传成功回写 deviceId/syncedAt、或接收远端数据落地本地），
+   * 此时校验层要求 deviceId/syncedAt 为合法非空值而非 null。
+   */
+  writeMode?: SyncWriteMode;
 }
 
 export interface ValidatedAtomicWriteTransaction {
@@ -293,25 +300,26 @@ async function validateEntity<S extends SyncableStoreName>(
   store: S,
   value: SyncableEntityMap[S],
   context: ValidationContext,
+  mode: SyncWriteMode,
 ): Promise<void> {
   switch (store) {
     case STORE.tasks:
-      await validateTask(value, context);
+      await validateTask(value, context, mode);
       return;
     case STORE.dayPlans:
-      await validateDayPlan(value, context);
+      await validateDayPlan(value, context, mode);
       return;
     case STORE.sessions:
-      await validateSession(value, context);
+      await validateSession(value, context, mode);
       return;
     case STORE.energyRecords:
-      await validateEnergyRecord(value, context);
+      await validateEnergyRecord(value, context, mode);
       return;
     case STORE.unresolvedIntervals:
-      await validateUnresolvedInterval(value, context);
+      await validateUnresolvedInterval(value, context, mode);
       return;
     case STORE.settings:
-      await validateSettings(value, context);
+      await validateSettings(value, context, mode);
   }
 }
 
@@ -374,6 +382,8 @@ export async function executeAtomicWrite<T>(
     throw failure;
   };
 
+  const writeMode: SyncWriteMode = options.writeMode ?? 'local';
+
   try {
     return await internalDataStore.runAtomic(STORE_NAMES, async (raw) => {
       const assertDeclared = (store: StoreName): void => {
@@ -421,7 +431,7 @@ export async function executeAtomicWrite<T>(
             existing === undefined ? 'insertRecord' : 'updateField',
           );
           try {
-            await validateEntity(store, value, validationContext);
+            await validateEntity(store, value, validationContext, writeMode);
           } catch (error) {
             if (error instanceof EntityValidationError) poison(validationFailure(error, metadata));
             if (isStorageError(error)) poison(storageFailure(error, metadata));
@@ -479,7 +489,7 @@ export async function executeAtomicWrite<T>(
               deletedAt,
               ...softDeleteOptions,
             );
-            await validateEntity(store, tombstone, validationContext);
+            await validateEntity(store, tombstone, validationContext, writeMode);
           } catch (error) {
             if (error instanceof EntityValidationError) poison(validationFailure(error, metadata));
             if (isStorageError(error)) poison(storageFailure(error, metadata));

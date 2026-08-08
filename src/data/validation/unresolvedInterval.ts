@@ -9,6 +9,7 @@ import {
   validateIsoDateTime,
   validateStoredLocalDate,
   validateSyncableBase,
+  type SyncWriteMode,
   type ValidationIssue,
 } from './primitives';
 
@@ -30,12 +31,13 @@ const STATUSES = new Set(['pending', 'classified', 'ignored']);
 export async function collectUnresolvedIntervalValidationIssues(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<readonly ValidationIssue[]> {
   const collector = new ValidationCollector();
   const interval = requireRecord(value, 'UnresolvedInterval', collector);
   if (!interval) return collector.issues;
   validateExactKeys(interval, INTERVAL_KEYS, 'UnresolvedInterval', collector);
-  validateSyncableBase(interval, collector);
+  validateSyncableBase(interval, collector, mode);
   collector.check(typeof interval.source === 'string' && SOURCES.has(interval.source), 'interval.source', 'source', '非法 interval source');
   const validStart = validateIsoDateTime(interval.startedAt, 'startedAt', collector);
   const validEnd = validateIsoDateTime(interval.endedAt, 'endedAt', collector);
@@ -90,8 +92,9 @@ export async function collectUnresolvedIntervalValidationIssues(
 export async function validateUnresolvedInterval(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<UnresolvedInterval> {
-  const issues = await collectUnresolvedIntervalValidationIssues(value, context);
+  const issues = await collectUnresolvedIntervalValidationIssues(value, context, mode);
   if (issues.length > 0) throw new EntityValidationError('UnresolvedInterval', issues);
   return value as UnresolvedInterval;
 }

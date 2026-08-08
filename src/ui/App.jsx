@@ -1,10 +1,20 @@
-import { detectRecoveryInterval, loadCurrentTimerViews } from '../data/index';
+import {
+  detectRecoveryInterval,
+  loadCurrentTimerViews,
+  isSyncConfigured,
+  getAuthState,
+  onAuthStateChange,
+  requestMagicLink,
+  runSync,
+  onSyncStateChange,
+} from '../data/index';
 import { ActivitiesView } from './ActivitiesView';
 import { Icon } from './Icon';
 import { SettingsView } from './SettingsView';
 import { StatsView } from './StatsView';
 import { TimerView } from './TimerView';
 import { APP_VERSION } from './version';
+import { SYNC_POLL_INTERVAL_MS, formatSyncStatusText } from './syncViewModel';
 import {
   shouldDetectAppReopened,
   pageForTimerSnapshot,
@@ -110,6 +120,56 @@ export function App() {
       .finally(() => setBusy(false));
   }, [reload]);
 
+  // 多端同步（S7）：完全独立于上面的计时器/恢复逻辑，未配置 Supabase 时这整段直接跳过，
+  // 不影响纯本地使用。未登录时只订阅登录状态、不发任何同步请求——本地记录的 user_id
+  // 靠 auth.uid() 填充，匿名请求写不进任何数据，只会白白触发一次注定失败的网络请求。
+  // 登录后：立即同步一次 + 5 分钟轮询；每轮同步跑完后触发 reload() 让刚下载回来的数据
+  // 在界面上生效。
+  const [syncAuthState, setSyncAuthState] = React.useState({ status: 'unconfigured', email: null });
+  const [lastSyncResult, setLastSyncResult] = React.useState(null);
+  const [magicLinkEmail, setMagicLinkEmail] = React.useState('');
+  const [magicLinkNotice, setMagicLinkNotice] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!isSyncConfigured()) return undefined;
+
+    let cancelled = false;
+    getAuthState().then((state) => {
+      if (!cancelled) setSyncAuthState(state);
+    });
+    const unsubscribeAuth = onAuthStateChange((state) => setSyncAuthState(state));
+
+    return () => {
+      cancelled = true;
+      unsubscribeAuth();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (syncAuthState.status !== 'authenticated') return undefined;
+
+    const unsubscribeSync = onSyncStateChange((result) => {
+      setLastSyncResult(result);
+      reload().catch(() => {});
+    });
+
+    const triggerSync = () => runSync(clock().now, clock().timezone).catch(() => {});
+    triggerSync();
+    const intervalId = setInterval(triggerSync, SYNC_POLL_INTERVAL_MS);
+
+    return () => {
+      unsubscribeSync();
+      clearInterval(intervalId);
+    };
+  }, [syncAuthState.status, reload]);
+
+  const handleRequestMagicLink = async (event) => {
+    event.preventDefault();
+    setMagicLinkNotice(null);
+    const result = await requestMagicLink(magicLinkEmail.trim());
+    setMagicLinkNotice(result.ok ? '登录链接已发送，去邮箱里点一下' : (result.error ?? '发送失败'));
+  };
+
   const runCommand = async (work, onSuccess = null) => {
     if (busy) return;
     setBusy(true);
@@ -181,6 +241,35 @@ export function App() {
               </div>
             </div>
           )}
+          {formatSyncStatusText(syncAuthState.status, lastSyncResult) && (
+            <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 8, color: 'var(--ink-2)' }}>
+              {formatSyncStatusText(syncAuthState.status, lastSyncResult)}
+              {syncAuthState.status === 'authenticated' && syncAuthState.email && (
+                <span> · {syncAuthState.email}</span>
+              )}
+            </div>
+          )}
+          {syncAuthState.status === 'unauthenticated' && (
+            <form onSubmit={handleRequestMagicLink} style={{ marginTop: 8, display: 'flex', gap: 4 }}>
+              <input
+                type="email"
+                required
+                placeholder="邮箱登录以同步"
+                value={magicLinkEmail}
+                onChange={(event) => setMagicLinkEmail(event.target.value)}
+                className="input boxed"
+                style={{ fontSize: 11, width: 0, flex: 1, minWidth: 0 }}
+              />
+              <button type="submit" className="btn ghost sm">
+                发送
+              </button>
+            </form>
+          )}
+          {magicLinkNotice && (
+            <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 4, color: 'var(--ink-2)' }}>
+              {magicLinkNotice}
+            </div>
+          )}
         </div>
       </aside>
       <main className="main">
@@ -206,6 +295,8 @@ export function App() {
             settings={snapshot.taskViews.settings}
             runCommand={runCommand}
             busy={busy}
+            syncAuthState={syncAuthState}
+            lastSyncResult={lastSyncResult}
           />
         ) : (
           <ActivitiesView

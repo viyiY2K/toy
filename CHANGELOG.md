@@ -3,6 +3,13 @@
 本文件记录每个可发布版本面向使用者的主要变化。版本号遵循
 [Semantic Versioning](https://semver.org/)。
 
+## [0.1.2] - 2026-08-08
+
+### Added
+
+- 新增多端同步：登录后可以在多台设备间同步任务、专注记录、精力状态等全部数据。设置页新增"立即同步"按钮，登录后也会每 5 分钟自动同步一次。
+- 侧边栏新增邮箱登录入口；未登录时数据仍只保存在本机，不受影响。
+
 ## [0.1.1] - 2026-08-07
 
 ### Added
@@ -32,5 +39,6 @@
 
 - 完成计时页、清单页和统计页的可用性与信息层级打磨。
 
+[0.1.2]: https://github.com/viyiY2K/toy/releases/tag/v0.1.2
 [0.1.1]: https://github.com/viyiY2K/toy/releases/tag/v0.1.1
 [0.1.0]: https://github.com/viyiY2K/toy/releases/tag/v0.1.0

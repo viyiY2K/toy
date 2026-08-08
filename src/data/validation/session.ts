@@ -13,6 +13,7 @@ import {
   validateStoredLocalDate,
   validateSyncableBase,
   validateUuidV7,
+  type SyncWriteMode,
   type ValidationIssue,
 } from './primitives';
 
@@ -227,12 +228,13 @@ function validateIanaTimeZoneSilently(value: string): boolean {
 export async function collectSessionValidationIssues(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<readonly ValidationIssue[]> {
   const collector = new ValidationCollector();
   const session = requireRecord(value, 'Session', collector);
   if (!session) return collector.issues;
   validateExactKeys(session, SESSION_KEYS, 'Session', collector);
-  validateSyncableBase(session, collector);
+  validateSyncableBase(session, collector, mode);
   collector.check(typeof session.type === 'string' && TYPES.has(session.type), 'session.type', 'type', '非法 Session type');
   collector.check(typeof session.status === 'string' && STATUSES.has(session.status), 'session.status', 'status', '非法 Session status');
   validateUuidV7(session.taskId, 'taskId', collector, true);
@@ -312,8 +314,12 @@ export async function collectSessionValidationIssues(
   return collector.issues;
 }
 
-export async function validateSession(value: unknown, context?: ValidationContext): Promise<Session> {
-  const issues = await collectSessionValidationIssues(value, context);
+export async function validateSession(
+  value: unknown,
+  context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
+): Promise<Session> {
+  const issues = await collectSessionValidationIssues(value, context, mode);
   if (issues.length > 0) throw new EntityValidationError('Session', issues);
   return value as Session;
 }
