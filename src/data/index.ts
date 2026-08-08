@@ -44,3 +44,4 @@ export * from './commands/dayPlanCommands';
 export * from './commands/intervalCommands';
 export * from './commands/batchTaskCommands';
 export * from './commands/settingsCommands';
+export * from './commands/mergeGroupCommands';
