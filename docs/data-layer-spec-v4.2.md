@@ -2591,6 +2591,7 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 - `restSuggestionDisplayMode` 字段变更（用户切换"固定顺序 / 使用频次"展示策略）记录为 §7.12 `settings.restSuggestionDisplayModeUpdated`，不归 §7.7；切换展示模式本身不修改 `restSuggestions.sortIndex`，不触发 `restItem.reordered`。
 - `lifetimePomodoroBaseline` 的调整不触发 `settings.*` 事件，应触发 §7.13 `statsBaseline.*` 事件；该字段只影响累计番茄计数起点，不生成 Session，不伪造历史番茄记录，不进入 UnresolvedInterval / Session 工作流。
 - `appDayStartOffsetMinutes`（产品日开始偏移，§3.7）的修改记录为 §7.12 `settings.appDayStartOffsetUpdated`，**不**归入 `settings.timerUpdated`（它是整个产品的全局日边界设置，不是计时时长参数）；Phase 1 固定默认 `0`、UI 不开放修改，P2+ 开放设置入口后修改才触发该事件。
+- `taskCategoryWindows`（任务分类自动打标时间窗口，§3.7，v4.2 新增）的修改记录为 §7.12 `settings.taskCategoryWindowsChanged`，**不**归入 `settings.timerUpdated`（它不是番茄计时参数，只影响 §7.1 `task.categoryChanged` 的自动判定）。
 - Phase 说明：`settings.initialized` 为 P1；其余 Settings 修改类事件均为 P2。Phase 1 只要求默认 Settings 初始化及 `settings.initialized`，不要求完整设置页管理事件全部接入。
 
 ---
@@ -2599,7 +2600,7 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 **顶层关联字段**：`settingsId`（本次初始化写入的 Settings 记录 id）。
 
-**payload**：`{ focusMinutes, shortBreakMinutes, longBreakMinutes, longBreakEvery, restSuggestionsCount, dailyTaskTemplatesCount }`
+**payload**：`{ focusMinutes, shortBreakMinutes, longBreakMinutes, longBreakEvery, restSuggestionsCount, dailyTaskTemplatesCount, taskCategoryWindows }`
 
 | 字段 | 类型 | 可空 | 默认值 | 含义说明 |
 |---|---|---|---|---|
@@ -2609,6 +2610,7 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 | `longBreakEvery` | `number` | 否 | `4` | 初始化时写入的长休触发间隔（个有效标准 focus） |
 | `restSuggestionsCount` | `number` | 否 | `28` | 初始化时写入的休息建议项总数（短休 15 + 长休 13）；完整内容以 Settings 本体为准，不放入 payload |
 | `dailyTaskTemplatesCount` | `number` | 否 | `1` | 初始化时写入的每日模板总数（默认"计划准备"1 条）；完整内容以 Settings 本体为准，不放入 payload |
+| `taskCategoryWindows` | `object` | 否 | 见 §3.7 | 初始化时写入的任务分类自动打标时间窗口默认值（v4.2 新增）；结构与默认值见 §3.7 taskCategoryWindows 对象结构 |
 
 **说明**：首次启动 App 且数据库中不存在任何 Settings 记录时，系统创建一条默认 Settings 并写入存储，此时触发。本事件在产品生命周期内只触发一次；已存在 Settings 时重新打开 App 不触发。若 Settings 因数据异常（如 bug、意外清除）丢失后被重建，不应默默重写本事件——数据异常重建属于数据修复场景，应走 §7.14 `data.*` 或 §7.17 `error.*` 相关流程。
 
@@ -2655,6 +2657,26 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 **典型触发**：用户在设置页将"一天起始时刻"从 00:00 改为 04:00（oldValue=0，newValue=240，changedBy=`'user'`）；数据迁移流程对该偏移做修正（changedBy=`'migration'`）。
 
 **不应触发**：Phase 1 默认初始化写入 `appDayStartOffsetMinutes=0`（→ 随 `settings.initialized` 的 Settings 本体写入，不单独触发本事件）；newValue 与 oldValue 相等（未实际修改不触发）；计时时长参数修改（→ `settings.timerUpdated`）；`lifetimePomodoroBaseline` 调整（→ §7.13 `statsBaseline.*`）；仅查看设置页但未写入变更。
+
+---
+
+#### settings.taskCategoryWindowsChanged（P2，v4.2 新增）
+
+**顶层关联字段**：`settingsId`。
+
+**payload**：`{ window, oldValue, newValue }`
+
+| 字段 | 类型 | 可空 | 含义说明 |
+|---|---|---|---|
+| `window` | `string` | 否 | 被修改的窗口；取值约束：`'morning'` / `'afternoon'` 之一 |
+| `oldValue` | `object` | 否 | 修改前的窗口值；结构为 `{ startMinute, endMinute }`，见 §3.7 |
+| `newValue` | `object` | 否 | 修改后的窗口值；结构同 `oldValue`；必须满足 §3.7 字段一致性约束（`0 ≤ startMinute < endMinute ≤ 1439`） |
+
+**说明**：用户在设置页修改任务分类自动打标的上午或下午时间窗口时触发。每次只修改一个窗口（上午或下午）触发一个事件；如一次操作同时修改两个窗口，为每个窗口分别触发一个独立事件，不合并，与 `settings.timerUpdated` 的"每字段一个事件"风格一致。历史 `task.categoryChanged` 的判定结果不受本次修改影响（判定发生时已锁定，见 §7.1）。
+
+**典型触发**：用户把上午窗口从 09:00–12:00 调整为 10:00–12:00（`window='morning'`，`oldValue={startMinute:540,endMinute:720}`，`newValue={startMinute:600,endMinute:720}`）。
+
+**不应触发**：Phase 1 默认初始化写入默认窗口值（→ 随 `settings.initialized` 写入，不单独触发本事件）；newValue 与 oldValue 相等（未实际修改不触发）；计时时长参数修改（→ `settings.timerUpdated`）；`Task.category` / `DayPlan.mainCategory` 的变更（→ §7.1 `task.categoryChanged` / §7.3 `dayPlan.mainCategoryChanged`）。
 
 ---
 
