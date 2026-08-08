@@ -1488,6 +1488,37 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 
 ---
 
+#### task.categoryChanged（P2，v4.2 新增）
+
+**顶层关联字段**：`taskId`；由自动判定触发时（`source='auto'`），同步填写 `sessionId`（触发本次判定的 focus Session id，即该 Task 首次 `focus.started` 对应的 Session，见 §7.5）；手动修改触发时（`source='manual'`），`sessionId` 为 null。
+
+**payload**：`{ source, previousCategory, newCategory }`
+
+| 字段 | 类型 | 可空 | 含义说明 |
+|---|---|---|---|
+| `source` | `string` | 否 | 本次变更来源；取值约束：`'auto'`（系统自动判定写入）/ `'manual'`（用户手动设置 / 修改 / 清空）之一 |
+| `previousCategory` | `string \| null` | 是 | 变更前的 `Task.category` 值；取值约束：`null` 或 `'work'` / `'study'` / `'side'` / `'life'` 之一 |
+| `newCategory` | `string \| null` | 是 | 变更后的 `Task.category` 值；取值约束：`null` 或 `'work'` / `'study'` / `'side'` / `'life'` 之一；`source='auto'` 时必须非 null（自动判定只在命中窗口时才写入，不存在"自动清空"场景） |
+
+**说明**：`Task.category` 发生变化、连同 `Task.categorySource` 一并写入时触发。分 `source='auto'` 与 `source='manual'` 两条路径。
+
+**自动判定路径（`source='auto'`）——触发时机与算法**：
+
+- **触发时机**：某 Task 的**首条** `Session.type='focus'` 记录 `started`（即该 Task 生命周期中首次开始专注，见 §7.5 `focus.started`）时评估一次；此后不再对该 Task 重复评估，不存在"第二次自动判定"。
+- **前置条件**：评估发生那一刻，`Task.categorySource` 仍为 `null`（尚未被自动或手动设置过）。若用户在该 Task 首次开始专注前已手动设置过分类（`categorySource='manual'`），则跳过本次自动判定，不触发本事件、不覆盖用户已设置的值——手动优先级高于自动判定。
+- **判定算法**：取触发本次评估的 focus Session 的 `startedAt`，按其 `timezone` 换算为当天本地时间的分钟数，检查是否落在 `Settings.taskCategoryWindows.morning` 或 `.afternoon` 任一窗口内（命中条件：`startMinute ≤ 分钟数 < endMinute`，见 §3.7）：
+  - **命中任一窗口**：`Task.category` 写入该 focus Session 所属产品日（`appDate`，按 §2.5 由 `startedAt`、`timezone` 与 `Settings.appDayStartOffsetMinutes` 派生）对应 `DayPlan.mainCategory` 当前值，`categorySource` 写入 `'auto'`，触发本事件（`previousCategory=null`，`newCategory=` 命中的分类值）。
+  - **未命中任何窗口**：不写入、不触发本事件，`Task.category` / `categorySource` 保持 `null`，等待用户手动设置。
+- 判定使用的时区与产品日归属方式与 §2.5 一致，不得在事后用当前设备时区重新判断历史命中结果。
+
+**手动路径（`source='manual'`）**：用户在活动清单、今日待办或任务详情等入口手动设置 / 修改 / 清空该任务的分类时触发，不受"仅评估一次"的限制，可随时发生，且优先级高于自动判定——某 Task 一旦发生过一次 `source='manual'` 的本事件，`categorySource` 变为 `'manual'`，此后即使该 Task 仍满足自动判定的触发条件（如尚未开始专注），也不会再被自动判定覆盖（见上方前置条件）。手动路径下 `newCategory` 允许为 `null`（用户将任务重新清空为"未分类"）。
+
+**典型触发**：用户今天 11:30 开始专注某个刚创建的任务，命中上午窗口，系统自动写入 `category='work'`（假设当天 `DayPlan.mainCategory='work'`）、`categorySource='auto'`（`source='auto'`，`previousCategory=null`，`newCategory='work'`）；用户在活动清单为某任务手动打上"副业"标签（`source='manual'`）；用户把此前自动打上"工作"的任务手动改成"生活"（`source='manual'`，`previousCategory='work'`，`newCategory='life'`）。
+
+**不应触发**：Task 创建时（创建时 `category` 默认 `null`，不触发本事件，见 §7.1 `task.created`）；自动判定评估但未命中任何窗口（不写入，不触发）；Task 已有 `categorySource='manual'` 时首次开始专注（跳过自动判定，不触发）；`newCategory` 与 `previousCategory` 相同（未实际变化不触发）。
+
+---
+
 ### 7.2 Subtask（子任务）
 
 本节定义子任务语境特有行为的事件。
