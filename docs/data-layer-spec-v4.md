@@ -3080,14 +3080,13 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 ### 7.19 MergeGroup（合并组）
 
-本节定义合并番茄钟（MergeGroup，见 §3.8）生命周期相关事件：创建、成员增减、预估追加、解散。
+本节定义合并番茄钟（MergeGroup，见 §3.8）生命周期相关事件：创建、成员增减、成员排序、预估追加、解散。
 
 **Domain 级说明**：
 
 - 合并组触发的 focus Session 本身（开始 / 完成 / 作废）仍归 §7.5 `focus.*` 域，不在本节重复定义；合并场景下 `focus.started` / `focus.completed` 按参与任务数量各发一条，见 §7.5 补充说明。
-- 本节 5 个事件所属功能批次为"合并番茄钟"，是 Phase 1–3 封板之后新增的独立功能批次，不套用 §10 既有 P1–P5 编号（避免与既定 Phase 范围混淆），Phase 归属见 §10.7。
-- 合并组内部当前不支持成员重排序（展示顺序即 `taskIds` 数组顺序，调整需要移出再按新顺序移入）；不定义独立的 `mergeGroup.reordered` 事件。
-- 合并组的预估追加（第三轮用满）**不触发** `prompt.shown(taskSplitSuggestion)` 强制拆分提示——该提示是 §3.1 Task 专属的强引导机制，合并组是零碎杂事的临时集合，不适用同一套强提醒语义；`mergeGroup.estimateAdjusted` 只复用 Task 预估追加的**数值上限规则**（1–7 封顶、最多三轮），不复用其"强触发拆分提示"的 UI 行为。
+- 本节 6 个事件所属功能批次为"合并番茄钟"，是 Phase 1–3 封板之后新增的独立功能批次，不套用 §10 既有 P1–P5 编号（避免与既定 Phase 范围混淆），Phase 归属见 §10.7。
+- 合并组的预估追加（第三轮用满）触发 `prompt.shown`（`promptType='mergeGroupLimitReached'`，见 §7.15）；文案语义独立于 Task 的 `taskSplitSuggestion`，且不阻断继续追加或继续合并。`mergeGroup.estimateAdjusted` 复用 Task 预估追加的**数值上限规则**（1–7 封顶、最多三轮），但走独立的 promptType，不复用 `taskSplitSuggestion` 的文案与"强阻断"行为。
 
 ---
 
@@ -3106,7 +3105,7 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 **典型触发**：用户在清单页把任务 B 拖到任务 A 的正中间（区别于拖到上方 / 下方触发的排序），形成新的合并卡片。
 
-**不应触发**：已有合并组追加新成员（→ `mergeGroup.taskAdded`）；组内成员重排序（当前不支持，见 Domain 级说明）。
+**不应触发**：已有合并组追加新成员（→ `mergeGroup.taskAdded`）；组内成员重排序（→ `mergeGroup.reordered`）。
 
 ---
 
@@ -3152,17 +3151,33 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 ---
 
+#### mergeGroup.reordered（合并番茄钟功能批次）
+
+**顶层关联字段**：`mergeGroupId`、`taskId`（被移动的任务）。
+
+**payload**：`{ fromIndex, toIndex }`
+
+`fromIndex` / `toIndex` 为操作前后该任务在 `taskIds` 数组中的下标（0 起始）。
+
+**说明**：用户在合并卡片内拖拽调整成员任务的先后顺序时触发，只改变 `MergeGroup.taskIds` 数组内部顺序，不改变成员归属，不影响任何任务的 `mergeGroupId`。与活动清单 / 今日待办的顶层任务排序（§7.4 `task.reordered`、§7.3 `dayPlan.taskReordered`）是同类逻辑，但作用域限定在合并卡片内部。
+
+**典型触发**：用户在合并卡片里把"订咖啡豆"从第 3 位拖到第 1 位，调整这个番茄里先做哪件事。
+
+**不应触发**：成员加入 / 移出（→ `mergeGroup.taskAdded` / `mergeGroup.taskRemoved`）；活动清单 / 今日待办的顶层任务排序（→ §7.4、§7.3）。
+
+---
+
 #### mergeGroup.estimateAdjusted（合并番茄钟功能批次）
 
 **顶层关联字段**：`mergeGroupId`。
 
 **payload**：`{ round, oldEstimate, newEstimate }`
 
-`round` 为 2 或 3，对应 `estimateRounds` 数组中本轮的 `index`（第 1 轮已随 `mergeGroup.created` 记录，不触发本事件）。取值范围、三轮上限，与 §7.1 `task.estimateAdjusted` 一致（`newEstimate` 1–7，`>7` 拒绝写入）；**但不触发** `prompt.shown(taskSplitSuggestion)`（见 Domain 级说明）。
+`round` 为 2 或 3，对应 `estimateRounds` 数组中本轮的 `index`（第 1 轮已随 `mergeGroup.created` 记录，不触发本事件）。取值范围、三轮上限，与 §7.1 `task.estimateAdjusted` 一致（`newEstimate` 1–7，`>7` 拒绝写入）；第三轮（round=3）用满后触发 `prompt.shown`（`promptType='mergeGroupLimitReached'`，见 §7.15），文案与 `taskSplitSuggestion` 不同，且不阻断继续操作。
 
-**说明**：focus Session 响铃到点、组内仍有未完成任务时，用户选择"追加预估番茄"，`estimateRounds` 数组新增一条记录时触发。`newEstimate` 表示该轮之后合并组的**总预估番茄数**（不是增量）。
+**说明**：focus Session 响铃到点、组内仍有未完成任务时，用户选择"追加预估番茄"，`estimateRounds` 数组新增一条记录时触发。`newEstimate` 表示该轮之后合并组的**总预估番茄数**（不是增量）。已完成的成员**不会**因为本事件被移出组（见 §3.8 关键规则 4）；下一轮 focus Session 的 `taskIds` 快照会自动排除这些已经拿过 credit 的成员，不会重复计有效番茄（见 §3.3 关键规则 11）。
 
-**典型触发**：4 个任务合并计时，第一个番茄到点还剩 1 个没做完，用户选"追加预估番茄"，`estimatedPomodoros` 从 1 变为 2，紧接着开启第 2 个 focus Session。
+**典型触发**：4 个任务合并计时，第一个番茄到点还剩 1 个没做完，用户选"追加预估番茄"，`estimatedPomodoros` 从 1 变为 2，紧接着开启第 2 个 focus Session，已完成的 3 个任务继续留在组内。
 
 **不应触发**：创建组时的初始预估（→ `mergeGroup.created`）；单个 Task 自己的预估追加（→ §7.1 `task.estimateAdjusted`，两者是不同实体，互不触发）。
 
@@ -3177,13 +3192,13 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `finalTaskIds` | `string[]` | 解散那一刻组内仍剩的成员列表（这些成员的 `mergeGroupId` 随本事件一并清空） |
-| `dissolvedReason` | `string` | 与 MergeGroup.dissolvedReason 一致，枚举值见 §3.8 |
+| `dissolvedReason` | `string` | 与 MergeGroup.dissolvedReason 一致，枚举值见 §3.8（`'membersBelowMinimum'` / `'manualDissolved'`） |
 
-**说明**：合并组生命周期正常终结时触发，对应 §3.8 关键规则 2/4/5 的三条路径：成员数掉到 1（含）以下自动解散；focus Session 到点用户选择"结束"；用户随时主动整体解散。解散不是软删除，`MergeGroup.deletedAt` 不因本事件写入（见 §3.8 关键规则 7）。
+**说明**：合并组生命周期正常终结时触发，对应 §3.8 关键规则 2/5 的两条路径：**自动**——成员被逐个移出（不论是用户手动拖出，还是 focus Session 到点用户选"结束"移出未完成成员），`taskIds` 长度掉到 1（含）以下时自动解散；**主动**——用户不经过"到点选择"流程，随时整体解散整个组，此时组内所有任务（不论完成与否）一并清空归属。解散不是软删除，`MergeGroup.deletedAt` 不因本事件写入（见 §3.8 关键规则 7）；解散后任务在今日待办 / 活动清单的归属不变，只是不再以合并卡片形式展示。
 
-**典型触发**：4 个任务合并计时，到点用户选"结束"而非"追加预估"；用户在还没开始计时前，主动取消整次合并；合并组成员被逐个移出，最后只剩 1 个。
+**典型触发**：合并组成员被逐个移出，最后只剩 1 个（`dissolvedReason='membersBelowMinimum'`）；用户在还没开始计时前，或计时过程中，主动取消整次合并（`dissolvedReason='manualDissolved'`）。
 
-**不应触发**：单个成员退出、组内仍剩 ≥ 2 个成员（→ `mergeGroup.taskRemoved`）；用户完成了组内某个任务但组继续进行（不触发任何 mergeGroup 事件，见 §3.8 关键规则 3）。
+**不应触发**：到点选"结束"但移出未完成成员后剩余成员仍 ≥ 2（→ 只触发 `mergeGroup.taskRemoved`，组不解散，见 §3.8 关键规则 4）；用户完成了组内某个任务但组继续进行（不触发任何 mergeGroup 事件，见 §3.8 关键规则 3）；到点选"追加预估番茄"（→ `mergeGroup.estimateAdjusted`，组不解散）。
 
 ---
 
