@@ -1,7 +1,7 @@
 {
   "name": "toy-cc-data-layer",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Phase 1 数据层（与浏览器原型解耦，可独立 import 与测试）。",
   "scripts": {
