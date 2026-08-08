@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatSyncStatusText } from './syncViewModel';
+import { formatSyncStatusText, hasSyncErrors } from './syncViewModel';
 
 function syncResult({ configured = true, uploadError = null, downloadError = null } = {}) {
   return {
@@ -46,5 +46,20 @@ describe('formatSyncStatusText (S7 sync view model)', () => {
 
   it('一切正常时显示已同步', () => {
     expect(formatSyncStatusText('authenticated', syncResult())).toBe('已同步');
+  });
+});
+
+describe('hasSyncErrors (S7 sync view model，供手动同步按钮判断结果用)', () => {
+  it('结果为空时视为没有错误', () => {
+    expect(hasSyncErrors(null)).toBe(false);
+  });
+
+  it('上传或下载任一实体/事件带 error 时视为有错误', () => {
+    expect(hasSyncErrors(syncResult({ uploadError: 'boom' }))).toBe(true);
+    expect(hasSyncErrors(syncResult({ downloadError: 'boom' }))).toBe(true);
+  });
+
+  it('一切正常时视为没有错误', () => {
+    expect(hasSyncErrors(syncResult())).toBe(false);
   });
 });

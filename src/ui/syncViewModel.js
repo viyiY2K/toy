@@ -1,6 +1,6 @@
 export const SYNC_POLL_INTERVAL_MS = 5 * 60 * 1000;
 
-function hasSyncErrors(syncRunResult) {
+export function hasSyncErrors(syncRunResult) {
   if (!syncRunResult) return false;
   const uploadErrors = syncRunResult.upload.entities.some((entity) => entity.error)
     || Boolean(syncRunResult.upload.events.error);

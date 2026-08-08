@@ -295,6 +295,8 @@ export function App() {
             settings={snapshot.taskViews.settings}
             runCommand={runCommand}
             busy={busy}
+            syncAuthState={syncAuthState}
+            lastSyncResult={lastSyncResult}
           />
         ) : (
           <ActivitiesView
