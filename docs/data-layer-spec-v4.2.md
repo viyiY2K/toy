@@ -409,6 +409,8 @@ DayPlan 表示用户某一天的执行计划，包含今日任务列表、番茄
 | `budgetMode` | `string` (枚举) | 否 | `'conservative'` | 预算估算模式，枚举值见下方；取值约束：取值为 `'conservative'` / `'optimistic'` / `'manual'` 之一 |
 | `estimate` | `object` | 否 | 见下方 | 当天时段与番茄数估算，嵌套结构见下方；取值约束：必须为非 null 对象 |
 | `settingsSnapshot` | `object` | 否 | 建立时取当前 Settings | 建立当天 DayPlan 时用于预算解释的计时设置快照，仅包含 `focusMinutes`、`shortBreakMinutes`、`longBreakMinutes`、`longBreakEvery` 四个字段；取值约束：必须为非 null 对象，字段说明参见下方 settingsSnapshot 说明 |
+| `mainCategory` | `string`（枚举） | 否 | 见关键规则第 11 条 | 今日主线分类（v4.2 新增）：绝大多数今日任务默认应归属的大类，用于任务分类自动打标规则（见 §7.1 `task.categoryChanged`）；DayPlan 创建时按简化工作日规则预填，用户可当天手动覆盖；取值约束：取值为 `'work'` / `'study'` / `'side'` / `'life'` 之一，不允许 null（见关键规则第 11 条，恒有值） |
+| `mainCategorySource` | `string`（枚举） | 否 | `'auto'` | `mainCategory` 的写入来源（v4.2 新增）；`'auto'` = 创建时按简化工作日规则自动预填，尚未被用户手动覆盖；`'manual'` = 用户手动改过当天主线分类；取值约束：取值为 `'auto'` / `'manual'` 之一 |
 | `createdAt` | `string` | 否 | 写入时生成 | 记录首次写入时间；取值约束：ISO 8601 带时区格式，不允许缺省时区 |
 | `updatedAt` | `string` | 否 | 写入时生成 | 记录最近修改时间；取值约束：ISO 8601 带时区格式，不允许缺省时区 |
 | `deletedAt` | `string \| null` | 是 | `null` | 软删除时间戳（见 §2.4）；`null` = 未删除；取值约束：ISO 8601 带时区格式或 null |
@@ -478,6 +480,7 @@ DayPlan 表示用户某一天的执行计划，包含今日任务列表、番茄
 8. 昨日未完成的任务不滚入第二天 DayPlan，不发起"是否带入今天"的提示流程。用户如需继续昨日任务，自行从活动清单手动加入今日（→ `dayPlan.taskAdded`）。历史专注进度由 Session 按 `taskId` 保留，不因跨天而丢失。
 9. `DayPlan.taskIds` 是今日待办的唯一排序来源。今日列表拖拽排序时，只重排 `taskIds` 数组，不修改 `Task.sortIndex`。
 10. **`DayPlan.appDate` 是创建时确定的业务键，offset 修改后不自动重写**：`appDate` 在 DayPlan 创建时按当时 `timezone` 与 `appDayStartOffsetMinutes` 派生并落库（field 说明中"按当前 `appDayStartOffsetMinutes` 派生"指的是**创建 / 首次查询当天 DayPlan 那一刻**的取值）。用户日后修改 `Settings.appDayStartOffsetMinutes` 时，历史 `DayPlan.appDate` **不自动重写、不自动改名、不自动迁移**；预算使用率、今日任务列表、每日模板生成等涉及 DayPlan 的逻辑，一律以该 DayPlan **已存的 `appDate`** 为准，不隐含承诺 offset 修改后会自动重排历史 DayPlan。若未来要支持历史 DayPlan 重新归属 / 批量迁移 / 改名，必须另开专门的数据迁移设计，不在 Phase 1 承诺（见 §2.5 规则 6、§11）。
+11. **`mainCategory` 默认预填规则（v4.2 新增）**：DayPlan 创建时，按创建当天是否为周一至周五（简化工作日规则，**不判断法定节假日与调休**，见 §7.3 `dayPlan.created`）预填 `mainCategory`：周一至周五预填 `'work'`，周六 / 周日预填 `'side'`，此时 `mainCategorySource='auto'`。用户可在当天任意时刻通过设置入口手动覆盖为 `'work'` / `'study'` / `'side'` / `'life'` 中的任意一个，写入后 `mainCategorySource` 改为 `'manual'`（→ `dayPlan.mainCategoryChanged`，见 §7.3）。`mainCategory` 恒有值，不存在"今日未设置主线分类"的状态。该字段只影响 Task 分类自动打标规则（§7.1 `task.categoryChanged`）判定命中时应赋予的分类值，不改变 DayPlan 自身的任何其他统计口径；也不改变已生成的 Task `category` ——已被自动 / 手动打标的 Task 不因当天 `mainCategory` 事后被修改而追溯变化。
 
 **字段一致性约束**
 
@@ -487,8 +490,9 @@ DayPlan 表示用户某一天的执行计划，包含今日任务列表、番茄
 2. `taskIds` 数组内不允许有重复的 Task ID。
 3. `estimate.freeMin` 写入时必须满足：`freeMin = round( workWindowMin - Σ(fixedDeductions[i].hours × 60) - Σ(lifeDeductions[i].hours × 60) )`；每个扣除项的分钟数（`hours × 60`）先各自**不取整**参与求和，仅对**最终结果**四舍五入到整数分钟（避免逐项取整的累积舍入误差）；四舍五入后结果 < 0 时存 0。
 4. `budgetPomodoros ≥ 0`；当今日任务预估总和超过 `budgetPomodoros` 时，数据层记录超载但不拒绝写入。
+5. **（v4.2 新增）** `mainCategory` 必须为 `'work'` / `'study'` / `'side'` / `'life'` 之一，不允许为 null 或其他值；`mainCategorySource` 必须为 `'auto'` / `'manual'` 之一。
 
-实现端在写入或更新 DayPlan 时，必须验证以上规则，违反第 1、2、3 条的写入操作应被拒绝。
+实现端在写入或更新 DayPlan 时，必须验证以上规则，违反第 1、2、3、5 条的写入操作应被拒绝。
 
 **派生字段计算规则**
 
