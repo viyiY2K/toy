@@ -1603,7 +1603,9 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 
 **顶层关联字段**：`dayPlanId`。
 
-**payload**：`{ appDate, localDate, budgetMode }`（`appDate` 为该 DayPlan 所属产品日，即业务键，见 §3.2；`localDate` 为创建时事实自然日辅助值；`appDayStartOffsetMinutes = 0` 时二者一致）
+**payload**：`{ appDate, localDate, budgetMode, mainCategory, mainCategorySource }`（`appDate` 为该 DayPlan 所属产品日，即业务键，见 §3.2；`localDate` 为创建时事实自然日辅助值；`appDayStartOffsetMinutes = 0` 时二者一致；`mainCategory` / `mainCategorySource` 为 v4.2 新增字段，语义见 §3.2 关键规则第 11 条）
+
+`mainCategory` 创建时按简化工作日规则预填（**不判断法定节假日与调休**）：`appDate` 对应星期一至星期五预填 `'work'`，星期六 / 星期日预填 `'side'`，此时 `mainCategorySource` 恒为 `'auto'`（创建当下不存在用户已提前手动设置的场景）。
 
 **Phase 边界**：本事件分两类触发场景，Phase 归属不同：
 - **P1（最小初始化闭环，真实写入）**：用户首次进入应用 / 首次读取当前产品日今日待办时，系统发现当前 `appDate` 尚无有效 DayPlan 而自动创建当天 DayPlan——此场景 Phase 1 即真实写入本事件。此举是数据地基的最小闭环（v4 已取消 `bucket`，今日待办必须由 `DayPlan.taskIds` 派生，见 §3.1 关键规则 3、§3.2 关键规则 1），**不等同于**提前实现完整 P2 DayPlan 管理能力（见 §10.2）。
@@ -1674,6 +1676,25 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 **典型触发**：用户在预算页将模式从"保守"切换为"手动"。
 
 **不应触发**：用户确认预算数值（→ `dayPlan.budgetAccepted`）；DayPlan 初次创建时写入默认 budgetMode（→ `dayPlan.created`）。
+
+---
+
+#### dayPlan.mainCategoryChanged（P2，v4.2 新增）
+
+**顶层关联字段**：`dayPlanId`。
+
+**payload**：`{ oldValue, newValue }`
+
+| 字段 | 类型 | 可空 | 含义说明 |
+|---|---|---|---|
+| `oldValue` | `string` | 否 | 修改前的 `mainCategory` 值；取值约束：`'work'` / `'study'` / `'side'` / `'life'` 之一 |
+| `newValue` | `string` | 否 | 修改后的 `mainCategory` 值；取值约束：`'work'` / `'study'` / `'side'` / `'life'` 之一，且必须与 `oldValue` 不同（相同不写入本事件） |
+
+**说明**：用户手动修改当天 `DayPlan.mainCategory`（今日主线分类）时触发，`DayPlan.mainCategorySource` 同步改为 `'manual'`。修改当天主线分类**不追溯改变**已经写入 `Task.category` 的历史任务——已被 §7.1 `task.categoryChanged` 自动或手动打标的任务不因此事后变化，本事件只影响修改时刻之后新触发的自动判定所采用的分类值。
+
+**典型触发**：用户发现今天其实主要在处理副业，把默认预填的"工作"改成"副业"。
+
+**不应触发**：DayPlan 创建时写入默认预填值（→ `dayPlan.created`，`mainCategorySource` 仍为 `'auto'`）；`newValue` 与 `oldValue` 相同（未实际修改不触发）；`Task.category` 的变更（→ §7.1 `task.categoryChanged`）。
 
 ---
 
