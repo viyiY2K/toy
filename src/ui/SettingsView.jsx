@@ -1,4 +1,4 @@
-import { runSync, updateLifetimePomodoroBaseline, updateTimerSetting } from '../data/index';
+import { requestMagicLink, runSync, updateLifetimePomodoroBaseline, updateTimerSetting } from '../data/index';
 import { formatSyncStatusText, hasSyncErrors } from './syncViewModel';
 
 const React = window.React;
@@ -107,6 +107,36 @@ function BaselineField({ value, command, busy }) {
   );
 }
 
+function LoginForm() {
+  const [email, setEmail] = React.useState('');
+  const [notice, setNotice] = React.useState(null);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setNotice(null);
+    const result = await requestMagicLink(email.trim());
+    setNotice(result.ok ? '登录链接已发送，去邮箱里点一下' : (result.error ?? '发送失败'));
+  };
+
+  return (
+    <div>
+      <form onSubmit={handleSubmit} className="planner-row">
+        <input
+          type="email"
+          required
+          placeholder="邮箱登录以同步"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="input boxed"
+          style={{ flex: 1 }}
+        />
+        <button type="submit" className="btn sm">发送登录链接</button>
+      </form>
+      {notice && <div className="sub" style={{ marginTop: 8 }}>{notice}</div>}
+    </div>
+  );
+}
+
 function SyncCard({ syncAuthState, lastSyncResult }) {
   const [manualState, setManualState] = React.useState('idle'); // idle | syncing | done | error
 
@@ -143,7 +173,7 @@ function SyncCard({ syncAuthState, lastSyncResult }) {
           {manualState === 'error' && <span className="planner-eq">同步时遇到问题，稍后会自动重试</span>}
         </div>
       ) : (
-        <div className="sub">先在左侧边栏输入邮箱登录，才能手动触发同步。</div>
+        <LoginForm/>
       )}
     </div>
   );
