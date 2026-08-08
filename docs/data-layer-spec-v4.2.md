@@ -935,6 +935,7 @@ Settings 在建立每天 DayPlan 时以快照形式（`settingsSnapshot`）写�
 | `lifetimePomodoroBaseline` | `number` | 否 | `0` | 用户从其他工具或历史记录手动带入的累计完整番茄基数（语义已由"有效 focus 基数"收紧为"完整番茄循环基数"，见 §8.11）；统计累计完整番茄数 = `lifetimePomodoroBaseline + 本工具内全时间段完整番茄循环数`；该字段**不放入** DayPlan.settingsSnapshot；用户修改时必须写入 §7.13 `statsBaseline.updated` 事件；取值约束：整数，≥ 0，不允许小数或负数 |
 | `restSuggestionDisplayMode` | `string`（枚举） | 否 | `'customOrder'` | 休息建议项的展示排序策略；`'customOrder'` = 按 `restSuggestions.sortIndex` 展示（含用户手动拖拽后的自定义顺序）；`'usageFrequency'` = 按历史 `Session.actualRest` 统计的使用频次动态展示，不修改 `restSuggestions.sortIndex`，不触发 `restItem.reordered`，无历史数据或多项频次相同时回退到 `sortIndex`；频次统计窗口（最近 30 天 / 90 天 / 全部历史）待 §8 统计口径或 UI 设计确定；取值约束：取值为 `'customOrder'` / `'usageFrequency'` 之一 |
 | `appDayStartOffsetMinutes` | `number` | 否 | `0` | 产品日开始时间相对自然日 00:00 的分钟偏移；用于派生产品日归属 `appDate`（见 §2.5）；`0` = 产品日从 00:00 开始，`240` = 从 04:00 开始；该设置是整个产品判断"今天 / 每日 / 当日"的全局日边界规则，影响 DayPlan 产品日归属、今日任务列表、每日模板生成、今日预算估算以及统计页日 / 周 / 月 / 年聚合，不只是统计页偏好；不改变历史记录的 `localDate`；取值约束：整数，0 ≤ appDayStartOffsetMinutes ≤ 1439 |
+| `taskCategoryWindows` | `object` | 否 | 见下方默认值 | 任务分类自动打标的时间窗口配置（v4.2 新增），固定分上午 / 下午两段，用于回避午休时段；结构见下方 taskCategoryWindows 对象结构；用于 §7.1 `task.categoryChanged` 自动判定；取值约束：必须为非 null 对象，字段须符合下方结构定义 |
 | `createdAt` | `string` | 否 | 写入时生成 | 记录首次写入时间；取值约束：ISO 8601 带时区格式，不允许缺省时区 |
 | `updatedAt` | `string` | 否 | 写入时生成 | 记录最近修改时间；取值约束：ISO 8601 带时区格式，不允许缺省时区 |
 | `schemaVersion` | `number` | 否 | 写入时取当前版本 | 该条记录写入时的 schema 版本号（见 §2.3）；取值约束：正整数，≥ 1 |
@@ -1027,6 +1028,17 @@ Settings 在建立每天 DayPlan 时以快照形式（`settingsSnapshot`）写�
 > }
 > ```
 
+**taskCategoryWindows 对象结构（v4.2 新增）**
+
+```
+{
+  morning:   { startMinute: number, endMinute: number }   上午窗口；取值约束：整数，0 ≤ startMinute < endMinute ≤ 1439（分钟数，从当天 00:00 起算）
+  afternoon: { startMinute: number, endMinute: number }   下午窗口；取值约束：整数，0 ≤ startMinute < endMinute ≤ 1439
+}
+```
+
+> **默认值**：`morning = { startMinute: 540, endMinute: 720 }`（09:00–12:00），`afternoon = { startMinute: 840, endMinute: 1140 }`（14:00–19:00）。默认值仅为初始参考，不代表产品对"标准工时"的判断，用户可随时在设置页调整两段窗口的起止时间（→ `settings.taskCategoryWindowsChanged`，见 §7.12）。
+
 **关键规则**
 
 1. Settings 是**单条当前生效记录**：同一时间最多允许一条 `deletedAt = null` 的有效 Settings（见字段一致性约束第 1 条）。正常使用中更新同一条 Settings，不每次新建；Settings 修改历史通过 Event 记录（§7.12 Settings 事件域），不通过多条 Settings 版本表达。
@@ -1077,6 +1089,8 @@ Settings 在建立每天 DayPlan 时以快照形式（`settingsSnapshot`）写�
    - **Phase 1 默认值为 `0`**；Phase 1 可暂不开放 UI 修改，但数据层从一开始必须有该字段，且所有"今天 / 每日 / DayPlan / 今日任务列表 / 预算估算 / 统计按日归属"的内部逻辑都应基于 `appDate` 派生函数，而不是直接把 `localDate` 当业务日期。
    - 后续开放 UI 后，用户修改该字段会影响产品日归属与统计视图；该设置**不改变历史记录的 `localDate`**，统计 / 今日 / DayPlan 等业务视图按派生 `appDate` 重新解释历史记录。
    - 该字段的修改由 §7.12 `settings.appDayStartOffsetUpdated` 事件承载，**不通过** `settings.timerUpdated`（它不是计时时长参数）。Phase 1 默认值为 `0`、UI 不开放修改，因此 Phase 1 不会真实触发该事件；P2+ 若开放设置入口，对该字段的每次修改都必须触发 `settings.appDayStartOffsetUpdated`（见 §7.12）。
+11. **`taskCategoryWindows` 是全局设置，不按天单独配置（v4.2 新增）**：固定为上午 / 下午两段，不支持用户自由增减段数。两段窗口只参与 §7.1 `task.categoryChanged` 的自动判定，不参与预算估算（不进入 `DayPlan.settingsSnapshot`，见 §3.2 settingsSnapshot 说明"不复制"清单）、不参与任何其他统计口径。两段窗口之间不要求强制不重叠或按时间先后排列，实现端只需在判定时对两段分别独立检查"是否落在窗口内"，取"任一段命中"的逻辑或；产品默认给出上午在前、下午在后的合理值，但不做强校验约束用户如何调整。
+12. **`taskCategoryWindows` 用于判定的"当前时刻"取业务发生时间在写入时区下的本地时间**，与 §2.5 `localDate` / `appDate` 的派生方式一致：不得在查询时用当前设备时区重算历史记录的窗口命中结果（见 §2.5 规则 5）；具体判定读取哪个业务时间字段见 §7.1 `task.categoryChanged`。
 
 **字段一致性约束**
 
@@ -1093,8 +1107,9 @@ Settings 在建立每天 DayPlan 时以快照形式（`settingsSnapshot`）写�
 9. `restSuggestions` 每个元素的 `appliesTo` 不得为空数组；每个值必须是 `'shortBreak'` 或 `'longBreak'`，不允许其他值。
 10. `restSuggestions` 用户自定义项（`isBuiltIn=false`）的 key 前缀必须与 `appliesTo` 保持一致：key 以 `short_custom_` 开头时，`appliesTo` 必须为 `['shortBreak']`；key 以 `long_custom_` 开头时，`appliesTo` 必须为 `['longBreak']`。前缀与 `appliesTo` 不一致的写入操作应被拒绝。
 11. `appDayStartOffsetMinutes` 必须为整数，且满足 0 ≤ appDayStartOffsetMinutes ≤ 1439。
+12. **（v4.2 新增）** `taskCategoryWindows.morning` 与 `taskCategoryWindows.afternoon` 各自必须满足 `0 ≤ startMinute < endMinute ≤ 1439`。
 
-实现端在写入或更新 Settings 时，必须验证以上规则，违反第 1–11 条的写入操作应被拒绝。
+实现端在写入或更新 Settings 时，必须验证以上规则，违反第 1–12 条的写入操作应被拒绝。
 
 ---
 
