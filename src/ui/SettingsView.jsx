@@ -160,17 +160,23 @@ function SyncCard({ syncAuthState, lastSyncResult }) {
       <div className="card-title"><span>多端同步</span></div>
       <div className="sub" style={{ marginBottom: 12 }}>
         {statusText}
-        {authenticated && syncAuthState.email ? ` · ${syncAuthState.email}` : ''}
       </div>
       {authenticated ? (
-        <div className="planner-row">
+        <div className="planner-row sync-account-row">
+          <input
+            type="email"
+            aria-label="当前同步邮箱"
+            className="input boxed"
+            value={syncAuthState.email ?? ''}
+            readOnly
+          />
           <button
             className="btn sm"
             disabled={manualState === 'syncing'}
             onClick={handleManualSync}
           >{manualState === 'syncing' ? '同步中…' : '立即同步'}</button>
-          {manualState === 'done' && <span className="planner-eq">刚刚同步完成</span>}
-          {manualState === 'error' && <span className="planner-eq">同步时遇到问题，稍后会自动重试</span>}
+          {manualState === 'done' && <span className="planner-eq sync-result" aria-live="polite">刚刚同步完成</span>}
+          {manualState === 'error' && <span className="planner-eq sync-result" role="alert">同步时遇到问题，稍后会自动重试</span>}
         </div>
       ) : (
         <LoginForm/>

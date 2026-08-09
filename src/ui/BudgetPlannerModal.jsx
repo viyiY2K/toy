@@ -168,6 +168,15 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
   const [hours, setHours] = React.useState('');
   const [rangeStart, setRangeStart] = React.useState('12:00');
   const [rangeEnd, setRangeEnd] = React.useState('13:00');
+  const labelInputRef = React.useRef(null);
+  const refocusAfterAddRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!busy && refocusAfterAddRef.current) {
+      refocusAfterAddRef.current = false;
+      labelInputRef.current?.focus();
+    }
+  }, [busy, label, hours]);
 
   const rangeHours = (() => {
     const startMin = clockToMinutes(rangeStart);
@@ -187,6 +196,7 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
       hours: effectiveHours,
     }));
     if (result) {
+      refocusAfterAddRef.current = true;
       setLabel('');
       setHours('');
       setRangeStart('12:00');
@@ -198,7 +208,6 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
     <section style={{ marginTop: 16 }}>
       <div className="card-title" style={{ marginBottom: 4 }}>
         <span>{title}</span>
-        <span>{deductions.length} 项</span>
       </div>
       {deductions.map((deduction) => (
         <DeductionRow
@@ -211,13 +220,18 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
       ))}
       <div className="deduction-row">
         <input
+          ref={labelInputRef}
           className="input boxed"
           value={label}
           disabled={busy}
           placeholder="名称"
           aria-label={`新增${title}名称`}
           onChange={(event) => setLabel(event.target.value)}
-          onKeyDown={(event) => event.key === 'Enter' && add()}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            add();
+          }}
         />
         {mode === 'hours' ? (
           <input
@@ -230,7 +244,11 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
             placeholder="小时"
             aria-label={`新增${title}小时`}
             onChange={(event) => setHours(event.target.value)}
-            onKeyDown={(event) => event.key === 'Enter' && add()}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              event.preventDefault();
+              add();
+            }}
           />
         ) : (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -242,7 +260,11 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
               disabled={busy}
               aria-label={`新增${title}开始时间`}
               onChange={(event) => setRangeStart(event.target.value)}
-              onKeyDown={(event) => event.key === 'Enter' && add()}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                add();
+              }}
             />
             <span className="planner-eq">到</span>
             <input
@@ -253,7 +275,11 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
               disabled={busy}
               aria-label={`新增${title}结束时间`}
               onChange={(event) => setRangeEnd(event.target.value)}
-              onKeyDown={(event) => event.key === 'Enter' && add()}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                add();
+              }}
             />
           </span>
         )}
@@ -319,7 +345,6 @@ function WorkWindowRangeInput({ workWindowMin, command, busy }) {
         onChange={(event) => setEnd(event.target.value)}
         onBlur={() => commit(start, end)}
       />
-      <span className="planner-eq" style={{ marginLeft: 'auto' }}>共 {workWindowMin} 分钟</span>
     </div>
   );
 }

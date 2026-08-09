@@ -78,10 +78,33 @@ function EditableTitle({ task, onSave, disabled = false }) {
   );
 }
 
-function EstimateEditor({ task, onSave, disabled, runningFocusTaskId }) {
+function canEditEstimate(task, disabled, runningFocusTaskId) {
+  return !disabled
+    && !isTaskRunningFocus(task, runningFocusTaskId)
+    && task.status === 'active'
+    && task.estimateRounds.length < 3;
+}
+
+function EstimateEditor({
+  task,
+  onSave,
+  disabled,
+  runningFocusTaskId,
+  editRequested,
+  onEditRequestHandled,
+  onAdvance,
+}) {
   const [editing, setEditing] = React.useState(false);
   const runningFocus = isTaskRunningFocus(task, runningFocusTaskId);
-  const locked = disabled || runningFocus || task.status !== 'active' || task.estimateRounds.length >= 3;
+  const locked = !canEditEstimate(task, disabled, runningFocusTaskId);
+  const advanceAfterCommitRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!editRequested || locked) return;
+    setEditing(true);
+    onEditRequestHandled();
+  }, [editRequested, locked, onEditRequestHandled]);
+
   if (editing && !locked) {
     return (
       <input
@@ -91,16 +114,29 @@ function EstimateEditor({ task, onSave, disabled, runningFocusTaskId }) {
         max="7"
         autoFocus
         defaultValue={task.estimatedPomodoros}
-        onBlur={(event) => {
+        onBlur={async (event) => {
           const value = Number(event.target.value);
+          const shouldAdvance = advanceAfterCommitRef.current;
+          advanceAfterCommitRef.current = false;
+          let saved = true;
           if (Number.isInteger(value) && value >= 1 && value <= 7 && value !== task.estimatedPomodoros) {
-            onSave(value);
+            saved = Boolean(await onSave(value));
+          } else if (!Number.isInteger(value) || value < 1 || value > 7) {
+            saved = false;
           }
           setEditing(false);
+          if (shouldAdvance && saved) onAdvance();
         }}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur();
-          if (event.key === 'Escape') setEditing(false);
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            advanceAfterCommitRef.current = true;
+            event.currentTarget.blur();
+          }
+          if (event.key === 'Escape') {
+            advanceAfterCommitRef.current = false;
+            setEditing(false);
+          }
         }}
       />
     );
@@ -120,12 +156,22 @@ function EstimateEditor({ task, onSave, disabled, runningFocusTaskId }) {
 function AddTaskInput({ placeholder, onCreate, disabled }) {
   const [title, setTitle] = React.useState('');
   const inputRef = React.useRef(null);
+  const refocusAfterCreateRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!disabled && refocusAfterCreateRef.current) {
+      refocusAfterCreateRef.current = false;
+      inputRef.current?.focus();
+    }
+  }, [disabled, title]);
+
   const submit = async () => {
     const value = title.trim();
     if (!value || disabled) return;
-    await onCreate(value);
+    const result = await onCreate(value);
+    if (!result) return;
+    refocusAfterCreateRef.current = true;
     setTitle('');
-    inputRef.current?.focus();
   };
   return (
     <div className="activity-tree-row atr-group" style={{ marginTop: 8 }}>
@@ -137,7 +183,11 @@ function AddTaskInput({ placeholder, onCreate, disabled }) {
         disabled={disabled}
         placeholder={placeholder}
         onChange={(event) => setTitle(event.target.value)}
-        onKeyDown={(event) => event.key === 'Enter' && submit()}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          submit();
+        }}
       />
       <button className="icon-btn" disabled={disabled || !title.trim()} onClick={submit} title="新建任务">
         <Icon name="plus" size={13}/>
@@ -283,6 +333,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
   const [batchAction, setBatchAction] = React.useState(null);
   const [selectedBatchIds, setSelectedBatchIds] = React.useState(() => new Set());
   const [batchResult, setBatchResult] = React.useState(null);
+  const [estimateEditRequest, setEstimateEditRequest] = React.useState(null);
   // 拖拽排序的纯视觉反馈：draggingKey = 正在拖的行，dragOverKey = 当前悬停的落点行，
   // dropPosition = 悬停在该行的上半还是下半（决定落到目标行前面还是后面，而不是互换）。
   const [draggingKey, setDraggingKey] = React.useState(null);
@@ -521,16 +572,18 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               ...time, title, destination: 'list',
             }))}
           />
-          {views.activeTasks.length === 0 && (
-            <EmptyState
-              icon="list"
-              title="清单还是空的"
-              hint="在上面输入框写下想做的第一件事，回车就能加进来。"
-            />
-          )}
-          <div className="activity-tree">
-            {views.activeTasks.map((task, index) => (
-              <div key={task.id} className="task-tree-group">
+          <div className="list-scroll-region">
+            {views.activeTasks.length === 0 && (
+              <EmptyState
+                icon="list"
+                title="清单还是空的"
+                hint="在上面输入框写下想做的第一件事，回车就能加进来。"
+              />
+            )}
+            {views.activeTasks.length > 0 && (
+              <div className="activity-tree">
+                {views.activeTasks.map((task, index) => (
+                <div key={task.id} className="task-tree-group">
                 <div
                   className={`activity-tree-row atr-group draggable ${rowDragClass(`list-${task.id}`)}`}
                   draggable={!busy && !batchAction}
@@ -597,8 +650,10 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                   selectedBatchIds={selectedBatchIds}
                   onToggleBatch={toggleBatchTask}
                 />
+                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         </div>
 
@@ -630,16 +685,20 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               ...time, title, destination: 'today',
             }))}
           />
-          {activeToday.length === 0 && completedToday.length === 0 && (
-            <EmptyState
-              icon="arrow-day"
-              title="今天还没有安排"
-              hint="从左边的清单把事项拖过来，或在上方直接新建今日任务。"
-            />
-          )}
-          {activeToday.map((task) => {
-            const dayPlanIndex = dayPlanIndexOf(views.todayTasks, task.id);
-            return (
+          <div className="list-scroll-region">
+            {activeToday.length === 0 && completedToday.length === 0 && (
+              <EmptyState
+                icon="arrow-day"
+                title="今天还没有安排"
+                hint="从左边的清单把事项拖过来，或在上方直接新建今日任务。"
+              />
+            )}
+            {activeToday.map((task, activeIndex) => {
+              const dayPlanIndex = dayPlanIndexOf(views.todayTasks, task.id);
+              const nextEstimateTask = activeToday
+                .slice(activeIndex + 1)
+                .find((candidate) => canEditEstimate(candidate, false, runningFocusTaskId));
+              return (
               <div key={task.id} className="today-task-block">
                 <div
                   className={`activity-tree-row atr-group draggable today-task-row ${rowDragClass(`today-${task.id}`)}`}
@@ -686,6 +745,9 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                         task={task}
                         disabled={busy}
                         runningFocusTaskId={runningFocusTaskId}
+                        editRequested={estimateEditRequest === task.id}
+                        onEditRequestHandled={() => setEstimateEditRequest(null)}
+                        onAdvance={() => setEstimateEditRequest(nextEstimateTask?.id ?? null)}
                         onSave={(estimatedPomodoros) => command((time) => adjustTaskEstimate({
                           ...time, taskId: task.id, estimatedPomodoros,
                         }))}
@@ -726,8 +788,9 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                   onToggleBatch={toggleBatchTask}
                 />
               </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
 

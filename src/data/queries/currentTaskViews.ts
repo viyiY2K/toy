@@ -44,6 +44,12 @@ function isCurrentStatus(task: Task): boolean {
   return task.status === 'active' || task.status === 'splitNeeded' || task.status === 'completed';
 }
 
+function isHistoricalPlanningPreparation(task: Task, currentDayTaskIds: ReadonlySet<string>): boolean {
+  return task.metadata.source === 'systemDailyTemplate'
+    && task.metadata.templateKey === 'planningPreparation'
+    && !currentDayTaskIds.has(task.id);
+}
+
 /**
  * 当前任务视图：先保证当前产品日初始化，再从 v4 真值派生顶层、子任务与归档历史。
  * 今日顺序只来自 DayPlan.taskIds；Task.sortIndex 仅在顶层活动域或单个 sibling 域解释。
@@ -76,6 +82,7 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
         task.parentId === null &&
         (task.status === 'active' || task.status === 'splitNeeded') &&
         !todayTaskIds.has(task.id) &&
+        !isHistoricalPlanningPreparation(task, todayTaskIds) &&
         task.metadata.triageStatus !== 'pending',
     )
     .sort(compareListOrder);
