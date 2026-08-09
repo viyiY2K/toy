@@ -16,6 +16,7 @@ import {
 } from '../data/index';
 import { Icon } from './Icon';
 import { EmptyState } from './EmptyState';
+import { ListScrollRegion } from './ActivitiesView';
 import { canAdjustTaskEstimate } from './taskViewModel';
 import {
   canWriteStandardSession,
@@ -210,11 +211,11 @@ function TimerSubtasks({ tasks }) {
 
 function TaskPicker({ tasks, selectedTaskId, onSelect, disabled }) {
   return (
-    <div className="card" style={{ padding: 14 }}>
+    <div className="card timer-task-picker-card" style={{ padding: 14 }}>
       <div className="section-h" style={{ marginBottom: 8 }}>
         <h3>今日任务</h3>
       </div>
-      <div className="timer-today-list">
+      <ListScrollRegion className={`timer-today-list ${tasks.length === 0 ? 'is-empty' : ''}`}>
         {tasks.map((task) => (
           <button
             key={task.id}
@@ -233,7 +234,7 @@ function TaskPicker({ tasks, selectedTaskId, onSelect, disabled }) {
             hint="先到清单页把今天要做的事安排好，再回来开始专注。"
           />
         )}
-      </div>
+      </ListScrollRegion>
     </div>
   );
 }

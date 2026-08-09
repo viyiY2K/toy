@@ -1802,9 +1802,16 @@ select:focus-visible {
 
 /* 两列清单保持同高；任务超过当前页面的舒适展示量后，只滚动清单内容。 */
 .activity-list-col,
-.today-list-col {
+.today-list-col,
+.timer-task-picker-card {
   height: clamp(360px, calc(100vh - 300px), 620px);
   min-height: 360px;
+}
+
+.timer-task-picker-card {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
 .list-scroll-shell {
@@ -1842,7 +1849,8 @@ select:focus-visible {
 }
 
 .activity-list-col:is(:hover, :focus-within) .list-scrollbar-track.is-visible,
-.today-list-col:is(:hover, :focus-within) .list-scrollbar-track.is-visible {
+.today-list-col:is(:hover, :focus-within) .list-scrollbar-track.is-visible,
+.timer-task-picker-card:is(:hover, :focus-within) .list-scrollbar-track.is-visible {
   opacity: 1;
   pointer-events: auto;
 }
@@ -2181,7 +2189,8 @@ select:focus-visible {
   .main-head .right { width: 100%; justify-content: space-between; }
   .kanban { grid-template-columns: 1fr !important; }
   .activity-list-col,
-  .today-list-col { height: clamp(360px, 70vh, 520px); }
+  .today-list-col,
+  .timer-task-picker-card { height: clamp(360px, 70vh, 520px); }
   .timer-stage { grid-template-columns: 1fr; }
   .timer-main { min-height: 480px; }
   .timer-circle { width: min(380px, 88vw); }

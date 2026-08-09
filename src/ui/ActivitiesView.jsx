@@ -203,7 +203,7 @@ function AddTaskInput({ placeholder, onCreate, disabled, focusRequest = 0 }) {
   );
 }
 
-function ListScrollRegion({ className = '', children }) {
+export function ListScrollRegion({ className = '', children }) {
   const scrollRef = React.useRef(null);
   const trackRef = React.useRef(null);
   const dragRef = React.useRef(null);
