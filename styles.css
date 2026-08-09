@@ -1807,32 +1807,58 @@ select:focus-visible {
   min-height: 360px;
 }
 
-.list-scroll-region {
+.list-scroll-shell {
   flex: 1;
   min-height: 0;
+  position: relative;
   margin-right: -10px;
-  padding-right: 8px;
+}
+
+.list-scroll-region {
+  height: 100%;
+  padding-right: 17px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(126, 124, 119, .28) transparent;
+  scrollbar-width: none;
 }
 
 .list-scroll-region::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.list-scrollbar-track {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  bottom: 4px;
   width: 9px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
 }
 
-.list-scroll-region::-webkit-scrollbar-track {
-  background: transparent;
+.activity-list-col:is(:hover, :focus-within) .list-scrollbar-track.is-visible,
+.today-list-col:is(:hover, :focus-within) .list-scrollbar-track.is-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
-.list-scroll-region::-webkit-scrollbar-thumb {
-  min-height: 36px;
+.list-scrollbar-thumb {
+  width: 9px;
   border: 2px solid transparent;
   border-radius: 999px;
   background-color: rgba(126, 124, 119, .28);
   background-clip: padding-box;
+  cursor: grab;
+}
+
+.list-scrollbar-thumb:active {
+  background-color: rgba(126, 124, 119, .38);
+  cursor: grabbing;
 }
 
 .list-scroll-region > .empty-state {

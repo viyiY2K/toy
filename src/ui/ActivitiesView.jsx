@@ -203,6 +203,145 @@ function AddTaskInput({ placeholder, onCreate, disabled, focusRequest = 0 }) {
   );
 }
 
+function ListScrollRegion({ className = '', children }) {
+  const scrollRef = React.useRef(null);
+  const trackRef = React.useRef(null);
+  const dragRef = React.useRef(null);
+  const [thumb, setThumb] = React.useState({ visible: false, height: 36, top: 0 });
+
+  const updateThumb = React.useCallback(() => {
+    const scroller = scrollRef.current;
+    const track = trackRef.current;
+    if (!scroller || !track) return;
+
+    const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+    const trackHeight = track.clientHeight;
+    const visible = maxScroll > 1 && trackHeight > 0;
+    const height = visible
+      ? Math.min(trackHeight, Math.max(36, Math.round(trackHeight * scroller.clientHeight / scroller.scrollHeight)))
+      : 36;
+    const maxTop = Math.max(0, trackHeight - height);
+    const top = visible && maxScroll > 0
+      ? Math.round((scroller.scrollTop / maxScroll) * maxTop)
+      : 0;
+
+    setThumb((current) => (
+      current.visible === visible && current.height === height && current.top === top
+        ? current
+        : { visible, height, top }
+    ));
+  }, []);
+
+  React.useLayoutEffect(() => {
+    updateThumb();
+  });
+
+  React.useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return undefined;
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateThumb);
+    const mutationObserver = typeof MutationObserver === 'undefined'
+      ? null
+      : new MutationObserver(updateThumb);
+
+    resizeObserver?.observe(scroller);
+    mutationObserver?.observe(scroller, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    window.addEventListener('resize', updateThumb);
+
+    return () => {
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      window.removeEventListener('resize', updateThumb);
+    };
+  }, [updateThumb]);
+
+  const beginThumbDrag = (event) => {
+    const scroller = scrollRef.current;
+    const track = trackRef.current;
+    if (!scroller || !track || !thumb.visible) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startScrollTop: scroller.scrollTop,
+      maxScroll: scroller.scrollHeight - scroller.clientHeight,
+      maxThumbTop: track.clientHeight - thumb.height,
+    };
+  };
+
+  const dragThumb = (event) => {
+    const drag = dragRef.current;
+    const scroller = scrollRef.current;
+    if (!drag || !scroller || drag.pointerId !== event.pointerId || drag.maxThumbTop <= 0) return;
+
+    const scrollDelta = (event.clientY - drag.startY) * drag.maxScroll / drag.maxThumbTop;
+    scroller.scrollTop = drag.startScrollTop + scrollDelta;
+  };
+
+  const endThumbDrag = (event) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const jumpToTrackPosition = (event) => {
+    if (event.target !== event.currentTarget || !thumb.visible) return;
+    const scroller = scrollRef.current;
+    const track = trackRef.current;
+    if (!scroller || !track) return;
+
+    const trackRect = track.getBoundingClientRect();
+    const maxThumbTop = track.clientHeight - thumb.height;
+    const thumbTop = Math.min(
+      maxThumbTop,
+      Math.max(0, event.clientY - trackRect.top - thumb.height / 2),
+    );
+    scroller.scrollTop = maxThumbTop > 0
+      ? (thumbTop / maxThumbTop) * (scroller.scrollHeight - scroller.clientHeight)
+      : 0;
+  };
+
+  return (
+    <div className="list-scroll-shell">
+      <div
+        ref={scrollRef}
+        className={`list-scroll-region ${className}`.trim()}
+        onScroll={updateThumb}
+      >
+        {children}
+      </div>
+      <div
+        ref={trackRef}
+        className={`list-scrollbar-track ${thumb.visible ? 'is-visible' : ''}`}
+        aria-hidden="true"
+        onPointerDown={jumpToTrackPosition}
+      >
+        <div
+          className="list-scrollbar-thumb"
+          style={{ height: thumb.height, transform: `translateY(${thumb.top}px)` }}
+          onPointerDown={beginThumbDrag}
+          onPointerMove={dragThumb}
+          onPointerUp={endThumbDrag}
+          onPointerCancel={endThumbDrag}
+        />
+      </div>
+    </div>
+  );
+}
+
 function SubtaskRow({
   task,
   siblings,
@@ -575,7 +714,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               <button className="btn ghost sm" disabled={busy || views.activeTasks.length === 0} onClick={() => beginBatch('addToToday')}>批量加入今日</button>
             </span>
           </div>
-          <div className={`list-scroll-region ${views.activeTasks.length === 0 ? 'is-empty' : ''}`}>
+          <ListScrollRegion className={views.activeTasks.length === 0 ? 'is-empty' : ''}>
             {views.activeTasks.length === 0 && (
               <EmptyState
                 icon="list"
@@ -665,7 +804,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                 ...time, title, destination: 'list',
               }))}
             />
-          </div>
+          </ListScrollRegion>
         </div>
 
         <div
@@ -690,7 +829,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               <button className="btn ghost sm" disabled={busy || activeToday.length === 0} onClick={() => beginBatch('moveToList')}>批量移回</button>
             </span>
           </div>
-          <div className={`list-scroll-region ${activeToday.length === 0 && completedToday.length === 0 ? 'is-empty' : ''}`}>
+          <ListScrollRegion className={activeToday.length === 0 && completedToday.length === 0 ? 'is-empty' : ''}>
             {activeToday.length === 0 && completedToday.length === 0 && (
               <EmptyState
                 icon="arrow-day"
@@ -803,7 +942,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                 ...time, title, destination: 'today',
               }))}
             />
-          </div>
+          </ListScrollRegion>
         </div>
       </div>
 
