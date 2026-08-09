@@ -164,6 +164,7 @@ function DeductionRow({ deduction, deductionType, command, busy }) {
 
 function DeductionSection({ title, deductionType, deductions, command, busy }) {
   const [label, setLabel] = React.useState('');
+  const [missingLabelHint, setMissingLabelHint] = React.useState(false);
   const [mode, setMode] = React.useState('hours');
   const [hours, setHours] = React.useState('');
   const [rangeStart, setRangeStart] = React.useState('12:00');
@@ -186,9 +187,16 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
   })();
   const effectiveHours = mode === 'hours' ? Number(hours) : rangeHours;
   const effectiveHoursValid = Number.isFinite(effectiveHours) && effectiveHours > 0;
+  const missingLabelHintId = `deduction-${deductionType}-missing-label`;
 
   const add = async () => {
-    if (!label.trim() || !effectiveHoursValid) return;
+    if (!effectiveHoursValid) return;
+    if (!label.trim()) {
+      setMissingLabelHint(true);
+      labelInputRef.current?.focus();
+      return;
+    }
+    setMissingLabelHint(false);
     const result = await command((time) => addDayPlanDeduction({
       ...time,
       deductionType,
@@ -218,80 +226,91 @@ function DeductionSection({ title, deductionType, deductions, command, busy }) {
           busy={busy}
         />
       ))}
-      <div className="deduction-row">
-        <input
-          ref={labelInputRef}
-          className="input boxed"
-          value={label}
-          disabled={busy}
-          placeholder="名称"
-          aria-label={`新增${title}名称`}
-          onChange={(event) => setLabel(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter') return;
-            event.preventDefault();
-            add();
-          }}
-        />
-        {mode === 'hours' ? (
+      <div className="deduction-entry">
+        <div className="deduction-row">
           <input
-            className="input boxed mono"
-            type="number"
-            min="0.01"
-            step="0.25"
-            value={hours}
+            ref={labelInputRef}
+            className="input boxed"
+            value={label}
             disabled={busy}
-            placeholder="小时"
-            aria-label={`新增${title}小时`}
-            onChange={(event) => setHours(event.target.value)}
+            placeholder="名称"
+            aria-label={`新增${title}名称`}
+            aria-describedby={missingLabelHint ? missingLabelHintId : undefined}
+            onChange={(event) => {
+              setLabel(event.target.value);
+              if (event.target.value.trim()) setMissingLabelHint(false);
+            }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter') return;
               event.preventDefault();
               add();
             }}
           />
-        ) : (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {mode === 'hours' ? (
             <input
               className="input boxed mono"
-              type="time"
-              style={{ width: 100 }}
-              value={rangeStart}
+              type="number"
+              min="0.01"
+              step="0.25"
+              value={hours}
               disabled={busy}
-              aria-label={`新增${title}开始时间`}
-              onChange={(event) => setRangeStart(event.target.value)}
+              placeholder="小时"
+              aria-label={`新增${title}小时`}
+              onChange={(event) => setHours(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key !== 'Enter') return;
                 event.preventDefault();
                 add();
               }}
             />
-            <span className="planner-eq">到</span>
-            <input
-              className="input boxed mono"
-              type="time"
-              style={{ width: 100 }}
-              value={rangeEnd}
-              disabled={busy}
-              aria-label={`新增${title}结束时间`}
-              onChange={(event) => setRangeEnd(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter') return;
-                event.preventDefault();
-                add();
-              }}
-            />
-          </span>
+          ) : (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <input
+                className="input boxed mono"
+                type="time"
+                style={{ width: 100 }}
+                value={rangeStart}
+                disabled={busy}
+                aria-label={`新增${title}开始时间`}
+                onChange={(event) => setRangeStart(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return;
+                  event.preventDefault();
+                  add();
+                }}
+              />
+              <span className="planner-eq">到</span>
+              <input
+                className="input boxed mono"
+                type="time"
+                style={{ width: 100 }}
+                value={rangeEnd}
+                disabled={busy}
+                aria-label={`新增${title}结束时间`}
+                onChange={(event) => setRangeEnd(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return;
+                  event.preventDefault();
+                  add();
+                }}
+              />
+            </span>
+          )}
+          <HoursModeToggle mode={mode} onChange={setMode} disabled={busy}/>
+          <button
+            className="icon-btn"
+            disabled={busy || !effectiveHoursValid}
+            title={`添加${title}`}
+            onClick={add}
+          >
+            <Icon name="plus" size={12}/>
+          </button>
+        </div>
+        {missingLabelHint && (
+          <div id={missingLabelHintId} className="deduction-entry-hint" role="status" aria-live="polite">
+            请填写{title}名称
+          </div>
         )}
-        <HoursModeToggle mode={mode} onChange={setMode} disabled={busy}/>
-        <button
-          className="icon-btn"
-          disabled={busy || !label.trim() || !effectiveHoursValid}
-          title={`添加${title}`}
-          onClick={add}
-        >
-          <Icon name="plus" size={12}/>
-        </button>
       </div>
     </section>
   );

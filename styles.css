@@ -817,6 +817,12 @@ input[type="checkbox"]:checked::before {
 .deduction-row > span:first-child,
 .deduction-row > input.boxed:first-child { flex: 1; min-width: 80px; }
 .deduction-row > input.boxed[type="number"] { width: 80px; flex: 0 0 auto; }
+.deduction-entry-hint {
+  margin: -1px 0 3px;
+  color: var(--accent-ink);
+  font-size: 12px;
+  opacity: .76;
+}
 .sync-account-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
