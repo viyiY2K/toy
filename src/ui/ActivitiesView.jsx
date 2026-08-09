@@ -566,19 +566,12 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               <button className="btn ghost sm" disabled={busy || views.activeTasks.length === 0} onClick={() => beginBatch('addToToday')}>批量加入今日</button>
             </span>
           </div>
-          <AddTaskInput
-            placeholder="任务名称，回车创建…"
-            disabled={busy}
-            onCreate={(title) => command((time) => createManualTask({
-              ...time, title, destination: 'list',
-            }))}
-          />
-          <div className="list-scroll-region">
+          <div className={`list-scroll-region ${views.activeTasks.length === 0 ? 'is-empty' : ''}`}>
             {views.activeTasks.length === 0 && (
               <EmptyState
                 icon="list"
                 title="清单还是空的"
-                hint="在上面输入框写下想做的第一件事，回车就能加进来。"
+                hint="在下方输入框写下想做的第一件事，回车就能加进来。"
               />
             )}
             {views.activeTasks.length > 0 && (
@@ -655,6 +648,13 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                 ))}
               </div>
             )}
+            <AddTaskInput
+              placeholder="任务名称，回车创建…"
+              disabled={busy}
+              onCreate={(title) => command((time) => createManualTask({
+                ...time, title, destination: 'list',
+              }))}
+            />
           </div>
         </div>
 
