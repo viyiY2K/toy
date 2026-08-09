@@ -18,8 +18,9 @@ import {
   shouldOfferTaskCompletionCheck,
   shouldRecoverAfterHidden,
   shouldPromptOnReturn,
+  mergeRoundChoiceOptions,
   timerDisplayTask,
-  timerSubtasks,
+  timerMergeMembers,
 } from './timerViewModel';
 
 describe('S13c timer view model', () => {
@@ -40,18 +41,48 @@ describe('S13c timer view model', () => {
     expect(timerDisplayTask({ type: 'shortBreak' }, activeTask, selectedTask)).toBe(activeTask);
   });
 
-  it('returns ordered current subtasks only when the display task has children', () => {
-    const active = { id: 'child-active', status: 'active', sortIndex: 0 };
-    const completed = { id: 'child-completed', status: 'completed', sortIndex: 1 };
-    const taskViews = {
-      subtasksByParentId: {
-        parent: [active, completed],
-      },
-    };
+  it('合并到点二选一：常态给「结束 + 追加预估」，全部做完则不打扰', () => {
+    const group = { status: 'active', estimateRounds: [{ index: 1 }], estimatedPomodoros: 1 };
+    const done = { id: 'a', status: 'completed' };
+    const todo = { id: 'b', status: 'active' };
 
-    expect(timerSubtasks(taskViews, { id: 'parent' })).toEqual([active, completed]);
-    expect(timerSubtasks(taskViews, { id: 'without-children' })).toEqual([]);
-    expect(timerSubtasks(taskViews, null)).toEqual([]);
+    expect(mergeRoundChoiceOptions(group, [done, todo])).toEqual({
+      unfinishedCount: 1, blocked: false, canExtend: true, canDissolve: false,
+    });
+    // 全部做完：没有要决定的事，不弹选择。
+    expect(mergeRoundChoiceOptions(group, [done])).toBeNull();
+  });
+
+  it('合并硬上限：三轮用满 / 预估到 7 / limitReached 都收起「追加预估」，改给「解散」', () => {
+    const todo = { id: 'b', status: 'active' };
+    const thirdRound = {
+      status: 'active',
+      estimateRounds: [{ index: 1 }, { index: 2 }, { index: 3 }],
+      estimatedPomodoros: 3,
+    };
+    expect(mergeRoundChoiceOptions(thirdRound, [todo])).toMatchObject({
+      canExtend: false, canDissolve: false,
+    });
+
+    const maxed = { status: 'active', estimateRounds: [{ index: 1 }], estimatedPomodoros: 7 };
+    expect(mergeRoundChoiceOptions(maxed, [todo]).canExtend).toBe(false);
+
+    // 已被判定 limitReached：强阻断，且给出「取消整次合并」这条解法。
+    const blocked = { status: 'limitReached', estimateRounds: [{ index: 1 }], estimatedPomodoros: 2 };
+    expect(mergeRoundChoiceOptions(blocked, [todo])).toMatchObject({
+      blocked: true, canExtend: false, canDissolve: true,
+    });
+  });
+
+  it('计时页只在合并场景展示这张卡：单任务专注返回空数组', () => {
+    const a = { id: 'a', title: '回复 Slack' };
+    const b = { id: 'b', title: '订咖啡豆' };
+
+    // 合并：列出全部成员，顺序即 Session.taskIds 的顺序。
+    expect(timerMergeMembers([a, b])).toEqual([a, b]);
+    // 普通单任务专注：整张卡片不展示（计时页不再展示子母层级关系）。
+    expect(timerMergeMembers([a])).toEqual([]);
+    expect(timerMergeMembers([])).toEqual([]);
   });
 
   it('offers Task completion confirmation when valid focus count reaches the current estimate', () => {

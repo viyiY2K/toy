@@ -9,8 +9,24 @@ import {
   recordInterrupt,
   startBreak,
   startFocus,
+  startMergeGroupFocus,
+  createMergeGroup,
+  type Task,
 } from '../index';
 import { loadCurrentTimerViews } from './currentTimerViews';
+
+// 合并用例自己的假时钟，与文件里既有用例的时间轴错开、互不干扰。
+let mergeTick = 0;
+const mergeClock = () => {
+  const minutes = mergeTick++;
+  const hour = 18 + Math.floor(minutes / 60);
+  return {
+    now: `2026-09-10T${String(hour).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}:00+08:00`,
+    timezone: 'Asia/Shanghai',
+  };
+};
+const mergeChore = async (title: string): Promise<Task> =>
+  (await createManualTask({ ...mergeClock(), title, destination: 'today' })).value;
 
 const TIMEZONE = 'Asia/Shanghai';
 const at = (minute: number) =>
@@ -134,5 +150,28 @@ describe('S13c current timer and awareness views', () => {
     await discardFocus({
       now: at(41), timezone: TIMEZONE, sessionId: next.value.id, actualDuration: 1,
     });
+  });
+});
+
+describe('合并专注的计时视图（v4.1 §3.3、§3.8）', () => {
+  it('进行中的合并轮暴露整组与全部成员；单任务专注不暴露合并组', async () => {
+    const [a, b] = [await mergeChore('回复 Slack'), await mergeChore('订咖啡豆')];
+    const group = (await createMergeGroup({ ...mergeClock(), taskIds: [a.id, b.id] })).value;
+    await startMergeGroupFocus({ ...mergeClock(), mergeGroupId: group.id });
+
+    const views = await loadCurrentTimerViews(mergeClock());
+    expect(views.activeMergeGroup?.id).toBe(group.id);
+    expect(views.activeSessionTasks.map(({ id }) => id)).toEqual([a.id, b.id]);
+  });
+
+  it('响铃后暴露 pendingBreakMergeGroup 与成员，供收尾界面做「结束 / 追加预估」二选一', async () => {
+    const active = (await loadCurrentTimerViews(mergeClock())).activeSession!;
+    await completeFocus({ ...mergeClock(), sessionId: active.id, actualDuration: 1500 });
+
+    const views = await loadCurrentTimerViews(mergeClock());
+    expect(views.activeSession).toBeNull();
+    expect(views.pendingBreakFocus?.id).toBe(active.id);
+    expect(views.pendingBreakMergeGroup?.id).toBe(active.mergeGroupId);
+    expect(views.pendingBreakTasks).toHaveLength(2);
   });
 });

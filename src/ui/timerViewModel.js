@@ -18,9 +18,39 @@ export function timerDisplayTask(activeSession, activeTask, selectedTask) {
   return activeSession === null ? selectedTask : activeTask;
 }
 
-export function timerSubtasks(taskViews, displayTask) {
-  if (displayTask === null) return [];
-  return taskViews.subtasksByParentId[displayTask.id] ?? [];
+/**
+ * 计时页那张「这次专注涉及哪几件事」的卡片内容。
+ *
+ * 产品结论：计时页**不再展示任何任务的子母层级关系**。这张卡片只在合并场景出现——
+ * 有合并时列出合并组成员，`Session.taskIds` 长度为 1（普通单任务专注）时返回空数组，
+ * 整张卡片不展示。
+ *
+ * 组内成员完全平等、互相独立：合并只表示"这几件事各自都占不满一个番茄"，
+ * 不表示它们属于同一件事，因此这里不做任何按上层归属的分组或排序。
+ */
+export function timerMergeMembers(sessionTasks) {
+  return sessionTasks.length > 1 ? sessionTasks : [];
+}
+
+/**
+ * 合并番茄到点后给用户哪几个选项（§3.8 关键规则 4/6）。
+ *
+ * 组内全部做完时返回 null——没有需要决定的事，不打扰用户。
+ * 还有没做完的成员时：
+ * - 常态：「结束」+「追加预估番茄」二选一；
+ * - 三轮用满 / 预估已达 7 个 / 组已被判定 limitReached：**强阻断**，
+ *   不再给「追加预估」，只能「结束」或「取消整次合并」（关掉提示不解除阻塞）。
+ */
+export function mergeRoundChoiceOptions(group, members) {
+  const unfinishedCount = members.filter((task) => task.status !== 'completed').length;
+  if (unfinishedCount === 0) return null;
+  const blocked = group.status === 'limitReached';
+  return {
+    unfinishedCount,
+    blocked,
+    canExtend: !blocked && group.estimateRounds.length < 3 && group.estimatedPomodoros < 7,
+    canDissolve: blocked,
+  };
 }
 
 export function shouldOfferTaskCompletionCheck(taskViews, task) {
