@@ -154,10 +154,16 @@ function EstimateEditor({
   );
 }
 
-function AddTaskInput({ placeholder, onCreate, disabled }) {
+function AddTaskInput({ placeholder, onCreate, disabled, focusRequest = 0 }) {
   const [title, setTitle] = React.useState('');
   const inputRef = React.useRef(null);
   const refocusAfterCreateRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!focusRequest || disabled) return;
+    inputRef.current?.scrollIntoView?.({ block: 'nearest' });
+    inputRef.current?.focus();
+  }, [disabled, focusRequest]);
 
   React.useEffect(() => {
     if (!disabled && refocusAfterCreateRef.current) {
@@ -335,6 +341,8 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
   const [selectedBatchIds, setSelectedBatchIds] = React.useState(() => new Set());
   const [batchResult, setBatchResult] = React.useState(null);
   const [estimateEditRequest, setEstimateEditRequest] = React.useState(null);
+  const [activityInputFocusRequest, setActivityInputFocusRequest] = React.useState(0);
+  const [todayInputFocusRequest, setTodayInputFocusRequest] = React.useState(0);
   // 拖拽排序的纯视觉反馈：draggingKey = 正在拖的行，dragOverKey = 当前悬停的落点行，
   // dropPosition = 悬停在该行的上半还是下半（决定落到目标行前面还是后面，而不是互换）。
   const [draggingKey, setDraggingKey] = React.useState(null);
@@ -562,6 +570,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
           <div className="kan-head">
             <span><Icon name="list" size={13}/> &nbsp;活动清单</span>
             <span className="kan-head-right">
+              <button className="btn ghost sm" disabled={busy} onClick={() => setActivityInputFocusRequest((request) => request + 1)}>新增</button>
               <span className="kan-count">{views.activeTasks.length}</span>
               <button className="btn ghost sm" disabled={busy || views.activeTasks.length === 0} onClick={() => beginBatch('addToToday')}>批量加入今日</button>
             </span>
@@ -651,6 +660,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
             <AddTaskInput
               placeholder="任务名称，回车创建…"
               disabled={busy}
+              focusRequest={activityInputFocusRequest}
               onCreate={(title) => command((time) => createManualTask({
                 ...time, title, destination: 'list',
               }))}
@@ -672,6 +682,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
           <div className="kan-head">
             <span><Icon name="arrow-day" size={13}/> &nbsp;今日待办</span>
             <span className="kan-head-right">
+              <button className="btn ghost sm" disabled={busy} onClick={() => setTodayInputFocusRequest((request) => request + 1)}>新增</button>
               <span className="kan-count" style={{ color: metrics.overloadedPomodoros > 0 ? 'var(--accent-ink)' : 'var(--muted)' }}>
                 余 {metrics.remainingPomodoros}
                 {metrics.overloadedPomodoros > 0 && ` · 超载 ${metrics.overloadedPomodoros}`}
@@ -787,6 +798,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
             <AddTaskInput
               placeholder="直接新建今日任务…"
               disabled={busy}
+              focusRequest={todayInputFocusRequest}
               onCreate={(title) => command((time) => createManualTask({
                 ...time, title, destination: 'today',
               }))}
