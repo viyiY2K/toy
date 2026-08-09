@@ -46,6 +46,13 @@ describe('S10 当前任务派生视图', () => {
     const todayLowSort = makeTask({ now: NOW, title: '今日低 sortIndex', sortIndex: 1 });
     const activeLater = makeTask({ now: NOW, title: '活动二', sortIndex: 2000 });
     const activeEarlier = makeTask({ now: NOW, title: '活动一', sortIndex: 1000 });
+    const historicalPlanningTask = makeTask({
+      now: '2026-09-08T09:00:00+08:00',
+      title: '计划准备',
+      sortIndex: 500,
+      metadata: { templateKey: 'planningPreparation', source: 'systemDailyTemplate' },
+    });
+    const manualSameTitle = makeTask({ now: NOW, title: '计划准备', sortIndex: 750 });
     const splitNeeded = makeTask({
       now: NOW,
       title: '待拆分但仍在活动清单',
@@ -82,6 +89,8 @@ describe('S10 当前任务派生视图', () => {
       todayLowSort,
       activeLater,
       activeEarlier,
+      historicalPlanningTask,
+      manualSameTitle,
       splitNeeded,
       pending,
       completed,
@@ -118,10 +127,12 @@ describe('S10 当前任务派生视图', () => {
       '今日低 sortIndex',
     ]);
     expect(views.activeTasks.map((task) => task.title)).toEqual([
+      '计划准备',
       '活动一',
       '待拆分但仍在活动清单',
       '活动二',
     ]);
+    expect(views.activeTasks.map((task) => task.id)).not.toContain(historicalPlanningTask.id);
     expect(views.pendingTriageTasks.map((task) => task.title)).toEqual(['待分流']);
     expect(views.completedTasks.map((task) => task.title)).toEqual(['当前已完成']);
 

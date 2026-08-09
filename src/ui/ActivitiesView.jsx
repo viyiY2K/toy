@@ -87,10 +87,33 @@ function EditableTitle({ task, onSave, disabled = false }) {
   );
 }
 
-function EstimateEditor({ task, onSave, disabled, runningFocusTaskId }) {
+function canEditEstimate(task, disabled, runningFocusTaskId) {
+  return !disabled
+    && !isTaskRunningFocus(task, runningFocusTaskId)
+    && task.status === 'active'
+    && task.estimateRounds.length < 3;
+}
+
+function EstimateEditor({
+  task,
+  onSave,
+  disabled,
+  runningFocusTaskId,
+  editRequested,
+  onEditRequestHandled,
+  onAdvance,
+}) {
   const [editing, setEditing] = React.useState(false);
   const runningFocus = isTaskRunningFocus(task, runningFocusTaskId);
-  const locked = disabled || runningFocus || task.status !== 'active' || task.estimateRounds.length >= 3;
+  const locked = !canEditEstimate(task, disabled, runningFocusTaskId);
+  const advanceAfterCommitRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!editRequested || locked) return;
+    setEditing(true);
+    onEditRequestHandled();
+  }, [editRequested, locked, onEditRequestHandled]);
+
   if (editing && !locked) {
     return (
       <input
@@ -100,16 +123,30 @@ function EstimateEditor({ task, onSave, disabled, runningFocusTaskId }) {
         max="7"
         autoFocus
         defaultValue={task.estimatedPomodoros}
-        onBlur={(event) => {
+        onFocus={(event) => event.currentTarget.select()}
+        onBlur={async (event) => {
           const value = Number(event.target.value);
+          const shouldAdvance = advanceAfterCommitRef.current;
+          advanceAfterCommitRef.current = false;
+          let saved = true;
           if (Number.isInteger(value) && value >= 1 && value <= 7 && value !== task.estimatedPomodoros) {
-            onSave(value);
+            saved = Boolean(await onSave(value));
+          } else if (!Number.isInteger(value) || value < 1 || value > 7) {
+            saved = false;
           }
           setEditing(false);
+          if (shouldAdvance && saved) onAdvance();
         }}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur();
-          if (event.key === 'Escape') setEditing(false);
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            advanceAfterCommitRef.current = true;
+            event.currentTarget.blur();
+          }
+          if (event.key === 'Escape') {
+            advanceAfterCommitRef.current = false;
+            setEditing(false);
+          }
         }}
       />
     );
@@ -126,15 +163,31 @@ function EstimateEditor({ task, onSave, disabled, runningFocusTaskId }) {
   );
 }
 
-function AddTaskInput({ placeholder, onCreate, disabled }) {
+function AddTaskInput({ placeholder, onCreate, disabled, focusRequest = 0 }) {
   const [title, setTitle] = React.useState('');
   const inputRef = React.useRef(null);
+  const refocusAfterCreateRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!focusRequest || disabled) return;
+    inputRef.current?.scrollIntoView?.({ block: 'nearest' });
+    inputRef.current?.focus();
+  }, [disabled, focusRequest]);
+
+  React.useEffect(() => {
+    if (!disabled && refocusAfterCreateRef.current) {
+      refocusAfterCreateRef.current = false;
+      inputRef.current?.focus();
+    }
+  }, [disabled, title]);
+
   const submit = async () => {
     const value = title.trim();
     if (!value || disabled) return;
-    await onCreate(value);
+    const result = await onCreate(value);
+    if (!result) return;
+    refocusAfterCreateRef.current = true;
     setTitle('');
-    inputRef.current?.focus();
   };
   return (
     <div className="activity-tree-row atr-group" style={{ marginTop: 8 }}>
@@ -146,11 +199,154 @@ function AddTaskInput({ placeholder, onCreate, disabled }) {
         disabled={disabled}
         placeholder={placeholder}
         onChange={(event) => setTitle(event.target.value)}
-        onKeyDown={(event) => event.key === 'Enter' && submit()}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          submit();
+        }}
       />
       <button className="icon-btn" disabled={disabled || !title.trim()} onClick={submit} title="新建任务">
         <Icon name="plus" size={13}/>
       </button>
+    </div>
+  );
+}
+
+export function ListScrollRegion({ className = '', children }) {
+  const scrollRef = React.useRef(null);
+  const trackRef = React.useRef(null);
+  const dragRef = React.useRef(null);
+  const [thumb, setThumb] = React.useState({ visible: false, height: 36, top: 0 });
+
+  const updateThumb = React.useCallback(() => {
+    const scroller = scrollRef.current;
+    const track = trackRef.current;
+    if (!scroller || !track) return;
+
+    const maxScroll = scroller.scrollHeight - scroller.clientHeight;
+    const trackHeight = track.clientHeight;
+    const visible = maxScroll > 1 && trackHeight > 0;
+    const height = visible
+      ? Math.min(trackHeight, Math.max(36, Math.round(trackHeight * scroller.clientHeight / scroller.scrollHeight)))
+      : 36;
+    const maxTop = Math.max(0, trackHeight - height);
+    const top = visible && maxScroll > 0
+      ? Math.round((scroller.scrollTop / maxScroll) * maxTop)
+      : 0;
+
+    setThumb((current) => (
+      current.visible === visible && current.height === height && current.top === top
+        ? current
+        : { visible, height, top }
+    ));
+  }, []);
+
+  React.useLayoutEffect(() => {
+    updateThumb();
+  });
+
+  React.useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return undefined;
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateThumb);
+    const mutationObserver = typeof MutationObserver === 'undefined'
+      ? null
+      : new MutationObserver(updateThumb);
+
+    resizeObserver?.observe(scroller);
+    mutationObserver?.observe(scroller, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    window.addEventListener('resize', updateThumb);
+
+    return () => {
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      window.removeEventListener('resize', updateThumb);
+    };
+  }, [updateThumb]);
+
+  const beginThumbDrag = (event) => {
+    const scroller = scrollRef.current;
+    const track = trackRef.current;
+    if (!scroller || !track || !thumb.visible) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startScrollTop: scroller.scrollTop,
+      maxScroll: scroller.scrollHeight - scroller.clientHeight,
+      maxThumbTop: track.clientHeight - thumb.height,
+    };
+  };
+
+  const dragThumb = (event) => {
+    const drag = dragRef.current;
+    const scroller = scrollRef.current;
+    if (!drag || !scroller || drag.pointerId !== event.pointerId || drag.maxThumbTop <= 0) return;
+
+    const scrollDelta = (event.clientY - drag.startY) * drag.maxScroll / drag.maxThumbTop;
+    scroller.scrollTop = drag.startScrollTop + scrollDelta;
+  };
+
+  const endThumbDrag = (event) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const jumpToTrackPosition = (event) => {
+    if (event.target !== event.currentTarget || !thumb.visible) return;
+    const scroller = scrollRef.current;
+    const track = trackRef.current;
+    if (!scroller || !track) return;
+
+    const trackRect = track.getBoundingClientRect();
+    const maxThumbTop = track.clientHeight - thumb.height;
+    const thumbTop = Math.min(
+      maxThumbTop,
+      Math.max(0, event.clientY - trackRect.top - thumb.height / 2),
+    );
+    scroller.scrollTop = maxThumbTop > 0
+      ? (thumbTop / maxThumbTop) * (scroller.scrollHeight - scroller.clientHeight)
+      : 0;
+  };
+
+  return (
+    <div className="list-scroll-shell">
+      <div
+        ref={scrollRef}
+        className={`list-scroll-region ${className}`.trim()}
+        onScroll={updateThumb}
+      >
+        {children}
+      </div>
+      <div
+        ref={trackRef}
+        className={`list-scrollbar-track ${thumb.visible ? 'is-visible' : ''}`}
+        aria-hidden="true"
+        onPointerDown={jumpToTrackPosition}
+      >
+        <div
+          className="list-scrollbar-thumb"
+          style={{ height: thumb.height, transform: `translateY(${thumb.top}px)` }}
+          onPointerDown={beginThumbDrag}
+          onPointerMove={dragThumb}
+          onPointerUp={endThumbDrag}
+          onPointerCancel={endThumbDrag}
+        />
+      </div>
     </div>
   );
 }
@@ -393,6 +589,9 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
   const [batchAction, setBatchAction] = React.useState(null);
   const [selectedBatchIds, setSelectedBatchIds] = React.useState(() => new Set());
   const [batchResult, setBatchResult] = React.useState(null);
+  const [estimateEditRequest, setEstimateEditRequest] = React.useState(null);
+  const [activityInputFocusRequest, setActivityInputFocusRequest] = React.useState(0);
+  const [todayInputFocusRequest, setTodayInputFocusRequest] = React.useState(0);
   // 拖拽排序的纯视觉反馈：draggingKey = 正在拖的行，dragOverKey = 当前悬停的落点行，
   // dropPosition = 悬停在该行的上半还是下半（决定落到目标行前面还是后面，而不是互换）。
   const [draggingKey, setDraggingKey] = React.useState(null);
@@ -736,45 +935,41 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
           <div className="kan-head">
             <span><Icon name="list" size={13}/> &nbsp;活动清单</span>
             <span className="kan-head-right">
+              <button className="btn ghost sm" disabled={busy} onClick={() => setActivityInputFocusRequest((request) => request + 1)}>新增</button>
               <span className="kan-count">{views.activeTasks.length}</span>
               <button className="btn ghost sm" disabled={busy || views.activeTasks.length === 0} onClick={() => beginBatch('addToToday')}>批量加入今日</button>
             </span>
           </div>
-          <AddTaskInput
-            placeholder="任务名称，回车创建…"
-            disabled={busy}
-            onCreate={(title) => command((time) => createManualTask({
-              ...time, title, destination: 'list',
-            }))}
-          />
-          {views.activeTasks.length === 0 && (
-            <EmptyState
-              icon="list"
-              title="清单还是空的"
-              hint="在上面输入框写下想做的第一件事，回车就能加进来。"
-            />
-          )}
-          <div className="activity-tree">
-            {foldMergeRows(views.activeTasks, views).map((row) => {
-              if (row.kind === 'merge') {
-                return (
-                  <MergeCard
-                    key={row.key}
-                    group={row.group}
-                    members={row.members}
-                    remaining={row.remaining}
-                    busy={busy}
-                    command={command}
-                    onOpen={setDetailTaskId}
-                    dragProps={mergeCardDragProps(row.group)}
-                    memberDrag={memberDragProps(row.group)}
-                  />
-                );
-              }
-              const task = row.task;
-              const index = views.activeTasks.findIndex((candidate) => candidate.id === task.id);
-              return (
-              <div key={task.id} className="task-tree-group">
+          <ListScrollRegion className={views.activeTasks.length === 0 ? 'is-empty' : ''}>
+            {views.activeTasks.length === 0 && (
+              <EmptyState
+                icon="list"
+                title="清单还是空的"
+                hint="在下方输入框写下想做的第一件事，回车就能加进来。"
+              />
+            )}
+            {views.activeTasks.length > 0 && (
+              <div className="activity-tree">
+                {foldMergeRows(views.activeTasks, views).map((row) => {
+                  if (row.kind === 'merge') {
+                    return (
+                      <MergeCard
+                        key={row.key}
+                        group={row.group}
+                        members={row.members}
+                        remaining={row.remaining}
+                        busy={busy}
+                        command={command}
+                        onOpen={setDetailTaskId}
+                        dragProps={mergeCardDragProps(row.group)}
+                        memberDrag={memberDragProps(row.group)}
+                      />
+                    );
+                  }
+                  const task = row.task;
+                  const index = views.activeTasks.findIndex((candidate) => candidate.id === task.id);
+                  return (
+                <div key={task.id} className="task-tree-group">
                 <div
                   className={`activity-tree-row atr-group draggable ${rowDragClass(`list-${task.id}`)}`}
                   draggable={!busy && !batchAction}
@@ -852,10 +1047,20 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                   selectedBatchIds={selectedBatchIds}
                   onToggleBatch={toggleBatchTask}
                 />
+                </div>
+                );
+                })}
               </div>
-              );
-            })}
-          </div>
+            )}
+            <AddTaskInput
+              placeholder="任务名称，回车创建…"
+              disabled={busy}
+              focusRequest={activityInputFocusRequest}
+              onCreate={(title) => command((time) => createManualTask({
+                ...time, title, destination: 'list',
+              }))}
+            />
+          </ListScrollRegion>
         </div>
 
         <div
@@ -872,6 +1077,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
           <div className="kan-head">
             <span><Icon name="arrow-day" size={13}/> &nbsp;今日待办</span>
             <span className="kan-head-right">
+              <button className="btn ghost sm" disabled={busy} onClick={() => setTodayInputFocusRequest((request) => request + 1)}>新增</button>
               <span className="kan-count" style={{ color: metrics.overloadedPomodoros > 0 ? 'var(--accent-ink)' : 'var(--muted)' }}>
                 余 {metrics.remainingPomodoros}
                 {metrics.overloadedPomodoros > 0 && ` · 超载 ${metrics.overloadedPomodoros}`}
@@ -879,39 +1085,37 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               <button className="btn ghost sm" disabled={busy || activeToday.length === 0} onClick={() => beginBatch('moveToList')}>批量移回</button>
             </span>
           </div>
-          <AddTaskInput
-            placeholder="直接新建今日任务…"
-            disabled={busy}
-            onCreate={(title) => command((time) => createManualTask({
-              ...time, title, destination: 'today',
-            }))}
-          />
-          {activeToday.length === 0 && completedToday.length === 0 && (
-            <EmptyState
-              icon="arrow-day"
-              title="今天还没有安排"
-              hint="从左边的清单把事项拖过来，或在上方直接新建今日任务。"
-            />
-          )}
-          {foldMergeRows(activeToday, views).map((row) => {
-            if (row.kind === 'merge') {
+          <ListScrollRegion className={activeToday.length === 0 && completedToday.length === 0 ? 'is-empty' : ''}>
+            {activeToday.length === 0 && completedToday.length === 0 && (
+              <EmptyState
+                icon="arrow-day"
+                title="今天还没有安排"
+                hint="从左边的清单把事项拖过来，或在下方直接新建今日任务。"
+              />
+            )}
+            {foldMergeRows(activeToday, views).map((row) => {
+              if (row.kind === 'merge') {
+                return (
+                  <MergeCard
+                    key={row.key}
+                    group={row.group}
+                    members={row.members}
+                    remaining={row.remaining}
+                    busy={busy}
+                    command={command}
+                    onOpen={setDetailTaskId}
+                    dragProps={mergeCardDragProps(row.group)}
+                    memberDrag={memberDragProps(row.group)}
+                  />
+                );
+              }
+              const task = row.task;
+              const activeIndex = activeToday.findIndex((candidate) => candidate.id === task.id);
+              const dayPlanIndex = dayPlanIndexOf(views.todayTasks, task.id);
+              const nextEstimateTask = activeToday
+                .slice(activeIndex + 1)
+                .find((candidate) => canEditEstimate(candidate, false, runningFocusTaskId));
               return (
-                <MergeCard
-                  key={row.key}
-                  group={row.group}
-                  members={row.members}
-                  remaining={row.remaining}
-                  busy={busy}
-                  command={command}
-                  onOpen={setDetailTaskId}
-                  dragProps={mergeCardDragProps(row.group)}
-                  memberDrag={memberDragProps(row.group)}
-                />
-              );
-            }
-            const task = row.task;
-            const dayPlanIndex = dayPlanIndexOf(views.todayTasks, task.id);
-            return (
               <div key={task.id} className="today-task-block">
                 <div
                   className={`activity-tree-row atr-group draggable today-task-row ${rowDragClass(`today-${task.id}`)}`}
@@ -966,6 +1170,9 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                         task={task}
                         disabled={busy}
                         runningFocusTaskId={runningFocusTaskId}
+                        editRequested={estimateEditRequest === task.id}
+                        onEditRequestHandled={() => setEstimateEditRequest(null)}
+                        onAdvance={() => setEstimateEditRequest(nextEstimateTask?.id ?? null)}
                         onSave={(estimatedPomodoros) => command((time) => adjustTaskEstimate({
                           ...time, taskId: task.id, estimatedPomodoros,
                         }))}
@@ -1006,8 +1213,17 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                   onToggleBatch={toggleBatchTask}
                 />
               </div>
-            );
-          })}
+              );
+            })}
+            <AddTaskInput
+              placeholder="直接新建今日任务…"
+              disabled={busy}
+              focusRequest={todayInputFocusRequest}
+              onCreate={(title) => command((time) => createManualTask({
+                ...time, title, destination: 'today',
+              }))}
+            />
+          </ListScrollRegion>
         </div>
       </div>
 

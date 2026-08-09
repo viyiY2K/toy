@@ -817,6 +817,18 @@ input[type="checkbox"]:checked::before {
 .deduction-row > span:first-child,
 .deduction-row > input.boxed:first-child { flex: 1; min-width: 80px; }
 .deduction-row > input.boxed[type="number"] { width: 80px; flex: 0 0 auto; }
+.deduction-entry-hint {
+  margin: -1px 0 3px;
+  color: var(--accent-ink);
+  font-size: 12px;
+  opacity: .76;
+}
+.sync-account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.sync-account-row > input.boxed { width: 100%; min-width: 0; }
+.sync-account-row > .sync-result { grid-column: 1 / -1; }
 /* 自由时长：可用时段减扣除后的上下文事实，不是可选项，横排一行低调呈现。 */
 .budget-free {
   margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
@@ -1788,6 +1800,86 @@ select:focus-visible {
 .today-est-input::-webkit-inner-spin-button,
 .today-est-input::-webkit-outer-spin-button { margin: 0; appearance: none; }
 
+/* 两列清单保持同高；任务超过当前页面的舒适展示量后，只滚动清单内容。 */
+.activity-list-col,
+.today-list-col {
+  height: clamp(360px, calc(100vh - 300px), 620px);
+  min-height: 360px;
+}
+
+.timer-task-picker-card {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 360px;
+  min-height: 360px;
+}
+
+.list-scroll-shell {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  margin-right: -10px;
+}
+
+.list-scroll-region {
+  height: 100%;
+  padding-right: 17px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.list-scroll-region::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.list-scrollbar-track {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  bottom: 4px;
+  width: 9px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+}
+
+.activity-list-col:is(:hover, :focus-within) .list-scrollbar-track.is-visible,
+.today-list-col:is(:hover, :focus-within) .list-scrollbar-track.is-visible,
+.timer-task-picker-card:is(:hover, :focus-within) .list-scrollbar-track.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.list-scrollbar-thumb {
+  width: 9px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: rgba(126, 124, 119, .28);
+  background-clip: padding-box;
+  cursor: grab;
+}
+
+.list-scrollbar-thumb:active {
+  background-color: rgba(126, 124, 119, .38);
+  cursor: grabbing;
+}
+
+.list-scroll-region > .empty-state {
+  min-height: 100%;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.list-scroll-region.is-empty > .empty-state {
+  min-height: calc(100% - 51px);
+}
+
 .completed-card { padding: 10px 20px; }
 
 .history-row,
@@ -2097,6 +2189,8 @@ select:focus-visible {
   .main-head { align-items: flex-start; flex-direction: column; gap: 16px; }
   .main-head .right { width: 100%; justify-content: space-between; }
   .kanban { grid-template-columns: 1fr !important; }
+  .activity-list-col,
+  .today-list-col { height: clamp(360px, 70vh, 520px); }
   .timer-stage { grid-template-columns: 1fr; }
   .timer-main { min-height: 480px; }
   .timer-circle { width: min(380px, 88vw); }

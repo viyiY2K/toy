@@ -11,6 +11,7 @@ import {
   validateIsoDateTime,
   validateSyncableBase,
   validateUuidV7,
+  type SyncWriteMode,
   type ValidationIssue,
 } from './primitives';
 
@@ -111,12 +112,13 @@ async function validateMemberReferences(
 export async function collectMergeGroupValidationIssues(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<readonly ValidationIssue[]> {
   const collector = new ValidationCollector();
   const group = requireRecord(value, 'MergeGroup', collector);
   if (!group) return collector.issues;
   validateExactKeys(group, MERGE_GROUP_KEYS, 'MergeGroup', collector);
-  validateSyncableBase(group, collector);
+  validateSyncableBase(group, collector, mode);
 
   validateTaskIds(group.taskIds, collector);
   validateInteger(group.estimatedPomodoros, 'estimatedPomodoros', collector, 1, 7);
@@ -186,8 +188,9 @@ export async function collectMergeGroupValidationIssues(
 export async function validateMergeGroup(
   value: unknown,
   context?: ValidationContext,
+  mode: SyncWriteMode = 'local',
 ): Promise<MergeGroup> {
-  const issues = await collectMergeGroupValidationIssues(value, context);
+  const issues = await collectMergeGroupValidationIssues(value, context, mode);
   if (issues.length > 0) throw new EntityValidationError('MergeGroup', issues);
   return value as MergeGroup;
 }

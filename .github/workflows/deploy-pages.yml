@@ -42,6 +42,12 @@ jobs:
 
       - name: Build site
         run: npm run build
+        env:
+          # Supabase publishable key，设计上就是给前端公开使用（配合数据库端 RLS 保证安全），
+          # 见 docs/sync-supabase-setup.md。未配置这两个 Secrets 时构建仍然成功，
+          # 应用自动以纯本地模式运行。
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6

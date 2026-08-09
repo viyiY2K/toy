@@ -1,4 +1,5 @@
-import { updateLifetimePomodoroBaseline, updateTimerSetting } from '../data/index';
+import { requestMagicLink, runSync, updateLifetimePomodoroBaseline, updateTimerSetting } from '../data/index';
+import { formatSyncStatusText, hasSyncErrors } from './syncViewModel';
 
 const React = window.React;
 
@@ -106,7 +107,85 @@ function BaselineField({ value, command, busy }) {
   );
 }
 
-export function SettingsView({ settings, runCommand, busy }) {
+function LoginForm() {
+  const [email, setEmail] = React.useState('');
+  const [notice, setNotice] = React.useState(null);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setNotice(null);
+    const result = await requestMagicLink(email.trim());
+    setNotice(result.ok ? '登录链接已发送，去邮箱里点一下' : (result.error ?? '发送失败'));
+  };
+
+  return (
+    <div>
+      <form onSubmit={handleSubmit} className="planner-row">
+        <input
+          type="email"
+          required
+          placeholder="邮箱登录以同步"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="input boxed"
+          style={{ flex: 1 }}
+        />
+        <button type="submit" className="btn sm">发送登录链接</button>
+      </form>
+      {notice && <div className="sub" style={{ marginTop: 8 }}>{notice}</div>}
+    </div>
+  );
+}
+
+function SyncCard({ syncAuthState, lastSyncResult }) {
+  const [manualState, setManualState] = React.useState('idle'); // idle | syncing | done | error
+
+  if (!syncAuthState || syncAuthState.status === 'unconfigured') return null;
+
+  const handleManualSync = async () => {
+    setManualState('syncing');
+    try {
+      const result = await runSync(clock().now, clock().timezone);
+      setManualState(!result.configured || hasSyncErrors(result) ? 'error' : 'done');
+    } catch {
+      setManualState('error');
+    }
+  };
+
+  const authenticated = syncAuthState.status === 'authenticated';
+  const statusText = formatSyncStatusText(syncAuthState.status, lastSyncResult);
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-title"><span>多端同步</span></div>
+      <div className="sub" style={{ marginBottom: 12 }}>
+        {statusText}
+      </div>
+      {authenticated ? (
+        <div className="planner-row sync-account-row">
+          <input
+            type="email"
+            aria-label="当前同步邮箱"
+            className="input boxed"
+            value={syncAuthState.email ?? ''}
+            readOnly
+          />
+          <button
+            className="btn sm"
+            disabled={manualState === 'syncing'}
+            onClick={handleManualSync}
+          >{manualState === 'syncing' ? '同步中…' : '立即同步'}</button>
+          {manualState === 'done' && <span className="planner-eq sync-result" aria-live="polite">刚刚同步完成</span>}
+          {manualState === 'error' && <span className="planner-eq sync-result" role="alert">同步时遇到问题，稍后会自动重试</span>}
+        </div>
+      ) : (
+        <LoginForm/>
+      )}
+    </div>
+  );
+}
+
+export function SettingsView({ settings, runCommand, busy, syncAuthState, lastSyncResult }) {
   const command = (work) => runCommand(() => work(clock()));
 
   return (
@@ -138,6 +217,8 @@ export function SettingsView({ settings, runCommand, busy }) {
         </div>
         <BaselineField value={settings.lifetimePomodoroBaseline} command={command} busy={busy}/>
       </div>
+
+      <SyncCard syncAuthState={syncAuthState} lastSyncResult={lastSyncResult}/>
     </div>
   );
 }
