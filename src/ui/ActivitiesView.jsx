@@ -679,19 +679,12 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               <button className="btn ghost sm" disabled={busy || activeToday.length === 0} onClick={() => beginBatch('moveToList')}>批量移回</button>
             </span>
           </div>
-          <AddTaskInput
-            placeholder="直接新建今日任务…"
-            disabled={busy}
-            onCreate={(title) => command((time) => createManualTask({
-              ...time, title, destination: 'today',
-            }))}
-          />
-          <div className="list-scroll-region">
+          <div className={`list-scroll-region ${activeToday.length === 0 && completedToday.length === 0 ? 'is-empty' : ''}`}>
             {activeToday.length === 0 && completedToday.length === 0 && (
               <EmptyState
                 icon="arrow-day"
                 title="今天还没有安排"
-                hint="从左边的清单把事项拖过来，或在上方直接新建今日任务。"
+                hint="从左边的清单把事项拖过来，或在下方直接新建今日任务。"
               />
             )}
             {activeToday.map((task, activeIndex) => {
@@ -791,6 +784,13 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               </div>
               );
             })}
+            <AddTaskInput
+              placeholder="直接新建今日任务…"
+              disabled={busy}
+              onCreate={(title) => command((time) => createManualTask({
+                ...time, title, destination: 'today',
+              }))}
+            />
           </div>
         </div>
       </div>

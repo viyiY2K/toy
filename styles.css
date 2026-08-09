@@ -1823,6 +1823,10 @@ select:focus-visible {
   box-sizing: border-box;
 }
 
+.list-scroll-region.is-empty > .empty-state {
+  min-height: calc(100% - 51px);
+}
+
 .completed-card { padding: 10px 20px; }
 
 .history-row,
