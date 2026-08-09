@@ -114,6 +114,7 @@ function EstimateEditor({
         max="7"
         autoFocus
         defaultValue={task.estimatedPomodoros}
+        onFocus={(event) => event.currentTarget.select()}
         onBlur={async (event) => {
           const value = Number(event.target.value);
           const shouldAdvance = advanceAfterCommitRef.current;
