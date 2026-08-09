@@ -176,7 +176,12 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     // 合并资格看的是"有没有过 focus 记录"，completed 与 discarded 一视同仁。
     for (const taskId of session.taskIds) hasFocusHistoryByTaskId[taskId] = true;
     if (session.status !== 'completed' || session.taskIds.length === 0) continue;
-    // §8.5.1：任务维度下，一次合并 Session 给每个成员各记 +1，不平分。
+    /*
+     * ⚠️ 旧口径，待单独重做：这里按 §8.5.1 给合并 Session 的每个成员各记 +1。
+     * 新口径下统计单位是合并组本身，成员任务不再记有效番茄，只按组内次序切分实际
+     * 耗时。规范正文由「中长期主线任务」那条线改写，改写后本段与 awarenessStats
+     * 的任务维度计数需要一并重做。
+     */
     for (const taskId of session.taskIds) {
       completedValidFocusCountByTaskId[taskId] =
         (completedValidFocusCountByTaskId[taskId] ?? 0) + 1;
