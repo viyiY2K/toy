@@ -1,5 +1,5 @@
 import { dataStore, EVENT_STORE, STORE } from '../dataStore';
-import type { EnergyRecord, Event, Session, Task } from '../schema';
+import type { EnergyRecord, Event, MergeGroup, Session, Task } from '../schema';
 import { deriveAppDate } from '../time';
 import type { InitializationClock } from '../initialization/currentAppDate';
 import { loadCurrentTaskViews, type CurrentTaskViews } from './currentTaskViews';
@@ -11,8 +11,19 @@ export interface CurrentTimerViews {
   taskViews: CurrentTaskViews;
   activeSession: Session | null;
   activeTask: Task | null;
+  /**
+   * 当前这段专注涉及的全部任务，按 `Session.taskIds` 的顺序。
+   * 单任务专注长度为 1；合并专注长度 ≥ 1，成员之间完全平等、互相独立。
+   */
+  activeSessionTasks: Task[];
+  /** 触发当前这段专注的合并组；不是合并专注时为 null。 */
+  activeMergeGroup: MergeGroup | null;
   pendingBreakFocus: Session | null;
   pendingBreakTask: Task | null;
+  /** 刚响铃、还没收尾的那段专注涉及的全部任务（收尾界面要按成员逐个确认完成）。 */
+  pendingBreakTasks: Task[];
+  /** 刚响铃那段专注对应的合并组；不是合并专注时为 null。 */
+  pendingBreakMergeGroup: MergeGroup | null;
   preFocusEnergySource: StandaloneEnergyPromptSource | null;
   completedFocusCount: number;
   interruptCounts: { internal: number; external: number };
@@ -42,12 +53,13 @@ export async function loadCurrentTimerViews(clock: InitializationClock): Promise
     loadCurrentTaskViews(clock),
     loadCurrentRecoveryView(),
   ]);
-  const [sessions, historicalSessions, tasks, energyRecords, events] = await Promise.all([
+  const [sessions, historicalSessions, tasks, energyRecords, events, mergeGroups] = await Promise.all([
     dataStore.getAll<Session>(STORE.sessions),
     dataStore.getAllIncludingDeleted<Session>(STORE.sessions),
     dataStore.getAllIncludingDeleted<Task>(STORE.tasks),
     dataStore.getAll<EnergyRecord>(STORE.energyRecords),
     dataStore.getAll<Event>(EVENT_STORE),
+    dataStore.getAll<MergeGroup>(STORE.mergeGroups),
   ]);
 
   const activeSessions = sessions.filter((session) => session.status === 'active');
@@ -80,6 +92,17 @@ export async function loadCurrentTimerViews(clock: InitializationClock): Promise
   const taskById = new Map(tasks.map((task) => [task.id, task]));
   const activeTaskId = referencedTaskId(activeSession, sessionById);
   const pendingBreakTaskId = referencedTaskId(pendingBreakFocus, sessionById);
+  const mergeGroupById = new Map(mergeGroups.map((group) => [group.id, group]));
+  /** 按 Session.taskIds 的顺序取出成员 Task（这就是合并卡片内的先后顺序）。 */
+  const sessionTasks = (session: Session | null): Task[] =>
+    session === null
+      ? []
+      : session.taskIds.flatMap((taskId) => {
+          const task = taskById.get(taskId);
+          return task ? [task] : [];
+        });
+  const groupOf = (session: Session | null): MergeGroup | null =>
+    session?.mergeGroupId == null ? null : mergeGroupById.get(session.mergeGroupId) ?? null;
 
   const currentDayEnergy = energyRecords
     .filter(
@@ -112,8 +135,12 @@ export async function loadCurrentTimerViews(clock: InitializationClock): Promise
     taskViews,
     activeSession,
     activeTask: activeTaskId === null ? null : taskById.get(activeTaskId) ?? null,
+    activeSessionTasks: sessionTasks(activeSession),
+    activeMergeGroup: groupOf(activeSession),
     pendingBreakFocus,
     pendingBreakTask: pendingBreakTaskId === null ? null : taskById.get(pendingBreakTaskId) ?? null,
+    pendingBreakTasks: sessionTasks(pendingBreakFocus),
+    pendingBreakMergeGroup: groupOf(pendingBreakFocus),
     preFocusEnergySource,
     completedFocusCount: sessions.filter(
       (session) => session.type === 'focus' && session.status === 'completed',

@@ -10,7 +10,22 @@ import {
   type Task,
 } from '../schema';
 import { executeAtomicWrite } from '../writes/executeAtomicWrite';
+import { createManualTask } from '../commands/taskCommands';
+import { createMergeGroup, dissolveMergeGroup } from '../commands/mergeGroupCommands';
 import { loadCurrentTaskViews } from './currentTaskViews';
+
+// 合并组用例用自己的假时钟：产品日与上面的用例一致，只是时间往后排，互不干扰。
+let mergeTick = 0;
+const mergeClock = () => {
+  const minutes = mergeTick++;
+  const hour = 18 + Math.floor(minutes / 60);
+  return {
+    now: `2026-09-10T${String(hour).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}:00+08:00`,
+    timezone: TIMEZONE,
+  };
+};
+const mergeChore = async (title: string): Promise<Task> =>
+  (await createManualTask({ ...mergeClock(), title, destination: 'today' })).value;
 
 // UTC 日期仍为 9/9，但 Asia/Shanghai 的事实/产品日已是 9/10，防止查询误用时间戳日期。
 const NOW = '2026-09-09T16:30:00Z';
@@ -420,5 +435,47 @@ describe('S10 当前任务派生视图', () => {
     expect(views.completionTimingByTaskId[pomodoroTask.id]).toEqual({
       timezone: TIMEZONE, focusStartedAt, focusEndedAt,
     });
+  });
+});
+
+describe('合并组视图（v4.1 §3.8、§8.10.3）', () => {
+  it('暴露在用合并组、成员（按组内顺序）与剩余番茄', async () => {
+    const [a, b] = [await mergeChore('回复 Slack'), await mergeChore('订咖啡豆')];
+    const group = (await createMergeGroup({ ...mergeClock(), taskIds: [a.id, b.id] })).value;
+
+    const views = await loadCurrentTaskViews(mergeClock());
+    expect(views.mergeGroups.map(({ id }) => id)).toContain(group.id);
+    expect(views.mergeGroupMembersById[group.id]!.map(({ id }) => id)).toEqual([a.id, b.id]);
+    expect(views.mergeGroupRemainingById[group.id]).toBe(1);
+  });
+
+  it('今日排期余量按「组」扣一次，不按成员各扣一次', async () => {
+    const before = await loadCurrentTaskViews(mergeClock());
+    const [a, b, c] = [
+      await mergeChore('杂事一'), await mergeChore('杂事二'), await mergeChore('杂事三'),
+    ];
+    // 三个独立任务各占 1 个番茄 → 余量少 3。
+    const separate = await loadCurrentTaskViews(mergeClock());
+    expect(separate.todayPlanningCapacityRemaining).toBe(
+      before.todayPlanningCapacityRemaining - 3,
+    );
+
+    await createMergeGroup({ ...mergeClock(), taskIds: [a.id, b.id, c.id] });
+
+    // 合并成一组后整组只占 1 个番茄 → 相对合并前回补 2。
+    const merged = await loadCurrentTaskViews(mergeClock());
+    expect(merged.todayPlanningCapacityRemaining).toBe(
+      separate.todayPlanningCapacityRemaining + 2,
+    );
+  });
+
+  it('已解散的合并组不再出现在视图里', async () => {
+    const [a, b] = [await mergeChore('A'), await mergeChore('B')];
+    const group = (await createMergeGroup({ ...mergeClock(), taskIds: [a.id, b.id] })).value;
+    await dissolveMergeGroup({ ...mergeClock(), mergeGroupId: group.id });
+
+    const views = await loadCurrentTaskViews(mergeClock());
+    expect(views.mergeGroups.map(({ id }) => id)).not.toContain(group.id);
+    expect(views.mergeGroupMembersById[group.id]).toBeUndefined();
   });
 });

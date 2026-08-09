@@ -3,7 +3,7 @@ import {
   ensureCurrentAppDateInitialized,
   type InitializationClock,
 } from '../initialization/currentAppDate';
-import type { DayPlan, Event, IsoDateTime, Session, Settings, Task } from '../schema';
+import type { DayPlan, Event, IsoDateTime, MergeGroup, Session, Settings, Task } from '../schema';
 import { deriveAppDate, type IsoDate } from '../time';
 
 /**
@@ -34,6 +34,16 @@ export interface CurrentTaskViews {
   completionTimingByTaskId: Record<string, CompletedTaskTiming>;
   remainingPomodorosByTaskId: Record<string, number>;
   todayPlanningCapacityRemaining: number;
+  /**
+   * 仍在用的合并组（§3.8，`active` / `limitReached`），按创建顺序。
+   * 组内成员完全平等、互相独立——合并只表示"这几件事各自都占不满一个番茄"，
+   * 不表示它们属于同一件事，因此这里不提供任何"共同上层归属"的派生。
+   */
+  mergeGroups: MergeGroup[];
+  /** 合并组 id → 成员 Task，按 `MergeGroup.taskIds` 的顺序（即合并卡片内的展示顺序）。 */
+  mergeGroupMembersById: Record<string, Task[]>;
+  /** 合并组 id → 该组还剩几个番茄没跑（预估减去已完成轮次，下限 0）。 */
+  mergeGroupRemainingById: Record<string, number>;
 }
 
 function compareListOrder(left: Task, right: Task): number {
@@ -50,11 +60,12 @@ function isCurrentStatus(task: Task): boolean {
  */
 export async function loadCurrentTaskViews(clock: InitializationClock): Promise<CurrentTaskViews> {
   const initialized = await ensureCurrentAppDateInitialized(clock);
-  const [storedDayPlan, tasks, sessions, events] = await Promise.all([
+  const [storedDayPlan, tasks, sessions, events, mergeGroups] = await Promise.all([
     dataStore.get<DayPlan>(STORE.dayPlans, initialized.dayPlan.id),
     dataStore.getAll<Task>(STORE.tasks),
     dataStore.getAll<Session>(STORE.sessions),
     dataStore.getAll<Event>(EVENT_STORE),
+    dataStore.getAll<MergeGroup>(STORE.mergeGroups),
   ]);
   if (!storedDayPlan || storedDayPlan.appDate !== initialized.appDate) {
     throw new Error('当前 appDate 的有效 DayPlan 在初始化后不可用');
@@ -181,14 +192,52 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
       task.estimatedPomodoros - (completedValidFocusCountByTaskId[task.id] ?? 0),
     );
   }
-  const scheduledRemaining = todayTasks
-    .filter(
-      (task) =>
-        task.status !== 'completed' && task.status !== 'archived' && task.status !== 'deleted',
-    )
+
+  const liveGroups = mergeGroups.filter((group) => group.status !== 'dissolved');
+  const mergeGroupMembersById: Record<string, Task[]> = {};
+  const mergeGroupRemainingById: Record<string, number> = {};
+  for (const group of liveGroups) {
+    mergeGroupMembersById[group.id] = group.taskIds.flatMap((taskId) => {
+      const task = taskById.get(taskId);
+      return task && isCurrentStatus(task) ? [task] : [];
+    });
+    const completedRounds = sessions.filter(
+      (session) =>
+        session.type === 'focus' &&
+        session.status === 'completed' &&
+        session.mergeGroupId === group.id,
+    ).length;
+    mergeGroupRemainingById[group.id] = Math.max(0, group.estimatedPomodoros - completedRounds);
+  }
+
+  /*
+   * 今日排期余量（§8.10.3）。合并组的成员**不各自占用**预算：一整组共用一段专注，
+   * 占的是这个组自己的 estimatedPomodoros，而不是各成员预估之和——否则把 4 件杂事
+   * 并成一个番茄，余量反而会被扣掉 4 个，与合并的本意相反。
+   */
+  const groupIdOfTask = new Map<string, string>();
+  for (const group of liveGroups) {
+    for (const taskId of group.taskIds) groupIdOfTask.set(taskId, group.id);
+  }
+  const unfinishedToday = todayTasks.filter(
+    (task) =>
+      task.status !== 'completed' && task.status !== 'archived' && task.status !== 'deleted',
+  );
+  const standaloneRemaining = unfinishedToday
+    .filter((task) => !groupIdOfTask.has(task.id))
     .reduce((total, task) => total + remainingPomodorosByTaskId[task.id]!, 0);
+  const chargedGroupIds = new Set(
+    unfinishedToday.flatMap((task) => {
+      const groupId = groupIdOfTask.get(task.id);
+      return groupId === undefined ? [] : [groupId];
+    }),
+  );
+  const groupRemaining = [...chargedGroupIds].reduce(
+    (total, groupId) => total + (mergeGroupRemainingById[groupId] ?? 0),
+    0,
+  );
   const todayPlanningCapacityRemaining =
-    storedDayPlan.budgetPomodoros - completedFocusCountToday - scheduledRemaining;
+    storedDayPlan.budgetPomodoros - completedFocusCountToday - standaloneRemaining - groupRemaining;
 
   return {
     appDate: initialized.appDate,
@@ -206,5 +255,8 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     completionTimingByTaskId,
     remainingPomodorosByTaskId,
     todayPlanningCapacityRemaining,
+    mergeGroups: liveGroups,
+    mergeGroupMembersById,
+    mergeGroupRemainingById,
   };
 }
