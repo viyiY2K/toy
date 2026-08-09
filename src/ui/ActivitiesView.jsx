@@ -1,4 +1,5 @@
 import {
+  addTaskToMergeGroup,
   addTaskToToday,
   adjustTaskEstimate,
   archiveCompletedTask,
@@ -7,14 +8,18 @@ import {
   batchMoveTasksToList,
   completeTaskManually,
   createManualTask,
+  createMergeGroup,
   deleteActiveTask,
   dismissTriageTask,
+  dissolveMergeGroup,
   estimateDayPlanBudget,
   moveTriageTaskToList,
   moveTriageTaskToToday,
   promoteSubtaskToTopLevel,
+  removeTaskFromMergeGroup,
   removeTaskFromToday,
   reorderActivityTask,
+  reorderMergeGroupMember,
   reorderSubtask,
   reorderTodayTask,
   restoreArchivedTask,
@@ -37,7 +42,11 @@ import {
   currentPlanMetrics,
   dayPlanIndexOf,
   dropInsertIndex,
+  dropIntent,
+  foldMergeRows,
   isTaskRunningFocus,
+  mergeCardSummary,
+  mergeIneligibleReason,
   reconcileBatchSelection,
   splitLineagePresentation,
   splitTodayTasks,
@@ -276,6 +285,107 @@ function SubtaskList({
   );
 }
 
+/**
+ * 合并卡片：把几件「各自都占不满一个番茄」的小事装在一个方框里。
+ *
+ * 刻意不用子任务那套缩进 + 左侧竖线——那表达的是母子从属，这里是平等并列。
+ * 成员之间互相独立，不代表它们属于同一件事，所以卡片上不出现任何「共同目标」表达。
+ */
+function MergeCard({
+  group,
+  members,
+  remaining,
+  busy,
+  command,
+  onOpen,
+  dragProps,
+  memberDrag,
+}) {
+  const summary = mergeCardSummary(group, members, remaining);
+  return (
+    <div
+      className={`merge-card ${summary.blocked ? 'is-blocked' : ''} ${dragProps.className}`}
+      draggable={dragProps.draggable}
+      onDragStart={dragProps.onDragStart}
+      onDragOver={dragProps.onDragOver}
+      onDragEnd={dragProps.onDragEnd}
+      onDrop={dragProps.onDrop}
+    >
+      <div className="merge-card-head">
+        <span className="merge-card-mark" aria-hidden="true"/>
+        <span className="merge-card-title">一起做 · {summary.memberLabel}</span>
+        <span className="merge-card-meta">
+          <span>{summary.progressLabel}</span>
+          <span className="mono">{summary.estimateLabel}</span>
+          <span className="merge-card-actions">
+            <button
+              className="icon-btn"
+              disabled={busy}
+              title="取消合并（任务各自回到原来的位置，不会被删除）"
+              onClick={() => command((time) => dissolveMergeGroup({
+                ...time, mergeGroupId: group.id,
+              }))}
+            >
+              <Icon name="x" size={12}/>
+            </button>
+          </span>
+        </span>
+      </div>
+      {summary.blocked && (
+        <div className="merge-card-blocked-hint" role="status">
+          这些零碎事项已经占满一个多番茄的量，建议拆开单独处理。
+          把还没做完的拖出去，或取消整次合并，才能继续。
+        </div>
+      )}
+      <div className="merge-members">
+        {members.map((task, index) => {
+          const completed = task.status === 'completed';
+          return (
+            <div
+              key={task.id}
+              className={`merge-member ${completed ? 'is-completed' : ''} ${memberDrag.className(task.id)}`}
+              draggable={!busy}
+              onDragStart={(event) => memberDrag.onDragStart(event, task, index)}
+              onDragOver={(event) => memberDrag.onDragOver(event, task.id)}
+              onDragEnd={memberDrag.onDragEnd}
+              onDrop={(event) => memberDrag.onDrop(event, index)}
+              title="拖动可调整这个番茄里先做哪件"
+            >
+              <button
+                className={`atr-check ${completed ? 'is-done' : ''}`}
+                disabled={busy}
+                title={completed ? '取消完成' : '完成这件小事'}
+                onClick={() => (completed
+                  ? command((time) => uncompleteTask({ ...time, taskId: task.id }))
+                  : command((time) => completeTaskManually({ ...time, taskId: task.id })))}
+              />
+              <span className="merge-member-name">{task.title}</span>
+              <span className="merge-member-actions">
+                <button
+                  className="icon-btn"
+                  disabled={busy}
+                  title="任务详情"
+                  onClick={() => onOpen(task.id)}
+                >
+                  <Icon name="info" size={11}/>
+                </button>
+                <button
+                  className="icon-btn text-icon"
+                  disabled={busy}
+                  title="移出合并（回到独立任务）"
+                  onClick={() => command((time) => removeTaskFromMergeGroup({
+                    ...time, mergeGroupId: group.id, taskId: task.id, reason: 'manualUnmerge',
+                  }))}
+                >↤</button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = null }) {
   const [plannerOpen, setPlannerOpen] = React.useState(false);
   const [archiveCandidateId, setArchiveCandidateId] = React.useState(null);
@@ -288,6 +398,10 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
   const [draggingKey, setDraggingKey] = React.useState(null);
   const [dragOverKey, setDragOverKey] = React.useState(null);
   const [dropPosition, setDropPosition] = React.useState('before');
+  // 被拖任务的 id 与「为什么不能合并」——dragover 期间 dataTransfer 读不到数据，
+  // 只能自己存一份，才能在悬停时就给出防呆反馈。
+  const [draggedTaskId, setDraggedTaskId] = React.useState(null);
+  const [blockedReason, setBlockedReason] = React.useState(null);
   const { activeTasks: activeToday, completedTasks: completedToday } = splitTodayTasks(views.todayTasks);
   const metrics = currentPlanMetrics(views.dayPlan, views.todayPlanningCapacityRemaining);
   const detachedChildren = unattachedSubtasks(views);
@@ -380,20 +494,132 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('application/json', JSON.stringify(value));
   };
-  const clearDrag = () => { setDraggingKey(null); setDragOverKey(null); setDropPosition('before'); };
-  const hoverRow = (event, key) => {
+  const clearDrag = () => {
+    setDraggingKey(null);
+    setDragOverKey(null);
+    setDropPosition('before');
+    setDraggedTaskId(null);
+    setBlockedReason(null);
+  };
+  /*
+   * 落点意图：拖到行的**正中间**是「合并」，落在上/下缘仍是排序（§4.1）。
+   * dataTransfer 在 dragover 期间读不到数据，所以被拖任务的 id 单独存一份 state，
+   * 用来在悬停时就判定合并资格、给出防呆反馈，而不是等写入被拒绝。
+   */
+  const hoverRow = (event, key, target = null) => {
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
+    const intent = target === null
+      ? (event.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
+      : dropIntent(event.clientY - rect.top, rect.height);
     setDragOverKey(key);
-    setDropPosition(event.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+    setDropPosition(intent);
+    if (intent !== 'merge' || draggedTaskId === null) {
+      setBlockedReason(null);
+      return;
+    }
+    const dragged = allTaskRecords.find((task) => task.id === draggedTaskId) ?? null;
+    setBlockedReason(mergeIneligibleReason(dragged, views) ?? mergeIneligibleReason(target, views));
   };
   const rowDragClass = (key) => {
     if (draggingKey === key) return 'dragging';
     if (dragOverKey === key && draggingKey !== null && draggingKey !== key) {
+      if (dropPosition === 'merge') return blockedReason ? 'drop-blocked' : 'drop-merge';
       return dropPosition === 'after' ? 'drop-after' : 'drop-before';
     }
     return '';
   };
+
+  /**
+   * 把一个任务并到目标行上：目标已经在合并组里就加入那个组，否则新建一个组。
+   * 资格不满足时只提示、不写入（§3.8 关键规则 9 的防呆前置）。
+   */
+  const mergeInto = (draggedId, target) => {
+    if (draggedId === target.id) return;
+    const dragged = allTaskRecords.find((task) => task.id === draggedId) ?? null;
+    const reason = mergeIneligibleReason(dragged, views) ?? mergeIneligibleReason(target, views);
+    if (reason) {
+      setBlockedReason(reason);
+      window.setTimeout(() => setBlockedReason(null), 2400);
+      return;
+    }
+    if (target.mergeGroupId) {
+      command((time) => addTaskToMergeGroup({
+        ...time, mergeGroupId: target.mergeGroupId, taskId: draggedId, source: 'drag',
+      }));
+      return;
+    }
+    command((time) => createMergeGroup({ ...time, taskIds: [target.id, draggedId] }));
+  };
+
+  /** 整张合并卡片作为落点：往上拖任务 = 加入这个组。卡片本身不参与列表排序。 */
+  const mergeCardDragProps = (group) => ({
+    draggable: false,
+    className: rowDragClass(`merge-${group.id}`),
+    onDragStart: undefined,
+    onDragEnd: clearDrag,
+    onDragOver: (event) => {
+      event.preventDefault();
+      setDragOverKey(`merge-${group.id}`);
+      setDropPosition('merge');
+      const dragged = allTaskRecords.find((task) => task.id === draggedTaskId) ?? null;
+      setBlockedReason(
+        group.status === 'limitReached'
+          ? '这个合并卡片已经占满预估，先处理掉里面没做完的事再加新的'
+          : mergeIneligibleReason(dragged, views),
+      );
+    },
+    onDrop: (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const drag = parseDrag(event);
+      const blocked = blockedReason;
+      clearDrag();
+      if (blocked || typeof drag?.taskId !== 'string') {
+        if (blocked) {
+          setBlockedReason(blocked);
+          window.setTimeout(() => setBlockedReason(null), 2400);
+        }
+        return;
+      }
+      if (group.taskIds.includes(drag.taskId)) return;
+      command((time) => addTaskToMergeGroup({
+        ...time, mergeGroupId: group.id, taskId: drag.taskId, source: 'drag',
+      }));
+    },
+  });
+
+  /** 卡片内部成员排序：只重排组内顺序（这个番茄里先做哪件），不改成员归属。 */
+  const memberDragProps = (group) => ({
+    className: (taskId) => rowDragClass(`member-${taskId}`),
+    onDragStart: (event, task, index) => {
+      event.stopPropagation();
+      setDrag(event, { from: 'mergeMember', taskId: task.id, index, mergeGroupId: group.id });
+      setDraggingKey(`member-${task.id}`);
+      setDraggedTaskId(task.id);
+    },
+    onDragOver: (event, taskId) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = event.currentTarget.getBoundingClientRect();
+      setDragOverKey(`member-${taskId}`);
+      setDropPosition(event.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+    },
+    onDragEnd: clearDrag,
+    onDrop: (event, index) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const position = dropPosition;
+      const drag = parseDrag(event);
+      clearDrag();
+      if (drag?.from !== 'mergeMember' || drag.mergeGroupId !== group.id) return;
+      const toIndex = dropInsertIndex(drag.index, index, position);
+      if (toIndex === drag.index) return;
+      command((time) => reorderMergeGroupMember({
+        ...time, mergeGroupId: group.id, fromIndex: drag.index, toIndex,
+      }));
+    },
+  });
 
   return (
     <div>
@@ -529,18 +755,47 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
             />
           )}
           <div className="activity-tree">
-            {views.activeTasks.map((task, index) => (
+            {foldMergeRows(views.activeTasks, views).map((row) => {
+              if (row.kind === 'merge') {
+                return (
+                  <MergeCard
+                    key={row.key}
+                    group={row.group}
+                    members={row.members}
+                    remaining={row.remaining}
+                    busy={busy}
+                    command={command}
+                    onOpen={setDetailTaskId}
+                    dragProps={mergeCardDragProps(row.group)}
+                    memberDrag={memberDragProps(row.group)}
+                  />
+                );
+              }
+              const task = row.task;
+              const index = views.activeTasks.findIndex((candidate) => candidate.id === task.id);
+              return (
               <div key={task.id} className="task-tree-group">
                 <div
                   className={`activity-tree-row atr-group draggable ${rowDragClass(`list-${task.id}`)}`}
                   draggable={!busy && !batchAction}
-                  onDragStart={(event) => { setDrag(event, { from: 'list', taskId: task.id, index }); setDraggingKey(`list-${task.id}`); }}
-                  onDragOver={(event) => hoverRow(event, `list-${task.id}`)}
+                  onDragStart={(event) => {
+                    setDrag(event, { from: 'list', taskId: task.id, index });
+                    setDraggingKey(`list-${task.id}`);
+                    setDraggedTaskId(task.id);
+                  }}
+                  onDragOver={(event) => hoverRow(event, `list-${task.id}`, task)}
                   onDragEnd={clearDrag}
                   onDrop={(event) => {
                     const position = dropPosition;
+                    const drag = parseDrag(event);
                     clearDrag();
-                    const reorder = activityReorderPayload(parseDrag(event), index, position);
+                    if (position === 'merge' && typeof drag?.taskId === 'string') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      mergeInto(drag.taskId, task);
+                      return;
+                    }
+                    const reorder = activityReorderPayload(drag, index, position);
                     if (!reorder) return;
                     event.preventDefault();
                     event.stopPropagation();
@@ -598,7 +853,8 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                   onToggleBatch={toggleBatchTask}
                 />
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -637,15 +893,35 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               hint="从左边的清单把事项拖过来，或在上方直接新建今日任务。"
             />
           )}
-          {activeToday.map((task) => {
+          {foldMergeRows(activeToday, views).map((row) => {
+            if (row.kind === 'merge') {
+              return (
+                <MergeCard
+                  key={row.key}
+                  group={row.group}
+                  members={row.members}
+                  remaining={row.remaining}
+                  busy={busy}
+                  command={command}
+                  onOpen={setDetailTaskId}
+                  dragProps={mergeCardDragProps(row.group)}
+                  memberDrag={memberDragProps(row.group)}
+                />
+              );
+            }
+            const task = row.task;
             const dayPlanIndex = dayPlanIndexOf(views.todayTasks, task.id);
             return (
               <div key={task.id} className="today-task-block">
                 <div
                   className={`activity-tree-row atr-group draggable today-task-row ${rowDragClass(`today-${task.id}`)}`}
                   draggable={!busy && !batchAction}
-                  onDragStart={(event) => { setDrag(event, { from: 'today', taskId: task.id, index: dayPlanIndex }); setDraggingKey(`today-${task.id}`); }}
-                  onDragOver={(event) => hoverRow(event, `today-${task.id}`)}
+                  onDragStart={(event) => {
+                    setDrag(event, { from: 'today', taskId: task.id, index: dayPlanIndex });
+                    setDraggingKey(`today-${task.id}`);
+                    setDraggedTaskId(task.id);
+                  }}
+                  onDragOver={(event) => hoverRow(event, `today-${task.id}`, task)}
                   onDragEnd={clearDrag}
                   onDrop={(event) => {
                     const position = dropPosition;
@@ -653,6 +929,10 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                     event.preventDefault();
                     event.stopPropagation();
                     const drag = parseDrag(event);
+                    if (position === 'merge' && typeof drag?.taskId === 'string') {
+                      mergeInto(drag.taskId, task);
+                      return;
+                    }
                     if (drag?.from === 'list') {
                       const addedAtIndex = position === 'after' ? dayPlanIndex + 1 : dayPlanIndex;
                       command((time) => addTaskToToday({
@@ -909,6 +1189,9 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
         </div>
       </div>
 
+      {blockedReason && (
+        <div className="merge-drop-hint" role="status" aria-live="polite">{blockedReason}</div>
+      )}
       {plannerOpen && (
         <BudgetPlannerModal
           dayPlan={views.dayPlan}

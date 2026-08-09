@@ -44,6 +44,12 @@ export interface CurrentTaskViews {
   mergeGroupMembersById: Record<string, Task[]>;
   /** 合并组 id → 该组还剩几个番茄没跑（预估减去已完成轮次，下限 0）。 */
   mergeGroupRemainingById: Record<string, number>;
+  /**
+   * Task id → 是否有过任何 `type='focus'` Session 记录（completed / discarded 都算）。
+   * §3.8 关键规则 9 的合并资格红线：有过记录的任务**永久**不能再被合并。
+   * UI 拿它做拖拽防呆——不能等写入被拒绝了才告诉用户。
+   */
+  hasFocusHistoryByTaskId: Record<string, boolean>;
 }
 
 function compareListOrder(left: Task, right: Task): number {
@@ -163,11 +169,13 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     );
 
   const completedValidFocusCountByTaskId: Record<string, number> = {};
+  const hasFocusHistoryByTaskId: Record<string, boolean> = {};
   let completedFocusCountToday = 0;
   for (const session of sessions) {
-    if (session.type !== 'focus' || session.status !== 'completed' || session.taskIds.length === 0) {
-      continue;
-    }
+    if (session.type !== 'focus') continue;
+    // 合并资格看的是"有没有过 focus 记录"，completed 与 discarded 一视同仁。
+    for (const taskId of session.taskIds) hasFocusHistoryByTaskId[taskId] = true;
+    if (session.status !== 'completed' || session.taskIds.length === 0) continue;
     // §8.5.1：任务维度下，一次合并 Session 给每个成员各记 +1，不平分。
     for (const taskId of session.taskIds) {
       completedValidFocusCountByTaskId[taskId] =
@@ -258,5 +266,6 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     mergeGroups: liveGroups,
     mergeGroupMembersById,
     mergeGroupRemainingById,
+    hasFocusHistoryByTaskId,
   };
 }

@@ -13,12 +13,16 @@ import {
   currentPlanMetrics,
   dayPlanIndexOf,
   dropInsertIndex,
-  splitTodayTasks,
+  dropIntent,
+  foldMergeRows,
   hasRetainedChildren,
   isTaskRunningFocus,
+  mergeCardSummary,
+  mergeIneligibleReason,
+  reconcileBatchSelection,
   splitDraftValid,
   splitLineagePresentation,
-  reconcileBatchSelection,
+  splitTodayTasks,
   unattachedSubtasks,
 } from './taskViewModel';
 
@@ -238,5 +242,55 @@ describe('S13b task view model', () => {
       task: source,
       label: '源自：原任务 · source-1…',
     });
+  });
+});
+
+describe('合并番茄钟视图模型', () => {
+  const group = { id: 'g1', taskIds: ['a', 'b'], estimatedPomodoros: 1, status: 'active' };
+  const member = (id, overrides = {}) => ({
+    id, title: id, status: 'active', mergeGroupId: 'g1', ...overrides,
+  });
+  const views = {
+    mergeGroups: [group],
+    mergeGroupMembersById: { g1: [member('a'), member('b')] },
+    mergeGroupRemainingById: { g1: 1 },
+    hasFocusHistoryByTaskId: {},
+  };
+
+  it('dropIntent：正中间是合并，上下缘是排序', () => {
+    expect(dropIntent(2, 40)).toBe('before');
+    expect(dropIntent(20, 40)).toBe('merge');
+    expect(dropIntent(38, 40)).toBe('after');
+    expect(dropIntent(0, 0)).toBe('before');
+  });
+
+  it('foldMergeRows：同组成员收进一张卡，卡落在第一个成员的位置', () => {
+    const solo = { id: 'c', title: 'c', status: 'active', mergeGroupId: null };
+    const rows = foldMergeRows([solo, member('a'), member('b')], views);
+    expect(rows.map((row) => row.kind)).toEqual(['task', 'merge']);
+    expect(rows[1].key).toBe('g1');
+    expect(rows[1].members.map(({ id }) => id)).toEqual(['a', 'b']);
+  });
+
+  it('foldMergeRows：组已解散但视图没刷新到时，按独立任务渲染而不是吞掉这一行', () => {
+    const rows = foldMergeRows([member('a')], { ...views, mergeGroups: [] });
+    expect(rows).toEqual([{ kind: 'task', key: 'a', task: member('a') }]);
+  });
+
+  it('mergeIneligibleReason：计时过、已在别组、非 active 都拒绝', () => {
+    const fresh = { id: 'x', status: 'active', mergeGroupId: null };
+    expect(mergeIneligibleReason(fresh, views)).toBeNull();
+    expect(mergeIneligibleReason(fresh, { ...views, hasFocusHistoryByTaskId: { x: true } }))
+      .toContain('已经计时过');
+    expect(mergeIneligibleReason({ ...fresh, mergeGroupId: 'g9' }, views)).toContain('另一个合并卡片');
+    expect(mergeIneligibleReason({ ...fresh, status: 'completed' }, views)).toContain('进行中');
+  });
+
+  it('mergeCardSummary：进度与硬上限阻断标记', () => {
+    const summary = mergeCardSummary(group, [member('a', { status: 'completed' }), member('b')], 1);
+    expect(summary.progressLabel).toBe('1 / 2 已完成');
+    expect(summary.estimateLabel).toBe('整组 1 个番茄');
+    expect(summary.blocked).toBe(false);
+    expect(mergeCardSummary({ ...group, status: 'limitReached' }, [], 0).blocked).toBe(true);
   });
 });

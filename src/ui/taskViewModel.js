@@ -209,3 +209,76 @@ export function splitLineagePresentation(task, tasks) {
   }
   return null;
 }
+
+/**
+ * 合并资格（v4.1 §3.8 关键规则 9）：只有从未有过任何 focus 记录的 active 任务
+ * 才能被合并，且不能已经在别的组里。有过一条 focus 记录就**永久**失去资格。
+ * 返回 null 表示可以合并，返回字符串是给用户看的拒绝理由（拖拽防呆用）。
+ */
+export function mergeIneligibleReason(task, views) {
+  if (!task) return '任务不存在';
+  if (task.status !== 'active') return '只有进行中的任务可以合并';
+  if (task.mergeGroupId !== null) return '这个任务已经在另一个合并卡片里';
+  if (views.hasFocusHistoryByTaskId?.[task.id]) return '这个任务已经计时过，不能再并进合并番茄';
+  return null;
+}
+
+/**
+ * 拖拽落点意图：拖到某行的**正中间**是合并，落在上/下缘是排序。
+ * 中间带占行高的中段（默认 40%），两侧各留 30% 给排序，避免误触。
+ */
+export function dropIntent(offsetY, height, mergeBandRatio = 0.4) {
+  if (!(height > 0)) return 'before';
+  const ratio = offsetY / height;
+  const edge = (1 - mergeBandRatio) / 2;
+  if (ratio < edge) return 'before';
+  if (ratio > 1 - edge) return 'after';
+  return 'merge';
+}
+
+/**
+ * 把一列任务折叠成渲染行：属于同一个合并组的成员收进一张合并卡，
+ * 卡片落在该组**第一个成员**原本的位置，其余成员不再单独出行。
+ *
+ * 合并组成员之间完全平等、互相独立——合并只表示"这几件事各自都占不满一个番茄"，
+ * 不表示它们属于同一件事，所以这里不按任何上层归属重排或分组。
+ */
+export function foldMergeRows(tasks, views) {
+  const rows = [];
+  const emitted = new Set();
+  for (const task of tasks) {
+    const groupId = task.mergeGroupId;
+    if (groupId === null || groupId === undefined) {
+      rows.push({ kind: 'task', key: task.id, task });
+      continue;
+    }
+    if (emitted.has(groupId)) continue;
+    const group = views.mergeGroups?.find((candidate) => candidate.id === groupId);
+    if (!group) {
+      // 组已解散但视图还没刷新到：按独立任务渲染，不吞掉这一行。
+      rows.push({ kind: 'task', key: task.id, task });
+      continue;
+    }
+    emitted.add(groupId);
+    rows.push({
+      kind: 'merge',
+      key: groupId,
+      group,
+      members: views.mergeGroupMembersById?.[groupId] ?? [],
+      remaining: views.mergeGroupRemainingById?.[groupId] ?? 0,
+    });
+  }
+  return rows;
+}
+
+/** 合并卡片上那行说明文字：几件事、这一组占几个番茄、是否被硬上限卡住。 */
+export function mergeCardSummary(group, members, remaining) {
+  const done = members.filter((task) => task.status === 'completed').length;
+  return {
+    memberLabel: `${members.length} 件小事`,
+    progressLabel: `${done} / ${members.length} 已完成`,
+    estimateLabel: `整组 ${group.estimatedPomodoros} 个番茄`,
+    remainingLabel: remaining > 0 ? `还剩 ${remaining} 个` : '预估已用满',
+    blocked: group.status === 'limitReached',
+  };
+}

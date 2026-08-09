@@ -2128,3 +2128,129 @@ select:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* === 合并番茄钟（v4.1 §3.8）===
+   视觉上必须与子任务的缩进树明确区分：子任务是「母子从属」，用左侧竖线 + 缩进表达；
+   合并组是「平等并列」——几件互不相关的小事凑在一个番茄里，因此用一个**包住成员的
+   方框**表达，成员之间没有缩进、没有层级线，一律齐平。 */
+.merge-card {
+  margin-bottom: 4px;
+  padding: 8px;
+  border: 1px solid var(--accent-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--card));
+  transition: box-shadow var(--t-micro), border-color var(--t-micro);
+}
+.merge-card.is-blocked {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--card));
+}
+.merge-card.dragging { opacity: .4; }
+.merge-card.drop-merge { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.merge-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding: 0 2px 6px;
+}
+.merge-card-mark {
+  flex-shrink: 0;
+  width: 14px; height: 10px;
+  border: 1.5px solid var(--accent);
+  border-radius: 3px;
+  /* 与子任务的圆点 bullet 刻意不同形：方框 = 「装在一起」 */
+}
+.merge-card-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-ink);
+  letter-spacing: .01em;
+}
+.merge-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.merge-card-actions { display: flex; align-items: center; gap: 2px; }
+.merge-card-blocked-hint {
+  margin: 0 2px 6px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: rgba(188, 91, 64, .1);
+  color: var(--accent-ink);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* 成员行：与顶层行同一套栅格，但**不缩进、不加左侧层级线**，
+   这是与 .task-subtree 的关键区别。 */
+.merge-members { display: flex; flex-direction: column; gap: 1px; }
+.merge-member {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 30px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  transition: background var(--t-micro);
+}
+.merge-member:hover { background: rgba(28, 25, 22, .035); }
+.merge-member.dragging { opacity: .4; }
+.merge-member.drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
+.merge-member.drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
+.merge-member.is-completed .merge-member-name {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.merge-member-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.merge-member-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--t-micro);
+}
+.merge-member:hover .merge-member-actions,
+.merge-member:focus-within .merge-member-actions { opacity: 1; }
+
+/* 拖到「不能合并」的目标上时的防呆反馈（§4.1：禁止放置 + 说明原因） */
+.activity-tree-row.drop-blocked,
+.merge-card.drop-blocked {
+  box-shadow: inset 0 0 0 2px var(--warn);
+  cursor: not-allowed;
+}
+.merge-drop-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 40;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12.5px;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+
+/* 计时页：本次专注涉及的任务（合并时才出现，单任务专注不展示这张卡） */
+.timer-merge-card .merge-members { gap: 2px; }
+.timer-merge-member-check {
+  width: 15px; height: 15px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  transition: background var(--t-micro);
+}
+.timer-merge-member-check.is-done { background: var(--accent); }
