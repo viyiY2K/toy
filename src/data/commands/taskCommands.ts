@@ -843,10 +843,16 @@ export async function completeTaskManually(
       if (!task || (task.status !== 'active' && task.status !== 'splitNeeded')) {
         throw new Error('只有有效的 active/splitNeeded Task 可以手动完成');
       }
+      /*
+       * 红线 24：合并 focus 不给任何成员记有效番茄，因此这里只数**非合并**的
+       * completed focus——口径必须与 completeTaskFromPomodoro 完全一致，否则同一个
+       * Task 走手动完成和走番茄完成会得到两个不同的快照值。
+       */
       const validFocusCountAtCompletion = sessions.filter(
         (session) =>
           session.type === 'focus' &&
           session.status === 'completed' &&
+          session.mergeGroupId === null &&
           session.taskIds.includes(task.id),
       ).length;
       const completed: Task = {

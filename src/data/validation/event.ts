@@ -733,7 +733,19 @@ async function validateEntityConsistency(
     }
     if (type === 'task.completed' && payload.completionSource === 'pomodoro') {
       checkSame(session.type, 'focus', 'event.taskCompletion.sessionType', 'sessionId', collector);
-      checkSame(session.status, 'completed', 'event.taskCompletion.sessionStatus', 'sessionId', collector);
+      /*
+       * 两个合法入口（§3.8 关键规则 11）：到点后的收尾确认（session 已 completed），
+       * 以及合并专注**进行中**逐个勾选成员完成（session 仍 active 且是合并轮）。
+       * 后者是 taskSegments 切分的事实来源——没有它，时间就无法按成员切分，
+       * 所以这里不能一律要求 session 已终结。
+       */
+      collector.check(
+        session.status === 'completed'
+          || (session.status === 'active' && session.mergeGroupId !== null),
+        'event.taskCompletion.sessionStatus',
+        'sessionId',
+        'pomodoro 完成必须关联 completed focus，或进行中的合并 focus',
+      );
       checkTaskAssociation(session, event.taskId, 'event.taskCompletion.taskId', collector);
     }
     if (type === 'energy.recorded' && typeof payload.source === 'string' && payload.source.startsWith('after')) {

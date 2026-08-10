@@ -23,6 +23,7 @@ import { createManualTask } from './taskCommands';
 import {
   completeFocus,
   completeTaskFromPomodoro,
+  discardFocus,
   skipPendingBreak,
   startMergeGroupFocus,
 } from './timerCommands';
@@ -289,6 +290,51 @@ describe('合并番茄钟端到端流程', () => {
       completionSource: 'pomodoro',
       validFocusCountAtCompletion: 0,
     });
+  });
+
+  it('进行中逐个勾选成员完成：分段按勾选时刻切开，推进到下一位', async () => {
+    const [a, b, c] = [await chore('A'), await chore('B'), await chore('C')];
+    const group = (await createMergeGroup({ ...clock(), taskIds: [a.id, b.id, c.id] })).value;
+    const started = (await startMergeGroupFocus({ ...clock(), mergeGroupId: group.id })).value;
+
+    // 这是 §3.8 关键规则 11 要求的入口：没有它，时间就无法按成员切分。
+    await completeTaskFromPomodoro({ ...clock(), sessionId: started.id, taskId: a.id });
+    expect((await taskById(a.id)).status).toBe('completed');
+
+    // 严格顺序：A 完成后当前成员变成 B，不能越过 B 直接勾 C。
+    await expect(
+      completeTaskFromPomodoro({ ...clock(), sessionId: started.id, taskId: c.id }),
+    ).rejects.toThrow('只能勾选当前正在执行的成员');
+
+    await completeFocus({ ...clock(), sessionId: started.id, actualDuration: 1500 });
+    const stored = (await dataStore.get<Session>(STORE.sessions, started.id))!;
+
+    // A 拿被勾完成之前那段，B 是终结时的当前成员吃掉剩余，C 始终没轮到记 0。
+    expect(stored.taskSegments.map(({ taskId }) => taskId)).toEqual([a.id, b.id, c.id]);
+    expect(stored.taskSegments.at(-1)!.actualDuration).toBe(0);
+    expect(
+      stored.taskSegments.reduce((sum, segment) => sum + segment.actualDuration, 0),
+    ).toBe(1500);
+    expect(stored.taskSegments[0]!.actualDuration).toBeGreaterThan(0);
+  });
+
+  it('作废的合并 focus 保留已发生的分段，但不给任何维度记有效番茄', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    const group = (await createMergeGroup({ ...clock(), taskIds: [a.id, b.id] })).value;
+    const started = (await startMergeGroupFocus({ ...clock(), mergeGroupId: group.id })).value;
+    await completeTaskFromPomodoro({ ...clock(), sessionId: started.id, taskId: a.id });
+
+    await discardFocus({ ...clock(), sessionId: started.id, actualDuration: 600 });
+
+    const stored = (await dataStore.get<Session>(STORE.sessions, started.id))!;
+    expect(stored.status).toBe('discarded');
+    expect(
+      stored.taskSegments.reduce((sum, segment) => sum + segment.actualDuration, 0),
+    ).toBe(600);
+
+    const views = await loadCurrentTaskViews(clock());
+    expect(views.mergeGroupValidFocusCountById[group.id]).toBe(0);
+    expect(views.completedValidFocusCountByTaskId[a.id] ?? 0).toBe(0);
   });
 
   it('整组做完 → completed 成功终态，配 completedAt 与组自己的有效番茄数', async () => {
