@@ -13,9 +13,11 @@ import { loadCurrentTaskViews } from '../queries/currentTaskViews';
 import type { Event, MergeGroup, Session, Task } from '../schema';
 import {
   adjustMergeGroupEstimate,
+  completeMergeGroup,
   createMergeGroup,
   endMergeGroupRound,
   markMergeGroupLimitReached,
+  renameMergeGroup,
 } from './mergeGroupCommands';
 import { createManualTask } from './taskCommands';
 import {
@@ -287,5 +289,62 @@ describe('合并番茄钟端到端流程', () => {
       completionSource: 'pomodoro',
       validFocusCountAtCompletion: 0,
     });
+  });
+
+  it('整组做完 → completed 成功终态，配 completedAt 与组自己的有效番茄数', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    const group = (await createMergeGroup({ ...clock(), taskIds: [a.id, b.id] })).value;
+    const first = await runRound(group.id);
+    await completeTaskFromPomodoro({ ...clock(), sessionId: first.id, taskId: a.id });
+    await completeTaskFromPomodoro({ ...clock(), sessionId: first.id, taskId: b.id });
+
+    const done = await completeMergeGroup({ ...clock(), mergeGroupId: group.id });
+
+    expect(done.value.status).toBe('completed');
+    expect(done.value.completedAt).not.toBeNull();
+    expect(done.value.dissolvedAt).toBeNull();
+    const event = (await allEvents()).find(
+      (candidate) => candidate.type === 'mergeGroup.completed' && candidate.mergeGroupId === group.id,
+    );
+    // 记的是**这一组**拿到的有效番茄数（跑了一轮 = 1），不是任何成员的番茄数。
+    expect(event!.payload).toMatchObject({ validFocusCountAtCompletion: 1 });
+
+    // 红线 28：completed 是终态，之后不许再增删成员、追加预估或开新一轮。
+    await expect(
+      adjustMergeGroupEstimate({ ...clock(), mergeGroupId: group.id, estimatedPomodoros: 2 }),
+    ).rejects.toThrow('已完成');
+    await expect(
+      startMergeGroupFocus({ ...clock(), mergeGroupId: group.id }),
+    ).rejects.toThrow('已完成');
+  });
+
+  it('还有未完成成员时不能确认整组完成', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    const group = (await createMergeGroup({ ...clock(), taskIds: [a.id, b.id] })).value;
+    const first = await runRound(group.id);
+    await completeTaskFromPomodoro({ ...clock(), sessionId: first.id, taskId: a.id });
+
+    await expect(
+      completeMergeGroup({ ...clock(), mergeGroupId: group.id }),
+    ).rejects.toThrow('还有未完成的成员');
+  });
+
+  it('改名留痕：mergeGroup.renamed 带前后名称，不影响成员与统计', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    const group = (await createMergeGroup({ ...clock(), taskIds: [a.id, b.id] })).value;
+    expect(group.title).toBe('杂事番茄');
+
+    const renamed = await renameMergeGroup({
+      ...clock(), mergeGroupId: group.id, title: '周一杂事清理',
+    });
+
+    expect(renamed.value.title).toBe('周一杂事清理');
+    expect(renamed.value.taskIds).toEqual([a.id, b.id]);
+    const event = (await allEvents()).find((candidate) => candidate.type === 'mergeGroup.renamed');
+    expect(event!.payload).toMatchObject({ oldTitle: '杂事番茄', newTitle: '周一杂事清理' });
+
+    await expect(
+      renameMergeGroup({ ...clock(), mergeGroupId: group.id, title: '  ' }),
+    ).rejects.toThrow('不能为空');
   });
 });

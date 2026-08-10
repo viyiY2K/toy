@@ -215,6 +215,8 @@ export async function startMergeGroupFocus(
         transaction.getAll<Event>(EVENT_STORE),
       ]);
       if (!group) throw new Error('合并组不存在');
+      // 红线 28：completed 与 dissolved 都是终态，但语义不同，报错文案也要分开。
+      if (group.status === 'completed') throw new Error('合并组已完成，不能再开启新一轮');
       if (group.status === 'dissolved') throw new Error('合并组已解散');
       if (group.status === 'limitReached') {
         throw new Error('合并组已达上限，必须先移出剩余成员或整体解散');
