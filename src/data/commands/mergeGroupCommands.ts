@@ -120,7 +120,7 @@ const MERGE_STORES = [STORE.tasks, STORE.sessions, STORE.mergeGroups, EVENT_STOR
  * MergeGroup 必须先于 Task 落库——Task.mergeGroupId 的校验要求合并组的 taskIds 回指本 Task。
  */
 export async function createMergeGroup(
-  input: InitializationClock & { taskIds: readonly string[] },
+  input: InitializationClock & { taskIds: readonly string[]; title?: string },
 ): Promise<TaskCommandResult<MergeGroup>> {
   return executeAtomicWrite(
     {
@@ -136,7 +136,11 @@ export async function createMergeGroup(
       }
       for (const taskId of input.taskIds) await assertMergeEligible(transaction, taskId);
 
-      const group = makeMergeGroup({ now: input.now, taskIds: [...input.taskIds] });
+      const group = makeMergeGroup({
+        now: input.now,
+        taskIds: [...input.taskIds],
+        title: input.title,
+      });
       await transaction.put(STORE.mergeGroups, group);
       for (const taskId of group.taskIds) {
         const task = await transaction.get<Task>(STORE.tasks, taskId);
@@ -147,7 +151,11 @@ export async function createMergeGroup(
           ...eventFields(input, transaction.correlationId),
           type: 'mergeGroup.created',
           mergeGroupId: group.id,
-          payload: { taskIds: [...group.taskIds], estimatedPomodoros: group.estimatedPomodoros },
+          payload: {
+            title: group.title,
+            taskIds: [...group.taskIds],
+            estimatedPomodoros: group.estimatedPomodoros,
+          },
         }),
       );
       return { value: group, correlationId: transaction.correlationId };

@@ -44,6 +44,7 @@ export type {
   Session,
   SessionType,
   SessionStatus,
+  TaskSegment,
   SkipKind,
   MakeSessionInput,
 } from './session';
@@ -87,4 +88,8 @@ export type {
   MergeGroupDissolvedReason,
   MakeMergeGroupInput,
 } from './mergeGroup';
-export { makeMergeGroup } from './mergeGroup';
+export {
+  makeMergeGroup,
+  DEFAULT_MERGE_GROUP_TITLE,
+  MERGE_GROUP_TITLE_MAX_LENGTH,
+} from './mergeGroup';

@@ -14,8 +14,10 @@
  * - 2：合并番茄钟功能批次（v4.1 §3.8）——Session.taskId 标量改 taskIds 数组，
  *   Task / Session / Event 新增 mergeGroupId，新增 MergeGroup 实体。
  *   记录形状变了，故必须 bump；既有记录由 `storage/migrations.ts` 在 DB 升级时就地迁移。
+ * - 3：合并番茄钟统计口径收口（v4.3 §3.3、§3.8）——Session 新增 taskSegments 成员分段，
+ *   MergeGroup 新增 title 与 completedAt（并新增 status='completed' 终态）。
  */
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 /** legacy 哨兵：无版本 / 旧原型数据按此处理。 */
 export const LEGACY_SCHEMA_VERSION = 0;

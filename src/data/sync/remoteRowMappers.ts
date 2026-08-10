@@ -9,6 +9,7 @@
  */
 
 import { STORE, type SyncableEntityMap, type SyncableStoreName } from '../dataStore';
+import { DEFAULT_MERGE_GROUP_TITLE } from '../schema';
 import { CURRENT_SCHEMA_VERSION } from '../schemaVersion';
 import type { Event } from '../schema';
 
@@ -108,6 +109,7 @@ export function toRemoteEntityRow<S extends SyncableStoreName>(
         status: session.status,
         task_ids: session.taskIds,
         merge_group_id: session.mergeGroupId,
+        task_segments: session.taskSegments,
         started_at: session.startedAt,
         ended_at: session.endedAt,
         planned_duration: session.plannedDuration,
@@ -171,10 +173,12 @@ export function toRemoteEntityRow<S extends SyncableStoreName>(
       const group = record as SyncableEntityMap['mergeGroups'];
       return {
         ...base,
+        title: group.title,
         task_ids: group.taskIds,
         estimated_pomodoros: group.estimatedPomodoros,
         estimate_rounds: group.estimateRounds,
         status: group.status,
+        completed_at: group.completedAt,
         dissolved_at: group.dissolvedAt,
         dissolved_reason: group.dissolvedReason,
       };
@@ -290,6 +294,13 @@ export function fromRemoteEntityRow<S extends SyncableStoreName>(
           ? (row.task_ids as string[])
           : typeof row.task_id === 'string' ? [row.task_id] : [],
         mergeGroupId: (row.merge_group_id as string | null | undefined) ?? null,
+        /*
+         * 成员分段是 v4.3 才有的字段。更早写入的远端行没有它，一律回填空数组——
+         * 与本地 v2→v3 迁移同一口径：历史合并 Session 没有可还原的分段事实，不伪造。
+         */
+        taskSegments: Array.isArray(row.task_segments)
+          ? (row.task_segments as SyncableEntityMap['sessions']['taskSegments'])
+          : [],
         startedAt: row.started_at as string,
         endedAt: row.ended_at as string | null,
         plannedDuration: row.planned_duration as number | null,
@@ -354,10 +365,16 @@ export function fromRemoteEntityRow<S extends SyncableStoreName>(
     case STORE.mergeGroups: {
       const entity: SyncableEntityMap['mergeGroups'] = {
         ...base,
+        // v4.3 前的远端行没有 title；回填系统默认名，保证非空约束（§3.8 一致性约束 8）。
+        title:
+          typeof row.title === 'string' && row.title.trim() !== ''
+            ? row.title
+            : DEFAULT_MERGE_GROUP_TITLE,
         taskIds: row.task_ids as string[],
         estimatedPomodoros: row.estimated_pomodoros as number,
         estimateRounds: row.estimate_rounds as SyncableEntityMap['mergeGroups']['estimateRounds'],
         status: row.status as SyncableEntityMap['mergeGroups']['status'],
+        completedAt: (row.completed_at as string | null | undefined) ?? null,
         dissolvedAt: row.dissolved_at as string | null,
         dissolvedReason: row.dissolved_reason as SyncableEntityMap['mergeGroups']['dissolvedReason'],
       };

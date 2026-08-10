@@ -1,21 +1,11 @@
 /**
- * ⚠️ 统计口径已被推翻，本文件中与"有效番茄归属"相关的断言属**旧口径**，待单独重做。
+ * 合并番茄钟端到端流程（v4.3 §3.3 / §3.8 / §8.5）。
  *
- * 旧口径（本文件当前断言的）：一次合并 focus 完成后，taskIds 里每个成员各记 1 个完整
- * 有效番茄，"任务维度加总 > 全局总数"属设计如此。
- *
- * 新口径（以此为准，规范正文由「中长期主线任务」那条线改写，尚未落笔）：
- * 统计单位是合并组本身而不是成员任务——全局有效番茄 +1 归属到这个合并组，组内成员
- * 【不】记有效番茄，只按组内次序切分各自的实际耗时（三段之和精确等于
- * Session.actualDuration）。需要 MergeGroup.title 与 Session 上的「成员分段」数组，
- * 两者本轮均未引入。
- *
- * 连带尚未定案、不得自行填空的点：成员完成时 completionSource 记什么、
- * task.completed 的 validFocusCountAtCompletion 写什么、discarded 的合并 focus 分段
- * 怎么处理、跨多轮如何累计、中途加入的成员从哪一刻起算。
- *
- * 本文件里**与合并组生命周期有关**的断言（整体编号、到点二选一、自动解散、硬上限
- * 阻断）不受口径变更影响，仍然有效。
+ * 统计口径（红线 24–26）：**番茄归合并组，时间归成员**。一次正常完成的合并 focus，
+ * 全局有效番茄 +1、该 MergeGroup +1、每个成员 Task **+0**；成员只从
+ * `Session.taskSegments` 拿属于自己的那一段耗时，各段之和精确等于
+ * `Session.actualDuration`。v4.1/v4.2 的"每个成员各记一个完整有效番茄、任务维度加总
+ * 可以大于全局"已作废，出现即为缺陷。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { dataStore, EVENT_STORE, STORE } from '../dataStore';
@@ -105,7 +95,7 @@ async function runRound(mergeGroupId: string): Promise<Session> {
 describe('合并番茄钟端到端流程', () => {
   beforeEach(settleOpenBreaks);
 
-  it('一轮合并专注：组整体编号、每个成员各记一个有效番茄、全局只算一次', async () => {
+  it('一轮合并专注：组整体编号、番茄记在组身上、成员各记 0', async () => {
     const [slack, coffee, notes] = [await chore('回复 Slack'), await chore('订咖啡豆'), await chore('归档笔记')];
     const group = (await createMergeGroup({
       ...clock(), taskIds: [slack.id, coffee.id, notes.id],
@@ -130,11 +120,21 @@ describe('合并番茄钟端到端流程', () => {
     expect(completedEvents).toHaveLength(3);
 
     const views = await loadCurrentTaskViews(clock());
-    // §8.5.1：任务维度每个成员各 +1；§8.3.1：全局按 Session 记录数只 +1。
+    // 红线 24：成员一个番茄都不记；番茄整体归这个合并组；全局按 Session 记录数 +1。
     for (const task of [slack, coffee, notes]) {
-      expect(views.completedValidFocusCountByTaskId[task.id]).toBe(1);
+      expect(views.completedValidFocusCountByTaskId[task.id] ?? 0).toBe(0);
     }
+    expect(views.mergeGroupValidFocusCountById[group.id]).toBe(1);
     expect(views.completedFocusCountToday).toBe(1);
+
+    // 红线 25：各分段之和必须**精确等于** Session.actualDuration，未轮到的成员留显式 0。
+    const stored = (await dataStore.get<Session>(STORE.sessions, started.id))!;
+    expect(stored.taskSegments.map(({ taskId }) => taskId).sort()).toEqual(
+      [slack.id, coffee.id, notes.id].sort(),
+    );
+    expect(
+      stored.taskSegments.reduce((sum, segment) => sum + segment.actualDuration, 0),
+    ).toBe(stored.actualDuration);
   });
 
   it('§3.8 关键规则 4「追加预估」：已完成的留在组里，下一轮只带未完成的', async () => {
@@ -161,9 +161,13 @@ describe('合并番茄钟端到端流程', () => {
     const before = (await loadCurrentTaskViews(clock())).completedFocusCountToday;
     await completeFocus({ ...clock(), sessionId: second.id, actualDuration: 1500 });
     const views = await loadCurrentTaskViews(clock());
-    // a 只在第 1 轮拿 credit，b 两轮都拿；全局按 Session 记录数只 +1。
-    expect(views.completedValidFocusCountByTaskId[a.id]).toBe(1);
-    expect(views.completedValidFocusCountByTaskId[b.id]).toBe(2);
+    /*
+     * 红线 24：跨多少轮都一样——成员的完整有效番茄数恒为 0，两轮正常完成只让
+     * 这个**合并组**的有效番茄数变成 2。成员的收获是各自的分段耗时，不是番茄数。
+     */
+    expect(views.completedValidFocusCountByTaskId[a.id] ?? 0).toBe(0);
+    expect(views.completedValidFocusCountByTaskId[b.id] ?? 0).toBe(0);
+    expect(views.mergeGroupValidFocusCountById[group.id]).toBe(2);
     expect(views.completedFocusCountToday).toBe(before + 1);
   });
 
@@ -269,11 +273,19 @@ describe('合并番茄钟端到端流程', () => {
     const completed = await completeTaskFromPomodoro({
       ...clock(), sessionId: first.id, taskId: b.id,
     });
+    /*
+     * 红线 26：`completionSource='pomodoro'` ≠ 该 Task 有有效番茄。
+     * 合并成员确实是在番茄专注流程里完成的（记 'pomodoro'），但它自己一个完整有效
+     * 番茄都没拿到（记 0）——这个组合合法且是预期的，下游统计不得由 'pomodoro'
+     * 反推"至少有一个有效番茄"。
+     */
     expect(completed.value.completionSource).toBe('pomodoro');
-    // §7.x task.completed：validFocusCountAtCompletion 写当时累计的有效标准 focus 数。
     const event = (await allEvents()).find(
       (candidate) => candidate.type === 'task.completed' && candidate.taskId === b.id,
     );
-    expect(event!.payload).toMatchObject({ validFocusCountAtCompletion: 1 });
+    expect(event!.payload).toMatchObject({
+      completionSource: 'pomodoro',
+      validFocusCountAtCompletion: 0,
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { migrateToVersion2 } from './migrations';
+import { migrateRecords } from './migrations';
 import type { AtomicStorageTransaction, StorageAdapter } from './storageAdapter';
 import { DB_NAME, DB_VERSION, PRIMARY_KEY, STORE_NAMES } from './stores';
 
@@ -18,9 +18,13 @@ function openDatabase(): Promise<IDBDatabase> {
           db.createObjectStore(name, { keyPath: PRIMARY_KEY });
         }
       }
+      /*
+       * 一趟游标跑完整条迁移链（见 migrations.ts `migrateRecord`）。
+       * 按版本各开一趟会让后一趟覆盖前一趟的结果——同一事务里两个游标读到的都是原始记录。
+       */
       const upgrade = request.transaction;
-      if (upgrade && event.oldVersion >= 1 && event.oldVersion < 2) {
-        migrateToVersion2(upgrade);
+      if (upgrade && event.oldVersion >= 1) {
+        migrateRecords(upgrade, event.oldVersion);
       }
     };
     request.onsuccess = () => resolve(request.result);

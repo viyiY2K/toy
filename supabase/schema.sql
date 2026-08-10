@@ -90,6 +90,7 @@ create table if not exists public.sessions (
   status text not null check (status in ('active','completed','discarded','skipped')),
   task_ids jsonb not null default '[]'::jsonb,
   merge_group_id uuid,
+  task_segments jsonb not null default '[]'::jsonb,
   started_at timestamptz not null,
   ended_at timestamptz,
   planned_duration int,
@@ -189,7 +190,7 @@ create unique index if not exists settings_user_singleton_active
   where deleted_at is null;
 
 -- ============================================================
--- 7. merge_groups（合并番茄钟，v4.1 §3.8）
+-- 7. merge_groups（合并番茄钟，v4.1 §3.8；title / completed_at 为 v4.3 §3.8 新增）
 -- ============================================================
 create table if not exists public.merge_groups (
   id uuid primary key,
@@ -200,15 +201,40 @@ create table if not exists public.merge_groups (
   deleted_at timestamptz,
   device_id uuid,
 
+  title text not null default '杂事番茄',
   task_ids jsonb not null,
   estimated_pomodoros int not null check (estimated_pomodoros between 1 and 7),
   estimate_rounds jsonb not null,
-  status text not null check (status in ('active','limitReached','dissolved')),
+  status text not null check (status in ('active','limitReached','completed','dissolved')),
+  completed_at timestamptz,
   dissolved_at timestamptz,
   dissolved_reason text check (dissolved_reason in ('membersBelowMinimum','manualDissolved'))
 );
 
 create index if not exists merge_groups_user_updated_idx on public.merge_groups (user_id, updated_at);
+
+-- ------------------------------------------------------------
+-- 7b. v4.3 就地升级（已经建过表的库需要，新库跑上面的 create 就够了）
+--
+-- 上面的 `create table if not exists` 对已存在的表是 no-op，不会补列，因此老库必须靠
+-- 这一段把 v4.3 新增的列加上。全部 if not exists，可重复执行。
+-- 本地对应的 IndexedDB 迁移见 src/data/storage/migrations.ts（v2 → v3），两侧口径一致：
+-- 历史合并 Session 不伪造成员分段，一律留空数组。
+-- ------------------------------------------------------------
+alter table public.sessions
+  add column if not exists task_segments jsonb not null default '[]'::jsonb;
+
+alter table public.merge_groups
+  add column if not exists title text not null default '杂事番茄';
+alter table public.merge_groups
+  add column if not exists completed_at timestamptz;
+
+-- status 需要放行 v4.3 新增的成功终态 'completed'：CHECK 约束不能 add if not exists，
+-- 只能先删后建。老库的约束名由 Postgres 自动生成为 <表名>_<列名>_check。
+alter table public.merge_groups drop constraint if exists merge_groups_status_check;
+alter table public.merge_groups
+  add constraint merge_groups_status_check
+  check (status in ('active','limitReached','completed','dissolved'));
 
 -- ============================================================
 -- 8. events（append-only：不建 updated_at/deleted_at/device_id/synced_at，

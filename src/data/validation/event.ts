@@ -1,6 +1,6 @@
 import { EVENT_TYPES, type EventType } from '../events';
 import { CURRENT_SCHEMA_VERSION } from '../schemaVersion';
-import type { Event } from '../schema';
+import { MERGE_GROUP_TITLE_MAX_LENGTH, type Event } from '../schema';
 import type { ValidationContext } from './context';
 import {
   EntityValidationError,
@@ -115,6 +115,8 @@ const promptType = enumRule([
   'taskSplitSuggestion',
   'mergeGroupLimitReached',
 ] as const);
+/** 合并组名称：非空、≤ 200（§3.8 一致性约束 8）。 */
+const mergeGroupTitle = stringRule({ nonEmpty: true, max: MERGE_GROUP_TITLE_MAX_LENGTH });
 /** 合并组创建时的初始成员：≥ 2 个不重复 Task id（§7.19 mergeGroup.created）。 */
 const mergeMemberIds: Rule = (value, path, collector) => {
   stringArrayRule({ nonEmpty: true, unique: true })(value, path, collector);
@@ -322,11 +324,13 @@ export const EVENT_PAYLOAD_SCHEMAS = {
   'prompt.shown': schema({ promptType, promptContext }, undefined, validatePrompt),
   'prompt.dismissed': schema({ promptType, promptContext }, undefined, validatePrompt),
   // 合并番茄钟功能批次（§7.19）。数值上限完全照搬 Task 侧规则：1–7 封顶、最多三轮。
-  'mergeGroup.created': schema({ taskIds: mergeMemberIds, estimatedPomodoros: integerRule(1, 7) }),
+  'mergeGroup.created': schema({ title: mergeGroupTitle, taskIds: mergeMemberIds, estimatedPomodoros: integerRule(1, 7) }),
   'mergeGroup.taskAdded': schema({ addedAtIndex: nonNegativeInteger, source: enumRule(['drag', 'duringActiveSession'] as const) }),
   'mergeGroup.taskRemoved': schema({ removedAtIndex: nonNegativeInteger, reason: enumRule(['manualUnmerge', 'sessionEndedIncomplete'] as const) }),
   'mergeGroup.reordered': schema({ fromIndex: nonNegativeInteger, toIndex: nonNegativeInteger }, undefined, (p, c) => requireDifferent(p, 'fromIndex', 'toIndex', c)),
   'mergeGroup.estimateAdjusted': schema({ round: literalRule([2, 3]), oldEstimate: integerRule(1, 7), newEstimate: integerRule(1, 7) }, undefined, (p, c) => requireDifferent(p, 'oldEstimate', 'newEstimate', c)),
+  'mergeGroup.renamed': schema({ oldTitle: mergeGroupTitle, newTitle: mergeGroupTitle }, undefined, (p, c) => requireDifferent(p, 'oldTitle', 'newTitle', c)),
+  'mergeGroup.completed': schema({ completedAt: isoRule(), validFocusCountAtCompletion: nonNegativeInteger }),
   'mergeGroup.dissolved': schema({ finalTaskIds: stringArrayRule({ unique: true }), dissolvedReason: enumRule(['membersBelowMinimum', 'manualDissolved'] as const) }),
   'error.dataWriteFailed': schema({ errorCode: nonEmptyString, errorMessage: nullableString, context: objectRule }),
   'error.unexpectedState': schema({ errorCode: nonEmptyString, errorMessage: nullableString, context: objectRule }),
@@ -374,7 +378,9 @@ export const EVENT_ASSOCIATION_SCHEMAS = {
   'demo.loaded': a([]), 'demo.cleared': a([]), 'notification.shown': a([], ['sessionId', 'taskId']),
   'prompt.shown': a([], ['taskId', 'sessionId', 'mergeGroupId']), 'prompt.dismissed': a([], ['taskId', 'sessionId', 'mergeGroupId']),
   'mergeGroup.created': a(['mergeGroupId']), 'mergeGroup.taskAdded': a(['mergeGroupId', 'taskId']), 'mergeGroup.taskRemoved': a(['mergeGroupId', 'taskId']),
-  'mergeGroup.reordered': a(['mergeGroupId', 'taskId']), 'mergeGroup.estimateAdjusted': a(['mergeGroupId']), 'mergeGroup.dissolved': a(['mergeGroupId']),
+  'mergeGroup.reordered': a(['mergeGroupId', 'taskId']), 'mergeGroup.estimateAdjusted': a(['mergeGroupId']),
+  'mergeGroup.renamed': a(['mergeGroupId']), 'mergeGroup.completed': a(['mergeGroupId']),
+  'mergeGroup.dissolved': a(['mergeGroupId']),
   'error.dataWriteFailed': a([], ['taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId']),
   'error.unexpectedState': a([], ['taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId']), 'diagnosticLog.exported': a([]),
 } satisfies Record<EventType, AssociationSchema>;
@@ -524,6 +530,7 @@ async function validateEntityConsistency(
   if (mergeGroup) {
     // 事件描述的必须是事务内合并组的真实终态，不允许 payload 与实体各说各话（§7.19）。
     if (type === 'mergeGroup.created') {
+      checkSame(mergeGroup.title, payload.title, 'event.mergeGroup.created.title', 'payload.title', collector);
       checkSame(mergeGroup.taskIds, payload.taskIds, 'event.mergeGroup.created.taskIds', 'payload.taskIds', collector);
       checkSame(mergeGroup.estimatedPomodoros, payload.estimatedPomodoros, 'event.mergeGroup.created.estimate', 'payload.estimatedPomodoros', collector);
     }
@@ -540,6 +547,13 @@ async function validateEntityConsistency(
     if (type === 'mergeGroup.estimateAdjusted') {
       checkSame(mergeGroup.estimatedPomodoros, payload.newEstimate, 'event.mergeGroup.estimate', 'payload.newEstimate', collector);
       checkSame(mergeGroup.estimateRounds.length, payload.round, 'event.mergeGroup.estimateRound', 'payload.round', collector);
+    }
+    if (type === 'mergeGroup.renamed') {
+      checkSame(mergeGroup.title, payload.newTitle, 'event.mergeGroup.renamed.title', 'payload.newTitle', collector);
+    }
+    if (type === 'mergeGroup.completed') {
+      checkSame(mergeGroup.status, 'completed', 'event.mergeGroup.completed.status', 'mergeGroupId', collector);
+      checkSame(mergeGroup.completedAt, payload.completedAt, 'event.mergeGroup.completed.at', 'payload.completedAt', collector);
     }
     if (type === 'mergeGroup.dissolved') {
       checkSame(mergeGroup.status, 'dissolved', 'event.mergeGroup.dissolved.status', 'mergeGroupId', collector);

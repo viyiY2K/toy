@@ -8,6 +8,7 @@ import {
   executeAtomicWrite,
   type ValidatedAtomicWriteTransaction,
 } from '../writes/executeAtomicWrite';
+import { assertTaskNotLocked } from './mergeMemberLock';
 
 export interface TaskCommandResult<T> {
   value: T;
@@ -649,7 +650,8 @@ export async function adjustTaskEstimate(
 ): Promise<TaskCommandResult<Task>> {
   return executeAtomicWrite(
     {
-      storeNames: [STORE.tasks, EVENT_STORE],
+      // sessions 是给 §3.3 关键规则 14 的锁定校验读的（assertTaskNotLocked）。
+      storeNames: [STORE.tasks, STORE.sessions, EVENT_STORE],
       now: input.now,
       timezone: input.timezone,
       diagnosticContext: { entityType: 'Task', entityId: input.taskId, operation: 'update' },
@@ -657,6 +659,11 @@ export async function adjustTaskEstimate(
     async (transaction) => {
       const task = await transaction.get<Task>(STORE.tasks, input.taskId);
       if (!task) throw new Error('Task 不存在或已删除');
+      /*
+       * §3.3 关键规则 14：计时中不许从计划页随手改预估。到点 completed 之后要重新预估，
+       * 走的是收尾流程里的正式入口——那时 Session 已不是 active，本守卫自然放行。
+       */
+      await assertTaskNotLocked(transaction, input.taskId, '无法调整预估');
       if (task.estimatedPomodoros === input.estimatedPomodoros) {
         throw new Error('新预估必须与旧预估不同');
       }
@@ -1046,7 +1053,8 @@ export async function deleteActiveTask(
   const initialized = await ensureCurrentAppDateInitialized(input);
   return executeAtomicWrite(
     {
-      storeNames: [STORE.tasks, STORE.dayPlans, EVENT_STORE],
+      // sessions 是给 §3.3 关键规则 14 的锁定校验读的（assertTaskNotLocked）。
+      storeNames: [STORE.tasks, STORE.sessions, STORE.dayPlans, EVENT_STORE],
       now: input.now,
       timezone: input.timezone,
       diagnosticContext: { entityType: 'Task', entityId: input.taskId, operation: 'softDelete' },
@@ -1064,6 +1072,8 @@ export async function deleteActiveTask(
       ) {
         throw new Error('只有活动清单中的有效 Task 可以软删除');
       }
+      // §3.3 关键规则 14：正在被 active focus 执行的任务不许删（含合并组当前成员）。
+      await assertTaskNotLocked(transaction, input.taskId, '无法删除任务');
       const deleted = await transaction.softDelete(STORE.tasks, input.taskId, input.now, {
         deletedReason: 'userDeleted',
       });

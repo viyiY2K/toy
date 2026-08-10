@@ -10,9 +10,12 @@
  *
  * DB_VERSION 2（合并番茄钟功能批次）：新增 `mergeGroups` store，并把既有 tasks/sessions
  * 记录迁移到 v4.1 形状（Session.taskId → taskIds、补 mergeGroupId），见 `migrations.ts`。
+ *
+ * DB_VERSION 3（合并番茄钟统计口径收口，v4.3 §3.3 / §3.8）：不新增 store，只就地补字段
+ * ——Session.taskSegments、MergeGroup.title / completedAt，见 `migrations.ts`。
  */
 export const DB_NAME = 'pomodoro';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 /** 全部 store 共用的主键 keyPath（UUID v7）。 */
 export const PRIMARY_KEY = 'id';

@@ -20,6 +20,7 @@ const ALL_SESSION_KEYS = [
   'status',
   'taskIds',
   'mergeGroupId',
+  'taskSegments',
   'startedAt',
   'endedAt',
   'plannedDuration',

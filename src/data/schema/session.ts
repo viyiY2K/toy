@@ -31,6 +31,20 @@ export type SessionStatus = 'active' | 'completed' | 'discarded' | 'skipped';
 /** 休息未完成原因（§3.3 skipKind 枚举；仅 shortBreak/longBreak 在 skipped 时适用）。 */
 export type SkipKind = 'explicitSkip' | 'noResponse' | 'appClosed' | 'missed';
 
+/**
+ * 合并番茄里某个成员实际被推进的那一段（§3.3 taskSegments 数组元素结构，v4.3）。
+ *
+ * 这是"某成员在这次合并番茄里花了多少时间"的**唯一事实源**：`actualDuration` 由
+ * Session 终结时一次性算出，此后固定；统计**不得**用 `endedAt − startedAt` 重算
+ * （§3.3 关键规则 13、红线 25）。未轮到的成员保留显式 0 分段，不省略。
+ */
+export interface TaskSegment {
+  taskId: string;
+  startedAt: IsoDateTime;
+  endedAt: IsoDateTime;
+  actualDuration: number;
+}
+
 /** Session 完整实体（§3.3）。同步预留见 `SyncableBaseFields`，时区/自然日见 `LocalDateFields`。 */
 export interface Session extends SyncableBaseFields, LocalDateFields {
   type: SessionType;
@@ -41,8 +55,18 @@ export interface Session extends SyncableBaseFields, LocalDateFields {
    * extraFocus 不支持合并，长度固定 1；shortBreak / longBreak / extraRest 固定空数组。
    */
   taskIds: string[];
-  /** 触发本次专注的合并组 id（§3.3）；非 null 时 type 必须为 focus 且 taskIds 长度 ≥ 2。 */
+  /**
+   * 触发本次专注的合并组 id（§3.3）；非 null 时 type 必须为 focus 且 taskIds 长度 ≥ 1。
+   * ≥ 2 是**建组**门槛（§3.8 关键规则 1），不是每一轮 Session 的门槛：续轮排除更早
+   * 轮次已完成的成员后可能只剩 1 个，那一轮仍归属该合并组（红线 29）。
+   */
   mergeGroupId: string | null;
+  /**
+   * 成员分段（§3.3，v4.3）。合并 focus 终结时一次性写入，写入后固定，不随此后
+   * MergeGroup 成员变化而改写；其余场景恒为空数组。各段 `actualDuration` 之和必须
+   * 精确等于本 Session 的 `actualDuration`。
+   */
+  taskSegments: TaskSegment[];
   startedAt: IsoDateTime;
   endedAt: IsoDateTime | null;
   plannedDuration: number | null;
@@ -72,6 +96,8 @@ export interface MakeSessionInput {
   /** 默认空数组（不适用 type 的固定值）；focus 由调用方传入，长度校验留 S6。 */
   taskIds?: string[];
   mergeGroupId?: string | null;
+  /** 默认空数组；合并 focus 的分段由 commands 层在终结时算出后传入，校验留 validation。 */
+  taskSegments?: TaskSegment[];
   endedAt?: IsoDateTime | null;
   plannedDuration?: number | null;
   actualDuration?: number | null;
@@ -101,6 +127,7 @@ export function makeSession(input: MakeSessionInput): Session {
     status: input.status ?? 'active',
     taskIds: input.taskIds === undefined ? [] : [...input.taskIds],
     mergeGroupId: input.mergeGroupId ?? null,
+    taskSegments: input.taskSegments === undefined ? [] : input.taskSegments.map((s) => ({ ...s })),
     startedAt: input.startedAt,
     endedAt: input.endedAt ?? null,
     plannedDuration: input.plannedDuration ?? null,

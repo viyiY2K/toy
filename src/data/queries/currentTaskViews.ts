@@ -45,6 +45,12 @@ export interface CurrentTaskViews {
   /** 合并组 id → 该组还剩几个番茄没跑（预估减去已完成轮次，下限 0）。 */
   mergeGroupRemainingById: Record<string, number>;
   /**
+   * 合并组 id → 该组的有效番茄数（§8.5.1，红线 24）。
+   * 番茄的归属单位是合并组本身：一次正常完成的合并 focus 给本组 +1，给成员各 +0。
+   * 成员那边的收获只体现为 `Session.taskSegments` 里属于自己的那段耗时。
+   */
+  mergeGroupValidFocusCountById: Record<string, number>;
+  /**
    * Task id → 是否有过任何 `type='focus'` Session 记录（completed / discarded 都算）。
    * §3.8 关键规则 9 的合并资格红线：有过记录的任务**永久**不能再被合并。
    * UI 拿它做拖拽防呆——不能等写入被拒绝了才告诉用户。
@@ -184,14 +190,18 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     for (const taskId of session.taskIds) hasFocusHistoryByTaskId[taskId] = true;
     if (session.status !== 'completed' || session.taskIds.length === 0) continue;
     /*
-     * ⚠️ 旧口径，待单独重做：这里按 §8.5.1 给合并 Session 的每个成员各记 +1。
-     * 新口径下统计单位是合并组本身，成员任务不再记有效番茄，只按组内次序切分实际
-     * 耗时。规范正文由「中长期主线任务」那条线改写，改写后本段与 awarenessStats
-     * 的任务维度计数需要一并重做。
+     * §8.5.1 + 红线 24：番茄归合并组，时间归成员。合并 Session **不给任何成员**记有效
+     * 番茄——那一个番茄整体记在合并组身上（见下方 mergeGroupValidFocusCountById），
+     * 成员只从 taskSegments 拿属于自己的那段耗时。只有独立专注才给它引用的 Task 记 +1。
+     *
+     * 旧口径给 taskIds 里每人各记 1 个、并接受"任务维度加总 > 全局"，自 v4.3 起一律
+     * 视为缺陷：同一段时间在多个维度重复计入，Goal / 分类维度的加总会超过真实投入。
      */
-    for (const taskId of session.taskIds) {
-      completedValidFocusCountByTaskId[taskId] =
-        (completedValidFocusCountByTaskId[taskId] ?? 0) + 1;
+    if (session.mergeGroupId === null) {
+      for (const taskId of session.taskIds) {
+        completedValidFocusCountByTaskId[taskId] =
+          (completedValidFocusCountByTaskId[taskId] ?? 0) + 1;
+      }
     }
     // §8.3.1：全局有效番茄数按 Session 记录数计，不因 taskIds 长度重复计数。
     if (
@@ -216,6 +226,7 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
   const liveGroups = mergeGroups.filter((group) => group.status !== 'dissolved');
   const mergeGroupMembersById: Record<string, Task[]> = {};
   const mergeGroupRemainingById: Record<string, number> = {};
+  const mergeGroupValidFocusCountById: Record<string, number> = {};
   for (const group of liveGroups) {
     mergeGroupMembersById[group.id] = group.taskIds.flatMap((taskId) => {
       const task = taskById.get(taskId);
@@ -228,6 +239,8 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
         session.mergeGroupId === group.id,
     ).length;
     mergeGroupRemainingById[group.id] = Math.max(0, group.estimatedPomodoros - completedRounds);
+    // 每条正常完成的合并 Session 给本组记 1 个有效番茄——这就是该组的有效番茄数。
+    mergeGroupValidFocusCountById[group.id] = completedRounds;
   }
 
   /*
@@ -278,6 +291,7 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     mergeGroups: liveGroups,
     mergeGroupMembersById,
     mergeGroupRemainingById,
+    mergeGroupValidFocusCountById,
     hasFocusHistoryByTaskId,
   };
 }

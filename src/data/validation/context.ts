@@ -28,4 +28,10 @@ export interface ValidationContext {
   getActiveSettings?(): Promise<Settings | undefined>;
   isRestSuggestionReferenced?(key: string): Promise<boolean>;
   getMergeGroup?(id: string): Promise<MergeGroup | undefined>;
+  /**
+   * 该合并组当前那条 `status='active'` 的 focus Session（没有则 undefined）。
+   * §3.8 一致性约束 1 的瞬时例外要用它：进行中允许把未来成员移空到只剩当前成员，
+   * `taskIds` 长度可以暂时降到 1（关键规则 15）。
+   */
+  getActiveFocusSessionByMergeGroupId?(mergeGroupId: string): Promise<Session | undefined>;
 }

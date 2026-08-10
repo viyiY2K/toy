@@ -92,11 +92,13 @@ const VALID_PAYLOADS = {
   'notification.shown': { notificationType: 'breakCompleted' },
   'prompt.shown': { promptType: 'energyRecording', promptContext: 'dayStart' },
   'prompt.dismissed': { promptType: 'energyRecording', promptContext: 'onReturn' },
-  'mergeGroup.created': { taskIds: [ID, ID_2], estimatedPomodoros: 1 },
+  'mergeGroup.created': { title: '杂事番茄', taskIds: [ID, ID_2], estimatedPomodoros: 1 },
   'mergeGroup.taskAdded': { addedAtIndex: 1, source: 'drag' },
   'mergeGroup.taskRemoved': { removedAtIndex: 0, reason: 'manualUnmerge' },
   'mergeGroup.reordered': { fromIndex: 1, toIndex: 0 },
   'mergeGroup.estimateAdjusted': { round: 2, oldEstimate: 1, newEstimate: 2 },
+  'mergeGroup.renamed': { oldTitle: '杂事番茄', newTitle: '周一杂事清理' },
+  'mergeGroup.completed': { completedAt: NOW, validFocusCountAtCompletion: 1 },
   'mergeGroup.dissolved': { finalTaskIds: [ID, ID_2], dissolvedReason: 'manualDissolved' },
   'error.dataWriteFailed': { errorCode: 'ERR_WRITE_FAILED', errorMessage: null, context: {} },
   'error.unexpectedState': { errorCode: 'ERR_UNEXPECTED_STATE', errorMessage: null, context: {} },
@@ -223,6 +225,10 @@ function contextFor(event: Event): ValidationContext {
   // 合并组 fixture 按事件类型倒推出一份与 payload 自洽的实体（§7.19 一致性校验要对得上）。
   const mergeGroup = {
     id: event.mergeGroupId,
+    // v4.3 §3.8：title 必填；created 取 payload.title，renamed 取改名后的 newTitle。
+    title: event.type === 'mergeGroup.created' ? payload.title
+      : event.type === 'mergeGroup.renamed' ? payload.newTitle
+      : '杂事番茄',
     taskIds: event.type === 'mergeGroup.created' ? payload.taskIds
       : event.type === 'mergeGroup.taskAdded' ? [ID_2, event.taskId]
       : event.type === 'mergeGroup.taskRemoved' ? [ID_2, ID_3]
@@ -232,9 +238,12 @@ function contextFor(event: Event): ValidationContext {
     estimatedPomodoros: payload.newEstimate ?? payload.estimatedPomodoros ?? 1,
     estimateRounds: Array.from({ length: typeof payload.round === 'number' ? payload.round : 1 }, (_, index) => ({ index: index + 1, pomodoros: 1, occurredAt: NOW })),
     status: event.type === 'mergeGroup.dissolved' ? 'dissolved'
+      : event.type === 'mergeGroup.completed' ? 'completed'
       : payload.promptType === 'mergeGroupLimitReached' ? 'limitReached'
       : 'active',
     dissolvedReason: event.type === 'mergeGroup.dissolved' ? payload.dissolvedReason : null,
+    // v4.3 §3.8：成功终态才有 completedAt，与 dissolved 的两个字段互斥。
+    completedAt: event.type === 'mergeGroup.completed' ? payload.completedAt : null,
   };
 
   const energy = { id: event.energyRecordId, source: payload.source, energyLevel: payload.energyLevel, mood: payload.mood, note: payload.note, sessionId: event.sessionId };

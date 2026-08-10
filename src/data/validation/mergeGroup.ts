@@ -1,4 +1,4 @@
-import type { MergeGroup } from '../schema';
+import { MERGE_GROUP_TITLE_MAX_LENGTH, type MergeGroup } from '../schema';
 import type { ValidationContext } from './context';
 import {
   EntityValidationError,
@@ -17,16 +17,21 @@ import {
 
 const MERGE_GROUP_KEYS = [
   ...SYNCABLE_BASE_KEYS,
+  'title',
   'taskIds',
   'estimatedPomodoros',
   'estimateRounds',
   'status',
+  'completedAt',
   'dissolvedAt',
   'dissolvedReason',
 ] as const;
 
-const STATUSES = new Set(['active', 'limitReached', 'dissolved']);
+const STATUSES = new Set(['active', 'limitReached', 'completed', 'dissolved']);
 const DISSOLVED_REASONS = new Set(['membersBelowMinimum', 'manualDissolved']);
+
+/** 在用态：仍挂着成员、仍可能开新一轮。`completed` / `dissolved` 都是终态。 */
+const LIVE_STATUSES = new Set(['active', 'limitReached']);
 
 /**
  * 成员列表校验（§3.8 字段表 + 字段一致性约束 6）。
@@ -109,6 +114,32 @@ async function validateMemberReferences(
   }
 }
 
+/**
+ * 在用态（active / limitReached）的成员数下限（§3.8 一致性约束 1）。
+ *
+ * 常态是 ≥ 2；**唯一例外**是本组正跑着一条 active focus Session：此时用户可以把最后一个
+ * 未来成员移出，组内暂时只剩当前正在执行的那个成员（关键规则 15）。这条例外存在的原因是
+ * 当前成员被锁定、不能被间接移出，若还坚持 ≥ 2 就只能拒绝一次合法的"移出未来成员"操作。
+ * 成员不足不打断正在进行的 Session，只在本轮结算时才决定转 completed 还是解散。
+ */
+async function validateLiveMemberCount(
+  group: Record<string, unknown>,
+  context: ValidationContext | undefined,
+  collector: ValidationCollector,
+): Promise<void> {
+  const taskIds = Array.isArray(group.taskIds) ? group.taskIds : [];
+  if (taskIds.length >= 2) return;
+  if (typeof group.id === 'string' && context?.getActiveFocusSessionByMergeGroupId) {
+    const running = await context.getActiveFocusSessionByMergeGroupId(group.id);
+    if (running && taskIds.length === 1) return;
+  }
+  collector.add(
+    'mergeGroup.taskIds.minimum',
+    'taskIds',
+    '在用的合并组至少要有 2 个成员（仅本组有进行中的 focus 时允许暂时剩 1 个）',
+  );
+}
+
 export async function collectMergeGroupValidationIssues(
   value: unknown,
   context?: ValidationContext,
@@ -120,6 +151,18 @@ export async function collectMergeGroupValidationIssues(
   validateExactKeys(group, MERGE_GROUP_KEYS, 'MergeGroup', collector);
   validateSyncableBase(group, collector, mode);
 
+  /*
+   * §3.8 一致性约束 8：title 非空、≤ 200。合并组是番茄归属单位、会作为独立条目进统计页，
+   * 没名字就分不出是哪一组，因此创建时不允许留空（工厂兜底系统默认名）。
+   */
+  collector.check(
+    typeof group.title === 'string' &&
+      group.title.trim() !== '' &&
+      group.title.length <= MERGE_GROUP_TITLE_MAX_LENGTH,
+    'mergeGroup.title',
+    'title',
+    `必须为非空字符串且不超过 ${MERGE_GROUP_TITLE_MAX_LENGTH} 字符`,
+  );
   validateTaskIds(group.taskIds, collector);
   validateInteger(group.estimatedPomodoros, 'estimatedPomodoros', collector, 1, 7);
   const latestEstimate = validateEstimateRounds(group.estimateRounds, collector);
@@ -137,6 +180,7 @@ export async function collectMergeGroupValidationIssues(
     'status',
     '非法合并组状态',
   );
+  validateIsoDateTime(group.completedAt, 'completedAt', collector, true);
   validateIsoDateTime(group.dissolvedAt, 'dissolvedAt', collector, true);
   collector.check(
     group.dissolvedReason === null ||
@@ -146,7 +190,7 @@ export async function collectMergeGroupValidationIssues(
     '非法解散原因',
   );
 
-  // §3.8 字段一致性约束 1/2：解散态与在用态的字段组合互斥。
+  // §3.8 字段一致性约束 1/2/9：解散态、完成态与在用态的字段组合三者互斥。
   if (group.status === 'dissolved') {
     collector.check(
       group.dissolvedAt !== null,
@@ -160,13 +204,27 @@ export async function collectMergeGroupValidationIssues(
       'dissolvedReason',
       'dissolved 必须记录解散原因',
     );
-  } else {
     collector.check(
-      Array.isArray(group.taskIds) && group.taskIds.length >= 2,
-      'mergeGroup.taskIds.minimum',
-      'taskIds',
-      '在用的合并组至少要有 2 个成员',
+      group.completedAt === null,
+      'mergeGroup.completedAt.state',
+      'completedAt',
+      'dissolved 只表示中途拆散，不是成功完成，completedAt 必须为 null',
     );
+  } else if (group.status === 'completed') {
+    collector.check(
+      group.completedAt !== null,
+      'mergeGroup.completedAt.required',
+      'completedAt',
+      'completed 必须记录完成时间',
+    );
+    collector.check(
+      group.dissolvedAt === null && group.dissolvedReason === null,
+      'mergeGroup.dissolved.state',
+      'dissolvedAt',
+      'completed 时解散字段必须为 null',
+    );
+  } else {
+    await validateLiveMemberCount(group, context, collector);
     collector.check(
       group.dissolvedAt === null,
       'mergeGroup.dissolvedAt.state',
@@ -178,6 +236,12 @@ export async function collectMergeGroupValidationIssues(
       'mergeGroup.dissolvedReason.state',
       'dissolvedReason',
       '未解散时必须为 null',
+    );
+    collector.check(
+      group.completedAt === null,
+      'mergeGroup.completedAt.state',
+      'completedAt',
+      '未完成时必须为 null',
     );
   }
 

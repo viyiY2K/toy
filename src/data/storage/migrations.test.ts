@@ -104,8 +104,13 @@ describe('migrateRecordToVersion2（合并番茄钟功能批次的形状迁移�
   });
 });
 
-describe('IndexedDB v1 → v2 升级', () => {
-  it('打开旧库时就地迁移 tasks/sessions、建出 mergeGroups，且 Event 一字不改', async () => {
+describe('IndexedDB v1 → v3 升级', () => {
+  /*
+   * 回归守卫：v1 上来要连跑 v2、v3 两步。曾经的实现给每个版本各开一趟游标，
+   * 同一事务里两个游标读到的都是原始记录，v3 那趟把 v2 补的 mergeGroupId 覆盖没了。
+   * 下面同时断言 v2 的产物（taskIds / mergeGroupId）和 v3 的产物（taskSegments）。
+   */
+  it('打开旧库时一趟游标跑完整条迁移链，建出 mergeGroups，且 Event 一字不改', async () => {
     const taskId = newId();
     const sessionId = newId();
     const eventId = newId();
@@ -135,6 +140,7 @@ describe('IndexedDB v1 → v2 升级', () => {
     expect(session).toMatchObject({
       taskIds: [taskId],
       mergeGroupId: null,
+      taskSegments: [],
       schemaVersion: CURRENT_SCHEMA_VERSION,
     });
     expect(session).not.toHaveProperty('taskId');

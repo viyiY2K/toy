@@ -5,6 +5,7 @@ import {
   EntityValidationError,
   SYNCABLE_BASE_KEYS,
   ValidationCollector,
+  isRecord,
   requireRecord,
   validateExactKeys,
   validateIanaTimeZone,
@@ -25,6 +26,7 @@ const SESSION_KEYS = [
   'status',
   'taskIds',
   'mergeGroupId',
+  'taskSegments',
   'startedAt',
   'endedAt',
   'plannedDuration',
@@ -66,6 +68,45 @@ function validateTaskIds(value: unknown, collector: ValidationCollector): void {
     'session.taskIds.duplicate',
     'taskIds',
     '关联任务不得重复',
+  );
+}
+
+/**
+ * 成员分段的形状与内部一致性（§3.3 taskSegments 结构 + 字段一致性约束 16）。
+ * 适用性（何时必须为空、何时必须与 taskIds 对齐、总和是否等于 actualDuration）在下方分流。
+ */
+function validateTaskSegmentShapes(value: unknown, collector: ValidationCollector): void {
+  if (!Array.isArray(value)) {
+    collector.add('type.array', 'taskSegments', '必须为数组');
+    return;
+  }
+  value.forEach((segment, index) => {
+    const path = `taskSegments[${index}]`;
+    const record = requireRecord(segment, path, collector);
+    if (!record) return;
+    validateExactKeys(record, ['taskId', 'startedAt', 'endedAt', 'actualDuration'], path, collector);
+    validateUuidV7(record.taskId, `${path}.taskId`, collector);
+    const startedOk = validateIsoDateTime(record.startedAt, `${path}.startedAt`, collector);
+    const endedOk = validateIsoDateTime(record.endedAt, `${path}.endedAt`, collector);
+    if (startedOk && endedOk) {
+      collector.check(
+        Date.parse(String(record.endedAt)) >= Date.parse(String(record.startedAt)),
+        'session.taskSegments.order',
+        `${path}.endedAt`,
+        '分段结束时刻不得早于开始时刻',
+      );
+    }
+    // 未轮到的成员保留显式 0 分段（§3.3 关键规则 13），故下限是 0 而不是 1。
+    validateInteger(record.actualDuration, `${path}.actualDuration`, collector, 0);
+  });
+  const taskIds = value.flatMap((segment) =>
+    isRecord(segment) && typeof segment.taskId === 'string' ? [segment.taskId] : [],
+  );
+  collector.check(
+    new Set(taskIds).size === taskIds.length,
+    'session.taskSegments.duplicate',
+    'taskSegments',
+    '同一 Session 内不允许出现两条 taskId 相同的分段',
   );
 }
 
@@ -211,8 +252,11 @@ async function validateCreationFacts(
     collector.check(session[field] === previous[field], `session.${field}.immutable`, field, '创建后不可修改');
   }
   /*
-   * taskIds 不是无条件不可变：合并番茄钟允许计时途中往组里补任务，其快照按 §3.3
-   * 关键规则 11 取"Session 终结那一刻"的成员，因此 active 的合并 Session 可以改。
+   * taskIds 不是无条件不可变：合并番茄钟允许计时途中编辑**未来队列**（补新任务、移出
+   * 还没轮到的成员），其快照按 §3.3 关键规则 11 取"Session 终结那一刻"的成员，因此
+   * active 的合并 Session 可以改。当前成员本身被锁定，但那是 command 层按 §3.3 关键
+   * 规则 14 拒绝的事——validator 只认"这条记录的形状合不合法"，看不到"谁是当前成员"
+   * 所需的 Task 完成时刻上下文，不在这里重复判断。
    * 非合并 Session、以及任何已终结的 Session，taskIds 都是固定的历史事实。
    */
   const mutableTaskIds = previous.status === 'active' && previous.mergeGroupId !== null;
@@ -224,7 +268,32 @@ async function validateCreationFacts(
         current.every((taskId, index) => taskId === previous.taskIds[index]),
       'session.taskIds.immutable',
       'taskIds',
-      '创建后不可修改（合并 Session 只在进行中可增删成员）',
+      '创建后不可修改（合并 Session 只在进行中可增删未来成员）',
+    );
+  }
+  /*
+   * §3.3 关键规则 13 末段：Session 终结后 taskSegments 固定，不随此后 MergeGroup 的
+   * 任何变化而改写。终结那一次写入（active → completed/discarded）除外。
+   */
+  if (previous.status !== 'active') {
+    const current = Array.isArray(session.taskSegments) ? session.taskSegments : undefined;
+    collector.check(
+      current !== undefined &&
+        current.length === previous.taskSegments.length &&
+        current.every((segment, index) => {
+          const before = previous.taskSegments[index];
+          return (
+            isRecord(segment) &&
+            before !== undefined &&
+            segment.taskId === before.taskId &&
+            segment.startedAt === before.startedAt &&
+            segment.endedAt === before.endedAt &&
+            segment.actualDuration === before.actualDuration
+          );
+        }),
+      'session.taskSegments.immutable',
+      'taskSegments',
+      'Session 终结后成员分段固定，不随后续合并组变化而改写',
     );
   }
   return previous;
@@ -302,6 +371,7 @@ export async function collectSessionValidationIssues(
   collector.check(typeof session.status === 'string' && STATUSES.has(session.status), 'session.status', 'status', '非法 Session status');
   validateTaskIds(session.taskIds, collector);
   validateUuidV7(session.mergeGroupId, 'mergeGroupId', collector, true);
+  validateTaskSegmentShapes(session.taskSegments, collector);
   validateIsoDateTime(session.startedAt, 'startedAt', collector);
   validateIsoDateTime(session.endedAt, 'endedAt', collector, true);
   if (session.plannedDuration !== null) validateInteger(session.plannedDuration, 'plannedDuration', collector, 1);
@@ -374,6 +444,16 @@ export async function collectSessionValidationIssues(
       'mergeGroupId',
       '多任务 focus 必须关联合并组',
     );
+    /*
+     * §3.3 一致性约束 16：非合并 Session（含全部非 focus type）不存在成员分段——
+     * 单任务专注的任务耗时就是 actualDuration 本身，不需要拆。
+     */
+    collector.check(
+      Array.isArray(session.taskSegments) && session.taskSegments.length === 0,
+      'session.taskSegments.notApplicable',
+      'taskSegments',
+      '非合并 Session 必须为空数组',
+    );
   } else {
     collector.check(
       session.type === 'focus',
@@ -392,6 +472,47 @@ export async function collectSessionValidationIssues(
       'taskIds',
       '合并 focus 必须关联至少 1 个 Task',
     );
+    /*
+     * §3.3 一致性约束 16：分段在 Session **终结时**才一次性写入，因此 active 必须为空；
+     * 终结后每个参与本轮的成员都必须有且只有一条分段（哪怕耗时为 0），且各段之和
+     * 必须精确等于 Session.actualDuration——对不上的写入一律拒绝，避免"任务维度加总
+     * 与全局对不上账"这类旧口径缺陷以另一种形式复活。
+     */
+    if (session.status === 'active') {
+      collector.check(
+        Array.isArray(session.taskSegments) && session.taskSegments.length === 0,
+        'session.taskSegments.active',
+        'taskSegments',
+        '进行中的合并 Session 必须为空数组（分段在终结时才写入）',
+      );
+    } else if (session.status === 'completed' || session.status === 'discarded') {
+      const segments = Array.isArray(session.taskSegments) ? session.taskSegments : [];
+      const taskIds = Array.isArray(session.taskIds) ? session.taskIds : [];
+      const segmentIds = segments.flatMap((segment) =>
+        isRecord(segment) && typeof segment.taskId === 'string' ? [segment.taskId] : [],
+      );
+      collector.check(
+        segmentIds.length === taskIds.length &&
+          new Set(segmentIds).size === new Set(taskIds).size &&
+          taskIds.every((taskId) => segmentIds.includes(String(taskId))),
+        'session.taskSegments.coverage',
+        'taskSegments',
+        '终结的合并 Session 必须为每个参与成员各写一条分段，taskId 集合须与 taskIds 完全一致',
+      );
+      if (typeof session.actualDuration === 'number') {
+        const total = segments.reduce(
+          (sum, segment) =>
+            sum + (isRecord(segment) && typeof segment.actualDuration === 'number' ? segment.actualDuration : 0),
+          0,
+        );
+        collector.check(
+          total === session.actualDuration,
+          'session.taskSegments.total',
+          'taskSegments',
+          '各分段 actualDuration 之和必须精确等于 Session.actualDuration',
+        );
+      }
+    }
   }
 
   if (EXTRA_TYPES.has(String(session.type))) {

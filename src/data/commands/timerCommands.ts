@@ -12,7 +12,10 @@ import {
   type Session,
   type Settings,
   type Task,
+  type TaskSegment,
 } from '../schema';
+import { computeTaskSegments } from './mergeSegments';
+import { currentMergeMemberId } from './mergeMemberLock';
 import { deriveLocalDate } from '../time';
 import { executeAtomicWrite } from '../writes/executeAtomicWrite';
 import type { TaskCommandResult } from './taskCommands';
@@ -22,6 +25,39 @@ export type StandardBreakType = 'shortBreak' | 'longBreak';
 
 function eventFields(clock: InitializationClock, correlationId: string) {
   return { now: clock.now, timezone: clock.timezone, correlationId } as const;
+}
+
+/**
+ * 终结一条合并 focus 时该写的成员分段（§3.3 关键规则 13）。
+ * 非合并 Session 恒为空数组——单任务专注的任务耗时就是 actualDuration 本身。
+ *
+ * 成员被勾完成的时刻取自本轮的 `task.completed` 事件（append-only 的事实记录），
+ * 不读 Task.completedAt：后者会被"取消完成再重新完成"改写，不是本轮的历史事实。
+ */
+async function segmentsForTermination(
+  transaction: { getAll<T>(store: string): Promise<T[]> },
+  session: Session,
+  endedAt: string,
+  actualDuration: number,
+): Promise<TaskSegment[]> {
+  if (session.mergeGroupId === null) return [];
+  const events = await transaction.getAll<Event>(EVENT_STORE);
+  const completedAt = new Map<string, string>();
+  for (const event of events) {
+    if (event.type !== 'task.completed') continue;
+    if (event.sessionId !== session.id || event.taskId === null) continue;
+    const existing = completedAt.get(event.taskId);
+    if (existing === undefined || Date.parse(event.occurredAt) < Date.parse(existing)) {
+      completedAt.set(event.taskId, event.occurredAt);
+    }
+  }
+  return computeTaskSegments({
+    taskIds: session.taskIds,
+    startedAt: session.startedAt,
+    endedAt,
+    actualDuration,
+    completedAt,
+  });
 }
 
 function assertNoActiveSession(sessions: readonly Session[]): void {
@@ -259,6 +295,12 @@ export async function completeFocus(
         status: 'completed',
         endedAt: input.now,
         actualDuration: input.actualDuration,
+        taskSegments: await segmentsForTermination(
+          transaction,
+          session,
+          input.now,
+          input.actualDuration,
+        ),
         updatedAt: input.now,
       };
       await transaction.put(STORE.sessions, completed);
@@ -307,11 +349,22 @@ export async function discardFocus(
         throw new Error('只有 active focus 可以作废');
       }
       await assertSessionHasNoPendingRecovery(transaction, session.id);
+      /*
+       * 作废的合并 focus 一样写分段（§3.3 关键规则 13 末段）：用户确实投入了这段时间，
+       * 当前成员的分段止于作废时刻，尚未轮到的成员记 0、不分等待时间。这些耗时按
+       * §8.3.5 计入各成员的作废专注时长，但不计入任何有效番茄。
+       */
       const discarded: Session = {
         ...session,
         status: 'discarded',
         endedAt: input.now,
         actualDuration: input.actualDuration,
+        taskSegments: await segmentsForTermination(
+          transaction,
+          session,
+          input.now,
+          input.actualDuration,
+        ),
         updatedAt: input.now,
       };
       await transaction.put(STORE.sessions, discarded);
@@ -638,13 +691,23 @@ export async function completeTaskFromPomodoro(
     },
     async (transaction) => {
       const session = await transaction.get<Session>(STORE.sessions, input.sessionId);
+      /*
+       * 两个入口共用本命令：
+       * 1. 到点后的收尾确认（status='completed'）——单任务与合并都走这里；
+       * 2. 合并专注**进行中**逐个勾选成员完成（status='active' 且 mergeGroupId 非 null）。
+       *    第 2 条是 §3.8 关键规则 11 要求的入口：没有它，时间就无法按成员切分。
+       * 进行中的单任务 focus 不在此列——独立任务提前做完要先作废当前番茄再走完成流程
+       * （§3.3 关键规则 14），不允许一边保持 active 一边把任务改成 completed。
+       */
+      const midMergeRound =
+        session?.status === 'active' && session.mergeGroupId !== null;
       if (
         !session ||
         session.type !== 'focus' ||
-        session.status !== 'completed' ||
+        (session.status !== 'completed' && !midMergeRound) ||
         session.taskIds.length === 0
       ) {
-        throw new Error('番茄完成确认必须关联 completed focus');
+        throw new Error('番茄完成确认必须关联 completed focus，或进行中的合并 focus');
       }
       /*
        * 合并 focus 一次涉及多个任务，必须由调用方点名确认的是哪一个；
@@ -661,11 +724,29 @@ export async function completeTaskFromPomodoro(
       if (!task || (task.status !== 'active' && task.status !== 'splitNeeded')) {
         throw new Error('只有未完成的有效 Task 可以确认番茄完成');
       }
+      /*
+       * 进行中的合并轮只允许勾**当前成员**：分段模型是严格顺序的（§3.3 关键规则 13），
+       * 跳过当前成员去勾后面的未来成员，时间就没法切了。当前成员 = 本轮参与成员里第一个
+       * 还没完成的那个——注意不能用字面 taskIds[0]，已完成的成员仍留在快照里。
+       */
+      if (midMergeRound) {
+        const current = await currentMergeMemberId(transaction, session);
+        if (current !== targetTaskId) {
+          throw new Error('合并专注进行中只能勾选当前正在执行的成员');
+        }
+      }
+      /*
+       * §8.5.1 + 红线 24/26：合并 focus 不给任何成员记有效番茄，因此这里只数
+       * **非合并**的 completed focus。合并组成员因合并资格要求（§3.8 关键规则 9，
+       * 参与合并前不得有过任何 focus 记录）天然为 0——这不是给合并场景开的特例分支，
+       * 而是同一个定义算出来的结果。
+       */
       const sessions = await transaction.getAll<Session>(STORE.sessions);
       const validFocusCountAtCompletion = sessions.filter(
         (candidate) =>
           candidate.type === 'focus' &&
           candidate.status === 'completed' &&
+          candidate.mergeGroupId === null &&
           candidate.taskIds.includes(task.id),
       ).length;
       const completed: Task = {
