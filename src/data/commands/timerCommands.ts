@@ -228,7 +228,15 @@ export async function startMergeGroupFocus(
         const task = await transaction.get<Task>(STORE.tasks, taskId);
         if (task && task.status === 'active') members.push(task);
       }
-      if (members.length === 0) throw new Error('合并组已经没有未完成的成员，无法开启新一轮');
+      /*
+       * 开新一轮要求 ≥ 2 个未完成成员。用户已明确拍板本条为通用规则，并据此**推翻**了
+       * 早先"续轮排除已完成成员后只剩 1 个也照开"的决定（commit 5559660）：只剩一件
+       * 事要做时，它就该作为独立任务自己跑一个完整番茄，而不是继续挂在合并组里。
+       * 成员数量不足只阻止下一轮开始，不打断正在进行的 Session。
+       */
+      if (members.length < 2) {
+        throw new Error('合并组未完成的成员不足 2 个，无法开启新一轮');
+      }
 
       const pomodoroIndex =
         historicalSessions

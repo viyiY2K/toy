@@ -23,6 +23,8 @@ import {
   type ValidatedAtomicWriteTransaction,
 } from '../writes/executeAtomicWrite';
 import type { TaskCommandResult } from './taskCommands';
+import { currentMergeMemberId } from './mergeMemberLock';
+import { MERGE_GROUP_TITLE_MAX_LENGTH } from '../schema/mergeGroup';
 
 /** 合并组进行中的两种在用状态；`dissolved` 之外都还挂着成员。 */
 const LIVE_STATUSES = new Set<MergeGroup['status']>(['active', 'limitReached']);
@@ -37,6 +39,11 @@ async function requireLiveGroup(
 ): Promise<MergeGroup> {
   const group = await transaction.get<MergeGroup>(STORE.mergeGroups, mergeGroupId);
   if (!group) throw new Error('合并组不存在');
+  /*
+   * completed 与 dissolved 都是终态（红线 28）：之后一律不许再增删成员、重排、
+   * 追加预估或开新一轮。两者语义不同，报错文案也分开，免得把"做完了"说成"被拆散了"。
+   */
+  if (group.status === 'completed') throw new Error('合并组已完成，不能再改动');
   if (!LIVE_STATUSES.has(group.status)) throw new Error('合并组已解散');
   return group;
 }
@@ -77,10 +84,13 @@ async function activeSessionOf(
 /**
  * 把成员变化同步进正在跑的那条合并 Session。
  *
- * §3.3 关键规则 11 规定 Session.taskIds 取"终结那一刻组内本轮尚未拿 credit 的成员"，
- * 所以计时途中的增删要跟进。唯一的下限是 1：focus 必须至少关联一个 Task（产品不支持
- * 无任务自由专注），因此成员被移空时这条 Session 保留移出前的名单——用户已经在这段
- * 时间里做过这些事，不该被抹掉。
+ * §3.3 关键规则 11：Session.taskIds 取"终结那一刻组内本轮尚未拿 credit 的成员"，
+ * 所以计时途中未来队列的增删要跟进。
+ *
+ * **旧设计（成员可任意同步、移空时保留旧名单）已作废**（红线 27）：现在当前成员被
+ * 锁死，根本走不到"移空"这一步——调用方在改动前就必须先过 `assertMemberEditable`，
+ * 当前成员的移出 / 换位一律被拒。这里只负责把合法的未来队列变化落到快照上，顺序
+ * 一律以 MergeGroup.taskIds 为准（它就是推进顺序，决定分段怎么切）。
  */
 async function syncActiveSessionMembers(
   transaction: ValidatedAtomicWriteTransaction,
@@ -90,14 +100,60 @@ async function syncActiveSessionMembers(
 ): Promise<void> {
   const session = await activeSessionOf(transaction, mergeGroupId);
   if (!session) return;
-  const kept = session.taskIds.filter((taskId) => nextMembers.includes(taskId));
-  const added = nextMembers.filter((taskId) => !session.taskIds.includes(taskId));
-  const taskIds = [...kept, ...added];
-  if (taskIds.length < 1) return;
-  if (taskIds.length === session.taskIds.length && taskIds.every((id, i) => id === session.taskIds[i])) {
+  /*
+   * 本轮之前就已完成的成员不进快照（它们早在那一轮拿过 credit，§3.3 关键规则 11）。
+   * 判据：已经在快照里的一律留下（含本轮中途才勾完成的，它们要拿自己那段时间）；
+   * 组里新来的必须是未完成的——合并资格要求新成员从未计时过，天然满足。
+   */
+  const participants: string[] = [];
+  for (const taskId of nextMembers) {
+    if (session.taskIds.includes(taskId)) {
+      participants.push(taskId);
+      continue;
+    }
+    const task = await transaction.get<Task>(STORE.tasks, taskId);
+    if (task && task.status !== 'completed') participants.push(taskId);
+  }
+  if (participants.length < 1) return;
+  if (
+    participants.length === session.taskIds.length &&
+    participants.every((id, index) => id === session.taskIds[index])
+  ) {
     return;
   }
-  await transaction.put(STORE.sessions, { ...session, taskIds, updatedAt: now });
+  await transaction.put(STORE.sessions, { ...session, taskIds: participants, updatedAt: now });
+}
+
+/**
+ * 锁定校验：active 合并 focus 期间只开放**未来队列**的编辑（红线 27、§3.8 关键规则 13）。
+ *
+ * 被拒绝的动作：移出当前成员、给当前成员换位、把未来成员排到当前成员之前、以及
+ * 整体解散（解散会连带清空当前成员的归属，等于绕过锁定）。
+ * 放行的动作：未来成员的新增、移出，以及未来队列**内部**的相互排序。
+ */
+async function assertMemberEditable(
+  transaction: ValidatedAtomicWriteTransaction,
+  group: MergeGroup,
+  taskIds: readonly string[],
+  action: string,
+): Promise<void> {
+  const session = await activeSessionOf(transaction, group.id);
+  if (!session) return;
+  const current = await currentMergeMemberId(transaction, session);
+  if (current !== null && taskIds.includes(current)) {
+    throw new Error(`${action}：该任务正在本轮合并番茄里执行，请先作废当前番茄或等它到点`);
+  }
+}
+
+/** 当前成员在组内的下标；没有 active 轮或全部完成时为 -1（此时不设排序下限）。 */
+async function currentMemberIndex(
+  transaction: ValidatedAtomicWriteTransaction,
+  group: MergeGroup,
+): Promise<number> {
+  const session = await activeSessionOf(transaction, group.id);
+  if (!session) return -1;
+  const current = await currentMergeMemberId(transaction, session);
+  return current === null ? -1 : group.taskIds.indexOf(current);
 }
 
 /** 清空一批 Task 的合并归属；解散与移出共用。 */
@@ -230,7 +286,16 @@ async function removeMembers(
     removals.push({ taskId, removedAtIndex });
   }
 
-  const dissolving = remaining.length <= 1;
+  /*
+   * 成员掉到 ≤ 1 时按 §3.8 关键规则 2 自动解散——但**本轮 Session 还在跑时要推迟**。
+   *
+   * 用户已明确拍板：成员数量不足不打断正在进行的 Session，只阻止下一轮的开始。立刻
+   * 解散会连带清空当前成员的 mergeGroupId，等于用"移出最后一个未来成员"绕过当前
+   * 成员锁定；也会造出"组已 dissolved、但 Task.mergeGroupId 还挂着"的中间态。
+   * 因此这里保持 active，把解散推到 Session 终结后的结算（见 settleMergeGroupRound）。
+   */
+  const hasActiveRound = (await activeSessionOf(transaction, group.id)) !== null;
+  const dissolving = remaining.length <= 1 && !hasActiveRound;
   const updated: MergeGroup = dissolving
     ? {
         ...group,
@@ -289,6 +354,8 @@ export async function removeTaskFromMergeGroup(
     },
     async (transaction) => {
       const group = await requireLiveGroup(transaction, input.mergeGroupId);
+      // 红线 27：当前成员移不得；未来成员随便移。
+      await assertMemberEditable(transaction, group, [input.taskId], '无法移出该成员');
       const updated = await removeMembers(transaction, input, group, [input.taskId], input.reason);
       return { value: updated, correlationId: transaction.correlationId };
     },
@@ -318,6 +385,22 @@ export async function reorderMergeGroupMember(
         }
       }
       if (input.fromIndex === input.toIndex) throw new Error('排序起止位置必须不同');
+      /*
+       * 红线 27：active 轮期间当前成员不能换位，未来成员也不能被排到它之前——顺序就是
+       * 推进顺序，动了它就等于换掉正在执行的对象。未来队列内部怎么排都行。
+       */
+      const currentIndex = await currentMemberIndex(transaction, group);
+      if (currentIndex >= 0) {
+        await assertMemberEditable(
+          transaction,
+          group,
+          [group.taskIds[input.fromIndex]!],
+          '无法给该成员换位',
+        );
+        if (input.toIndex <= currentIndex) {
+          throw new Error('无法排到当前正在执行的成员之前');
+        }
+      }
 
       const taskIds = [...group.taskIds];
       const [taskId] = taskIds.splice(input.fromIndex, 1);
@@ -450,6 +533,61 @@ export async function endMergeGroupRound(
 }
 
 /**
+ * 本轮结束后的成员数结算（承接 `removeMembers` 里被推迟的自动解散）。
+ *
+ * 用户已明确拍板：成员数量不足**不打断**正在进行的 Session，只阻止下一轮开始。所以
+ * "移出最后一个未来成员"当场只更新名单、不解散；等本轮 focus 终结（completed 或
+ * discarded）后由本命令收口——此时组里若仍不足 2 个成员，按 `membersBelowMinimum`
+ * 解散，当前 Task 回到独立任务。
+ *
+ * 组内已经没有未完成成员时不在此处理：那要么走 `completeMergeGroup`（用户确认整组
+ * 做完），要么保持 active 等用户再往里加任务。本命令在条件不满足时是 no-op。
+ */
+export async function settleMergeGroupRound(
+  input: InitializationClock & { mergeGroupId: string },
+): Promise<TaskCommandResult<MergeGroup>> {
+  return executeAtomicWrite(
+    {
+      storeNames: MERGE_STORES,
+      now: input.now,
+      timezone: input.timezone,
+      diagnosticContext: { entityType: 'MergeGroup', entityId: input.mergeGroupId, operation: 'update' },
+    },
+    async (transaction) => {
+      const group = await requireLiveGroup(transaction, input.mergeGroupId);
+      const unfinished = await unfinishedMembers(transaction, group);
+      if (
+        group.taskIds.length > 1 ||
+        unfinished.length === 0 ||
+        (await activeSessionOf(transaction, group.id)) !== null
+      ) {
+        return { value: group, correlationId: transaction.correlationId };
+      }
+
+      const updated: MergeGroup = {
+        ...group,
+        taskIds: [],
+        status: 'dissolved',
+        dissolvedAt: input.now,
+        dissolvedReason: 'membersBelowMinimum',
+        updatedAt: input.now,
+      };
+      await transaction.put(STORE.mergeGroups, updated);
+      await clearMembership(transaction, group.taskIds, input.now);
+      await transaction.appendEvent(
+        makeEvent({
+          ...eventFields(input, transaction.correlationId),
+          type: 'mergeGroup.dissolved',
+          mergeGroupId: group.id,
+          payload: { finalTaskIds: [], dissolvedReason: 'membersBelowMinimum' },
+        }),
+      );
+      return { value: updated, correlationId: transaction.correlationId };
+    },
+  );
+}
+
+/**
  * 转入硬上限阻塞态并提示（§3.8 关键规则 6、§7.15 `promptType='mergeGroupLimitReached'`）。
  *
  * 触发条件：三轮预估用满，或该组已完成的 focus 轮次达到 7 次，且组内仍有未完成成员。
@@ -495,6 +633,104 @@ export async function markMergeGroupLimitReached(
 }
 
 /**
+ * 给合并组改名（§7.19 mergeGroup.renamed）。
+ *
+ * 新口径下合并组本身是番茄与专注时长的归属单位，会作为独立条目出现在统计与历史列表，
+ * 因此需要一个用户可读、可自定义的名字来区分不同的组。改名不影响成员归属、预估、
+ * 状态与任何统计数值；已终结（completed / dissolved）的组仍可改名——那只是给历史
+ * 记录换个标签，不是修改业务事实。
+ */
+export async function renameMergeGroup(
+  input: InitializationClock & { mergeGroupId: string; title: string },
+): Promise<TaskCommandResult<MergeGroup>> {
+  return executeAtomicWrite(
+    {
+      storeNames: MERGE_STORES,
+      now: input.now,
+      timezone: input.timezone,
+      diagnosticContext: { entityType: 'MergeGroup', entityId: input.mergeGroupId, operation: 'update' },
+    },
+    async (transaction) => {
+      const group = await transaction.get<MergeGroup>(STORE.mergeGroups, input.mergeGroupId);
+      if (!group) throw new Error('合并组不存在');
+      const title = input.title.trim();
+      if (title === '') throw new Error('合并组名称不能为空');
+      if (title.length > MERGE_GROUP_TITLE_MAX_LENGTH) {
+        throw new Error(`合并组名称不能超过 ${MERGE_GROUP_TITLE_MAX_LENGTH} 字`);
+      }
+      if (title === group.title) throw new Error('新名称必须与旧名称不同');
+
+      const updated: MergeGroup = { ...group, title, updatedAt: input.now };
+      await transaction.put(STORE.mergeGroups, updated);
+      await transaction.appendEvent(
+        makeEvent({
+          ...eventFields(input, transaction.correlationId),
+          type: 'mergeGroup.renamed',
+          mergeGroupId: group.id,
+          payload: { oldTitle: group.title, newTitle: title },
+        }),
+      );
+      return { value: updated, correlationId: transaction.correlationId };
+    },
+  );
+}
+
+/**
+ * 用户确认"这一组杂事做完了"（§7.19 mergeGroup.completed，§3.8 成功终态）。
+ *
+ * 与 `dissolved` 是两回事（红线 28）：`completed` 是**成功**终态，配 `completedAt`；
+ * `dissolved` 只表示中途拆散 / 取消合并。两者都是终态，之后一律不许再增删成员、
+ * 重排、追加预估或开新一轮（由 `requireLiveGroup` 统一挡掉）。
+ *
+ * `validFocusCountAtCompletion` 记这一组完成时累计拿到的有效番茄数——注意它是**组**
+ * 的番茄数（每条正常完成的合并 Session 记 1 个），不是任何成员的番茄数（成员恒为 0）。
+ * 这样 MergeGroup 的预估准确率就能复用独立 Task 那套算法，不必另写一份。
+ */
+export async function completeMergeGroup(
+  input: InitializationClock & { mergeGroupId: string },
+): Promise<TaskCommandResult<MergeGroup>> {
+  return executeAtomicWrite(
+    {
+      storeNames: MERGE_STORES,
+      now: input.now,
+      timezone: input.timezone,
+      diagnosticContext: { entityType: 'MergeGroup', entityId: input.mergeGroupId, operation: 'update' },
+    },
+    async (transaction) => {
+      const group = await requireLiveGroup(transaction, input.mergeGroupId);
+      if ((await activeSessionOf(transaction, group.id)) !== null) {
+        throw new Error('本轮合并专注还在进行中，无法确认完成');
+      }
+      const unfinished = await unfinishedMembers(transaction, group);
+      if (unfinished.length > 0) {
+        throw new Error('组内还有未完成的成员，无法确认整组完成');
+      }
+      const sessions = await transaction.getAllIncludingDeleted<Session>(STORE.sessions);
+      const validFocusCountAtCompletion = sessions.filter(
+        (session) => session.mergeGroupId === group.id && session.status === 'completed',
+      ).length;
+
+      const updated: MergeGroup = {
+        ...group,
+        status: 'completed',
+        completedAt: input.now,
+        updatedAt: input.now,
+      };
+      await transaction.put(STORE.mergeGroups, updated);
+      await transaction.appendEvent(
+        makeEvent({
+          ...eventFields(input, transaction.correlationId),
+          type: 'mergeGroup.completed',
+          mergeGroupId: group.id,
+          payload: { completedAt: input.now, validFocusCountAtCompletion },
+        }),
+      );
+      return { value: updated, correlationId: transaction.correlationId };
+    },
+  );
+}
+
+/**
  * 用户主动整体解散（§7.19 mergeGroup.dissolved，`dissolvedReason='manualDissolved'`）。
  * 只清空成员的合并归属，**不改变任务在今日待办 / 活动清单的归属，也不删除任务**
  * （§3.8 关键规则 5）；已解散的合并组历史记录保留，不写 deletedAt（关键规则 7）。
@@ -511,6 +747,11 @@ export async function dissolveMergeGroup(
     },
     async (transaction) => {
       const group = await requireLiveGroup(transaction, input.mergeGroupId);
+      /*
+       * 红线 27：不允许用"整体解散"绕过当前成员锁定——解散会清空全部成员的归属，
+       * 当前成员也在其中。本轮跑完（正常到点或作废）才能解散。
+       */
+      await assertMemberEditable(transaction, group, group.taskIds, '无法解散合并组');
       const updated: MergeGroup = {
         ...group,
         status: 'dissolved',

@@ -35,6 +35,10 @@ async function taskById(id: string): Promise<Task> {
   return (await dataStore.get<Task>(STORE.tasks, id))!;
 }
 
+async function groupById(id: string): Promise<MergeGroup> {
+  return (await dataStore.get<MergeGroup>(STORE.mergeGroups, id))!;
+}
+
 /** 标准 focus 必须挂当天的 DayPlan（§3.3 关键规则 8），否则写入校验直接拒绝。 */
 async function currentDayPlanId(): Promise<string> {
   return (await dataStore.getAll<DayPlan>(STORE.dayPlans))[0]!.id;
@@ -286,34 +290,86 @@ describe('mergeGroupCommands（v4.1 §3.8 / §7.19）', () => {
     });
   });
 
-  it('计时途中移出成员会同步进正在跑的 Session，但组的归属不变（§3.3 约束 15 放宽到 ≥ 1）', async () => {
+  it('计时途中移出**未来**成员会同步进正在跑的 Session，当前成员不受影响', async () => {
     const [a, b, c] = [await chore('A'), await chore('B'), await chore('C')];
     const group = (await createMergeGroup({
       now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id, c.id],
     })).value;
     const session = await seedActiveMergedFocus(group);
 
+    // c 还没轮到，属于未来队列，随便移。
     await removeTaskFromMergeGroup({
-      now: at(), timezone: TIMEZONE, mergeGroupId: group.id, taskId: a.id, reason: 'manualUnmerge',
+      now: at(), timezone: TIMEZONE, mergeGroupId: group.id, taskId: c.id, reason: 'manualUnmerge',
     });
 
     const stored = (await dataStore.get<Session>(STORE.sessions, session.id))!;
-    expect(stored.taskIds).toEqual([b.id, c.id]);
+    expect(stored.taskIds).toEqual([a.id, b.id]);
     expect(stored.mergeGroupId).toBe(group.id);
   });
 
-  it('成员被移空时正在跑的 Session 保留移出前的名单——不能变成无任务专注', async () => {
+  /*
+   * 红线 27：active 轮期间只开放未来队列的编辑。下面四条把"当前成员被锁死"的四个
+   * 绕过口子逐个堵上——删除、换位、排到它之前、整体解散。
+   */
+  it('计时途中不能移出当前正在执行的成员', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    const group = (await createMergeGroup({ now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id] })).value;
+    await seedActiveMergedFocus(group);
+
+    await expect(removeTaskFromMergeGroup({
+      now: at(), timezone: TIMEZONE, mergeGroupId: group.id, taskId: a.id, reason: 'manualUnmerge',
+    })).rejects.toThrow('正在本轮合并番茄里执行');
+  });
+
+  it('计时途中不能给当前成员换位，也不能把未来成员排到它之前', async () => {
+    const [a, b, c] = [await chore('A'), await chore('B'), await chore('C')];
+    const group = (await createMergeGroup({
+      now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id, c.id],
+    })).value;
+    await seedActiveMergedFocus(group);
+
+    await expect(reorderMergeGroupMember({
+      now: at(), timezone: TIMEZONE, mergeGroupId: group.id, fromIndex: 0, toIndex: 2,
+    })).rejects.toThrow('正在本轮合并番茄里执行');
+    await expect(reorderMergeGroupMember({
+      now: at(), timezone: TIMEZONE, mergeGroupId: group.id, fromIndex: 2, toIndex: 0,
+    })).rejects.toThrow('无法排到当前正在执行的成员之前');
+
+    // 未来队列内部（1 ↔ 2）相互排序是放行的。
+    const reordered = await reorderMergeGroupMember({
+      now: at(), timezone: TIMEZONE, mergeGroupId: group.id, fromIndex: 2, toIndex: 1,
+    });
+    expect(reordered.value.taskIds).toEqual([a.id, c.id, b.id]);
+  });
+
+  it('计时途中不能用整体解散绕过当前成员锁定', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    const group = (await createMergeGroup({ now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id] })).value;
+    await seedActiveMergedFocus(group);
+
+    await expect(dissolveMergeGroup({
+      now: at(), timezone: TIMEZONE, mergeGroupId: group.id,
+    })).rejects.toThrow('正在本轮合并番茄里执行');
+  });
+
+  it('移出最后一个未来成员时推迟解散：本轮不打断，组保持 active 且当前成员仍挂在组里', async () => {
     const [a, b] = [await chore('A'), await chore('B')];
     const group = (await createMergeGroup({ now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id] })).value;
     const session = await seedActiveMergedFocus(group);
 
-    // 移出 a 触发自动解散（剩 1 个），两个成员的归属都被清空。
     await removeTaskFromMergeGroup({
-      now: at(), timezone: TIMEZONE, mergeGroupId: group.id, taskId: a.id, reason: 'manualUnmerge',
+      now: at(), timezone: TIMEZONE, mergeGroupId: group.id, taskId: b.id, reason: 'manualUnmerge',
     });
 
-    const stored = (await dataStore.get<Session>(STORE.sessions, session.id))!;
-    expect(stored.taskIds).toEqual([b.id]);
-    expect(stored.mergeGroupId).toBe(group.id);
+    /*
+     * 不立刻解散：那会连带清空当前成员 a 的归属，等于用"移出最后一个未来成员"绕过
+     * 锁定；也会造出"组已 dissolved、Task.mergeGroupId 还挂着"的中间态。
+     */
+    const stored = await groupById(group.id);
+    expect(stored.status).toBe('active');
+    expect(stored.taskIds).toEqual([a.id]);
+    expect((await taskById(a.id)).mergeGroupId).toBe(group.id);
+    expect((await taskById(b.id)).mergeGroupId).toBeNull();
+    expect((await dataStore.get<Session>(STORE.sessions, session.id))!.taskIds).toEqual([a.id]);
   });
 });

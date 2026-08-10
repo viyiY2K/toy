@@ -138,8 +138,8 @@ describe('合并番茄钟端到端流程', () => {
   });
 
   it('§3.8 关键规则 4「追加预估」：已完成的留在组里，下一轮只带未完成的', async () => {
-    const [a, b] = [await chore('两分钟搞定'), await chore('要久一点')];
-    const group = (await createMergeGroup({ ...clock(), taskIds: [a.id, b.id] })).value;
+    const [a, b, c] = [await chore('两分钟搞定'), await chore('要久一点'), await chore('还有一件')];
+    const group = (await createMergeGroup({ ...clock(), taskIds: [a.id, b.id, c.id] })).value;
 
     const first = await runRound(group.id);
     await completeTaskFromPomodoro({ ...clock(), sessionId: first.id, taskId: a.id });
@@ -149,12 +149,12 @@ describe('合并番茄钟端到端流程', () => {
     const afterAdjust = await groupById(group.id);
     expect(afterAdjust.status).toBe('active');
     // 已完成的成员不移出组。
-    expect(afterAdjust.taskIds).toEqual([a.id, b.id]);
+    expect(afterAdjust.taskIds).toEqual([a.id, b.id, c.id]);
     expect((await taskById(a.id)).mergeGroupId).toBe(group.id);
 
     const second = (await startMergeGroupFocus({ ...clock(), mergeGroupId: group.id })).value;
     // §3.3 关键规则 11：快照排除已完成的成员，不重复计有效番茄。
-    expect(second.taskIds).toEqual([b.id]);
+    expect(second.taskIds).toEqual([b.id, c.id]);
     expect(second.mergeGroupId).toBe(group.id);
     expect(second.pomodoroIndex).toBe(2);
 
