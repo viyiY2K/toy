@@ -3,10 +3,12 @@ import {
   makeDayPlan,
   makeEnergyRecord,
   makeEvent,
+  makeMergeGroup,
   makeSession,
   makeSettings,
   makeTask,
   type Event,
+  type MergeGroup,
   type Session,
   type Task,
 } from '../schema';
@@ -44,12 +46,34 @@ function completedEvent(
   } as never);
 }
 
+/** 一条正常完成的合并 focus，附带按成员切好的分段。 */
+function mergedFocus(
+  id: string,
+  mergeGroupId: string,
+  segments: ReadonlyArray<{ taskId: string; actualDuration: number }>,
+  { status = 'completed' as 'completed' | 'discarded', startedAt = NOW } = {},
+): Session {
+  return makeSession({
+    id, now: startedAt, startedAt, timezone: ZONE, type: 'focus', status,
+    taskIds: segments.map(({ taskId }) => taskId),
+    mergeGroupId,
+    taskSegments: segments.map(({ taskId, actualDuration }) => ({
+      taskId, startedAt, endedAt: startedAt, actualDuration,
+    })),
+    endedAt: startedAt,
+    plannedDuration: 1500,
+    actualDuration: segments.reduce((sum, { actualDuration }) => sum + actualDuration, 0),
+    pomodoroIndex: 1,
+  });
+}
+
 const inputBase = () => ({
   tasks: [] as Task[],
   sessions: [] as Session[],
   events: [] as Event[],
   energyRecords: [],
   dayPlans: [],
+  mergeGroups: [] as MergeGroup[],
   settings: makeSettings({ now: NOW }),
   range: makeStatsRange('day', '2026-06-01'),
 });
@@ -242,5 +266,125 @@ describe('Phase 3 S3b task, energy, interrupt, and budget aggregation', () => {
       { appDate: '2026-06-03', budgetPomodoros: null, validPomodoros: 0, usageRate: null },
       { appDate: '2026-06-04', budgetPomodoros: null, validPomodoros: 0, usageRate: null },
     ]);
+  });
+});
+
+describe('合并番茄的统计口径（§8.5，红线 24–26）', () => {
+  const groupId = '01900000-0000-7000-8000-0000000000aa';
+  const group = () => makeMergeGroup({ id: groupId, now: NOW, taskIds: ['a', 'b'], title: '杂事番茄' });
+
+  it('番茄归合并组、时间归成员：成员各记 0 个有效番茄，只拿自己那段耗时', () => {
+    const [a, b] = [task('a', 'A', 1), task('b', 'B', 1)];
+    // 一段 1500 秒的合并专注，A 占 500 秒、B 占 1000 秒。
+    const session = mergedFocus('s1', groupId, [
+      { taskId: 'a', actualDuration: 500 },
+      { taskId: 'b', actualDuration: 1000 },
+    ]);
+
+    const stats = aggregateAwarenessStats({
+      ...inputBase(), tasks: [a, b], sessions: [session], mergeGroups: [group()],
+    });
+
+    // 成员：番茄 0，时长只算自己那段——绝不是每人各记一遍整段 1500。
+    expect(stats.tasks.map((t) => [t.taskId, t.validFocusInRange, t.standardSeconds])).toEqual([
+      ['a', 0, 500],
+      ['b', 0, 1000],
+    ]);
+    // 合并组：番茄 1，整段 1500 秒归它。
+    expect(stats.mergeGroups).toMatchObject([
+      { mergeGroupId: groupId, title: '杂事番茄', validFocusInRange: 1, standardSeconds: 1500 },
+    ]);
+  });
+
+  it('任务维度加总不再大于全局：成员分段之和 = 合并组整段时长', () => {
+    const [a, b] = [task('a', 'A', 1), task('b', 'B', 1)];
+    const sessions = [
+      mergedFocus('s1', groupId, [
+        { taskId: 'a', actualDuration: 180 },
+        { taskId: 'b', actualDuration: 1320 },
+      ]),
+      mergedFocus('s2', groupId, [
+        { taskId: 'a', actualDuration: 420 },
+        { taskId: 'b', actualDuration: 1080 },
+      ]),
+    ];
+
+    const stats = aggregateAwarenessStats({
+      ...inputBase(), tasks: [a, b], sessions, mergeGroups: [group()],
+    });
+
+    const memberSeconds = stats.tasks.reduce((sum, t) => sum + t.standardSeconds, 0);
+    const groupSeconds = stats.mergeGroups[0]!.standardSeconds;
+    expect(memberSeconds).toBe(groupSeconds);
+    expect(groupSeconds).toBe(3000);
+    // 跨两轮，合并组番茄数 2；成员无论横跨多少轮仍是 0。
+    expect(stats.mergeGroups[0]!.validFocusInRange).toBe(2);
+    expect(stats.tasks.every((t) => t.validFocusInRange === 0)).toBe(true);
+  });
+
+  it('作废的合并 focus 只按分段计作废时长，不给任何维度记有效番茄', () => {
+    const [a, b] = [task('a', 'A', 1), task('b', 'B', 1)];
+    const session = mergedFocus('s1', groupId, [
+      { taskId: 'a', actualDuration: 240 },
+      { taskId: 'b', actualDuration: 360 },
+    ], { status: 'discarded' });
+
+    const stats = aggregateAwarenessStats({
+      ...inputBase(), tasks: [a, b], sessions: [session], mergeGroups: [group()],
+    });
+
+    expect(stats.tasks.map((t) => [t.discardedSeconds, t.validFocusInRange])).toEqual([
+      [240, 0],
+      [360, 0],
+    ]);
+    expect(stats.mergeGroups[0]).toMatchObject({
+      validFocusInRange: 0,
+      discardedSeconds: 600,
+      standardSeconds: 0,
+    });
+  });
+
+  it('合并成员完成不进 Task 预估准确率样本——pomodoro 不等于它有有效番茄', () => {
+    const member = task('a', 'A', 1);
+    const session = mergedFocus('s1', groupId, [
+      { taskId: 'a', actualDuration: 500 },
+      { taskId: 'b', actualDuration: 1000 },
+    ]);
+    /*
+     * 合法且预期的组合：completionSource='pomodoro' + validFocusCountAtCompletion=0。
+     * 留在样本里会被算成"预估 1、实到 0 → 预估偏大"，纯属误判。
+     */
+    const completion = makeEvent({
+      id: 'e1', now: NOW, occurredAt: NOW, timezone: ZONE, type: 'task.completed',
+      taskId: 'a', sessionId: 's1',
+      payload: { completionSource: 'pomodoro', completedAt: NOW, validFocusCountAtCompletion: 0 },
+    } as never);
+
+    const stats = aggregateAwarenessStats({
+      ...inputBase(), tasks: [member], sessions: [session], events: [completion],
+      mergeGroups: [group()],
+    });
+
+    expect(stats.estimates.sampleCount).toBe(0);
+    expect(stats.estimates.overestimated).toBe(0);
+    // 但它仍然计入"番茄完成"的任务数——确实是在番茄流程里完成的。
+    expect(stats.completions.pomodoro).toBe(1);
+  });
+
+  it('MergeGroup 预估准确率复用独立 Task 那套算法，不另写一份', () => {
+    const completion = makeEvent({
+      id: 'e1', now: NOW, occurredAt: NOW, timezone: ZONE, type: 'mergeGroup.completed',
+      mergeGroupId: groupId,
+      payload: { completedAt: NOW, validFocusCountAtCompletion: 1 },
+    } as never);
+
+    const stats = aggregateAwarenessStats({
+      ...inputBase(), mergeGroups: [group()], events: [completion],
+    });
+
+    // 首轮估 1、实际就用了 1 个 → 估准，判据与 Task 完全一致。
+    expect(stats.mergeGroupEstimates).toMatchObject({
+      sampleCount: 1, accurate: 1, overestimated: 0, underestimated: 0, accuracyRate: 1,
+    });
   });
 });

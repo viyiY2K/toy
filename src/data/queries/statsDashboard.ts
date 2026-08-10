@@ -1,5 +1,5 @@
 import { dataStore, EVENT_STORE, STORE } from '../dataStore';
-import type { DayPlan, EnergyRecord, Event, Session, Settings, Task } from '../schema';
+import type { DayPlan, EnergyRecord, Event, MergeGroup, Session, Settings, Task } from '../schema';
 import type { IsoDate } from '../time';
 import { aggregateAwarenessStats } from '../stats/awarenessStats';
 import { makeStatsRange, type StatsRangeKind } from '../stats/dateRange';
@@ -12,14 +12,16 @@ export interface LoadStatsDashboardInput {
 
 /** Unified read-only stats query. All results remain rebuildable from retained facts. */
 export async function loadStatsDashboard(input: LoadStatsDashboardInput) {
-  const [tasks, sessions, events, energyRecords, dayPlans, settingsRecords] = await Promise.all([
-    dataStore.getAll<Task>(STORE.tasks),
-    dataStore.getAll<Session>(STORE.sessions),
-    dataStore.getAll<Event>(EVENT_STORE),
-    dataStore.getAll<EnergyRecord>(STORE.energyRecords),
-    dataStore.getAll<DayPlan>(STORE.dayPlans),
-    dataStore.getAll<Settings>(STORE.settings),
-  ]);
+  const [tasks, sessions, events, energyRecords, dayPlans, mergeGroups, settingsRecords] =
+    await Promise.all([
+      dataStore.getAll<Task>(STORE.tasks),
+      dataStore.getAll<Session>(STORE.sessions),
+      dataStore.getAll<Event>(EVENT_STORE),
+      dataStore.getAll<EnergyRecord>(STORE.energyRecords),
+      dataStore.getAll<DayPlan>(STORE.dayPlans),
+      dataStore.getAll<MergeGroup>(STORE.mergeGroups),
+      dataStore.getAll<Settings>(STORE.settings),
+    ]);
   if (settingsRecords.length !== 1) {
     throw new Error(`统计查询要求恰好一条有效 Settings，当前为 ${settingsRecords.length} 条`);
   }
@@ -33,6 +35,7 @@ export async function loadStatsDashboard(input: LoadStatsDashboardInput) {
       events,
       energyRecords,
       dayPlans,
+      mergeGroups,
       settings,
       range,
     }),
