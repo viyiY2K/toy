@@ -2312,3 +2312,19 @@ select:focus-visible {
 .timer-merge-tree {
   margin-bottom: 10px;
 }
+.timer-merge-add-label {
+  margin: 8px 0 2px;
+  padding-left: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.timer-merge-add-row .atr-name {
+  color: var(--muted);
+}
+.timer-merge-add-row .icon-btn {
+  opacity: .65;
+}
+.timer-merge-add-row .icon-btn:hover {
+  opacity: 1;
+  color: var(--accent-ink);
+}

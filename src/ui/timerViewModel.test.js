@@ -19,6 +19,7 @@ import {
   shouldRecoverAfterHidden,
   shouldPromptOnReturn,
   mergeRoundChoiceOptions,
+  timerAddableMergeMembers,
   timerDisplayTask,
   timerMergeMembers,
 } from './timerViewModel';
@@ -88,6 +89,22 @@ describe('S13c timer view model', () => {
     expect(mergeRoundChoiceOptions(blocked, [todo])).toMatchObject({
       blocked: true, canExtend: false, canDissolve: true,
     });
+  });
+
+  it('计时进行中只列出仍有合并资格的任务，今日待办排在前面', () => {
+    const group = { id: 'g1', status: 'active' };
+    const todayFresh = { id: 'today', title: '订咖啡豆', status: 'active', mergeGroupId: null };
+    const listFresh = { id: 'list', title: '回消息', status: 'active', mergeGroupId: null };
+    const alreadyIn = { id: 'in', title: '已在组里', status: 'active', mergeGroupId: 'g1' };
+    const timed = { id: 'old', title: '计时过', status: 'active', mergeGroupId: null };
+    const views = {
+      todayTasks: [alreadyIn, todayFresh],
+      activeTasks: [listFresh, timed, todayFresh],
+      hasFocusHistoryByTaskId: { old: true },
+    };
+    expect(timerAddableMergeMembers(views, group).map(({ id }) => id)).toEqual(['today', 'list']);
+    expect(timerAddableMergeMembers(views, { ...group, status: 'dissolved' })).toEqual([]);
+    expect(timerAddableMergeMembers(views, null)).toEqual([]);
   });
 
   it('计时页只在合并场景展示成员树：单任务专注返回空数组', () => {

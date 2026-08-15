@@ -1,4 +1,5 @@
 import {
+  addTaskToMergeGroup,
   adjustMergeGroupEstimate,
   adjustTaskEstimate,
   completeBreak,
@@ -41,6 +42,7 @@ import {
   canUseActiveBreakExit,
   canUsePendingBreakExits,
   mergeRoundChoiceOptions,
+  timerAddableMergeMembers,
   timerDisplayTask,
   timerMergeMembers,
 } from './timerViewModel';
@@ -206,11 +208,13 @@ function TimerMergeMembers({
   tasks,
   currentTaskId = null,
   sessionId = null,
+  mergeGroupId = null,
+  addableTasks = [],
   busy = false,
   command = null,
   interactive = false,
 }) {
-  if (tasks.length === 0) return null;
+  if (tasks.length === 0 && addableTasks.length === 0) return null;
   return (
     <div className="timer-merge-tree">
       <div className="activity-tree-row atr-group">
@@ -244,6 +248,30 @@ function TimerMergeMembers({
             </div>
           );
         })}
+        {interactive && addableTasks.length > 0 && mergeGroupId && command && (
+          <>
+            <div className="timer-merge-add-label">加入这轮</div>
+            {addableTasks.map((task) => (
+              <div key={task.id} className="activity-tree-row atr-item timer-merge-add-row">
+                <span className="atr-check" aria-hidden="true"/>
+                <span className="atr-name">{task.title}</span>
+                <button
+                  className="icon-btn"
+                  disabled={busy}
+                  title="加入这轮，排在当前这件事后面"
+                  onClick={() => command((time) => addTaskToMergeGroup({
+                    ...time,
+                    mergeGroupId,
+                    taskId: task.id,
+                    source: 'duringActiveSession',
+                  }))}
+                >
+                  <Icon name="plus" size={12}/>
+                </button>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
@@ -1597,6 +1625,10 @@ export function TimerView({
             tasks={displayMergeMembers}
             currentTaskId={snapshot.activeTask?.id ?? null}
             sessionId={activeSession.id}
+            mergeGroupId={snapshot.activeMergeGroup?.id ?? null}
+            addableTasks={isFocus && snapshot.activeMergeGroup
+              ? timerAddableMergeMembers(taskViews, snapshot.activeMergeGroup)
+              : []}
             busy={busy}
             command={activeSessionCommand}
             interactive={isFocus}

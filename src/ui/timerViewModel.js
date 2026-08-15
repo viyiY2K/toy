@@ -1,3 +1,5 @@
+import { mergeIneligibleReason } from './taskViewModel';
+
 export function elapsedSeconds(session, nowMs) {
   const startedAt = Date.parse(session.startedAt);
   if (!Number.isFinite(startedAt)) return 0;
@@ -16,6 +18,24 @@ export function formatCountdown(seconds) {
 
 export function timerDisplayTask(activeSession, activeTask, selectedTask) {
   return activeSession === null ? selectedTask : activeTask;
+}
+
+/**
+ * 合并专注进行中，还可以拉进未来队列的任务。
+ * 资格与清单拖拽相同：从未计时、未在别的组、仍是 active。
+ * 今日待办排在前面，活动清单随后，去重。
+ */
+export function timerAddableMergeMembers(taskViews, mergeGroup) {
+  if (!mergeGroup || (mergeGroup.status !== 'active' && mergeGroup.status !== 'limitReached')) {
+    return [];
+  }
+  const seen = new Set();
+  const pool = [...(taskViews.todayTasks ?? []), ...(taskViews.activeTasks ?? [])];
+  return pool.filter((task) => {
+    if (seen.has(task.id)) return false;
+    seen.add(task.id);
+    return mergeIneligibleReason(task, taskViews) === null;
+  });
 }
 
 /**
