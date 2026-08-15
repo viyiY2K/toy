@@ -2243,19 +2243,27 @@ select:focus-visible {
   color: var(--accent-ink);
 }
 
-/* 成员圈必须比独立任务的 9px 圆点更小、更轻。
-   后面有一轮打磨把 .atr-check 拉到 15px，这里单独压回去；
-   视觉用伪元素画 5px 圈，按钮本身留出可点区域。 */
+/* 成员缩进：.task-subtree 已经让出竖线，.atr-item 就不要再 margin-left 一次。
+   圈仍比独立任务的 9px 更小；按钮只留点击面积。 */
+.merge-group-block .task-subtree,
+.timer-merge-tree .task-subtree {
+  margin: 0 0 2px 18px;
+  padding-left: 10px;
+}
 .merge-group-block .atr-item,
 .timer-merge-tree .atr-item {
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  margin-left: 0;
+  min-height: 28px;
+  padding: 2px 4px;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  column-gap: 6px;
 }
 .merge-group-block .atr-check,
 .merge-group-block .atr-check.is-done,
 .timer-merge-tree .atr-check,
 .timer-merge-tree .atr-check.is-done {
-  width: 14px;
-  height: 14px;
+  width: 10px;
+  height: 10px;
   border: 0;
   background: none;
   opacity: 1;
