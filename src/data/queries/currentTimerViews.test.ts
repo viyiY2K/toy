@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   completeBreak,
   completeFocus,
+  completeTaskFromPomodoro,
   createManualTask,
   discardFocus,
   endWorkAfterFocus,
@@ -162,6 +163,21 @@ describe('合并专注的计时视图（v4.1 §3.3、§3.8）', () => {
     const views = await loadCurrentTimerViews(mergeClock());
     expect(views.activeMergeGroup?.id).toBe(group.id);
     expect(views.activeSessionTasks.map(({ id }) => id)).toEqual([a.id, b.id]);
+    expect(views.activeTask?.id).toBe(a.id);
+  });
+
+  it('勾完当前成员后 activeTask 切到下一位未完成成员，不用字面 taskIds[0]', async () => {
+    const views = await loadCurrentTimerViews(mergeClock());
+    const session = views.activeSession!;
+    const first = views.activeSessionTasks[0]!;
+    const second = views.activeSessionTasks[1]!;
+    await completeTaskFromPomodoro({
+      ...mergeClock(), sessionId: session.id, taskId: first.id,
+    });
+
+    const next = await loadCurrentTimerViews(mergeClock());
+    expect(next.activeSession?.taskIds[0]).toBe(first.id);
+    expect(next.activeTask?.id).toBe(second.id);
   });
 
   it('响铃后暴露 pendingBreakMergeGroup 与成员，供收尾界面做「结束 / 追加预估」二选一', async () => {

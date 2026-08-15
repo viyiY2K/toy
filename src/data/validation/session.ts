@@ -487,29 +487,35 @@ export async function collectSessionValidationIssues(
     } else if (session.status === 'completed' || session.status === 'discarded') {
       const segments = Array.isArray(session.taskSegments) ? session.taskSegments : [];
       const taskIds = Array.isArray(session.taskIds) ? session.taskIds : [];
-      const segmentIds = segments.flatMap((segment) =>
-        isRecord(segment) && typeof segment.taskId === 'string' ? [segment.taskId] : [],
-      );
-      collector.check(
-        segmentIds.length === taskIds.length &&
-          new Set(segmentIds).size === new Set(taskIds).size &&
-          taskIds.every((taskId) => segmentIds.includes(String(taskId))),
-        'session.taskSegments.coverage',
-        'taskSegments',
-        '终结的合并 Session 必须为每个参与成员各写一条分段，taskId 集合须与 taskIds 完全一致',
-      );
-      if (typeof session.actualDuration === 'number') {
-        const total = segments.reduce(
-          (sum, segment) =>
-            sum + (isRecord(segment) && typeof segment.actualDuration === 'number' ? segment.actualDuration : 0),
-          0,
+      /*
+       * 迁移进来的历史合并 Session 没有可还原的分段事实，保留空数组（统计按 0 贡献）。
+       * 当前版本的 complete / discard / 恢复写入必须仍写满覆盖；空数组只放过这一类旧记录。
+       */
+      if (segments.length > 0) {
+        const segmentIds = segments.flatMap((segment) =>
+          isRecord(segment) && typeof segment.taskId === 'string' ? [segment.taskId] : [],
         );
         collector.check(
-          total === session.actualDuration,
-          'session.taskSegments.total',
+          segmentIds.length === taskIds.length &&
+            new Set(segmentIds).size === new Set(taskIds).size &&
+            taskIds.every((taskId) => segmentIds.includes(String(taskId))),
+          'session.taskSegments.coverage',
           'taskSegments',
-          '各分段 actualDuration 之和必须精确等于 Session.actualDuration',
+          '终结的合并 Session 必须为每个参与成员各写一条分段，taskId 集合须与 taskIds 完全一致',
         );
+        if (typeof session.actualDuration === 'number') {
+          const total = segments.reduce(
+            (sum, segment) =>
+              sum + (isRecord(segment) && typeof segment.actualDuration === 'number' ? segment.actualDuration : 0),
+            0,
+          );
+          collector.check(
+            total === session.actualDuration,
+            'session.taskSegments.total',
+            'taskSegments',
+            '各分段 actualDuration 之和必须精确等于 Session.actualDuration',
+          );
+        }
       }
     }
   }

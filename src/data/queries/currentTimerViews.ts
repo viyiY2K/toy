@@ -35,11 +35,22 @@ function compareCompleted(left: Session, right: Session): number {
     || left.id.localeCompare(right.id);
 }
 
-function referencedTaskId(session: Session | null, sessionById: Map<string, Session>): string | null {
+function referencedTaskId(
+  session: Session | null,
+  sessionById: Map<string, Session>,
+  taskById: Map<string, Task>,
+): string | null {
   if (!session) return null;
-  if (session.type === 'focus') return session.taskIds[0] ?? null;
-  if (session.sourceFocusSessionId) {
-    return sessionById.get(session.sourceFocusSessionId)?.taskIds[0] ?? null;
+  const focus = session.type === 'focus'
+    ? session
+    : session.sourceFocusSessionId
+      ? sessionById.get(session.sourceFocusSessionId) ?? null
+      : null;
+  if (!focus) return null;
+  if (focus.mergeGroupId === null) return focus.taskIds[0] ?? null;
+  for (const taskId of focus.taskIds) {
+    const task = taskById.get(taskId);
+    if (task && task.status !== 'completed') return taskId;
   }
   return null;
 }
@@ -90,8 +101,8 @@ export async function loadCurrentTimerViews(clock: InitializationClock): Promise
 
   const sessionById = new Map(historicalSessions.map((session) => [session.id, session]));
   const taskById = new Map(tasks.map((task) => [task.id, task]));
-  const activeTaskId = referencedTaskId(activeSession, sessionById);
-  const pendingBreakTaskId = referencedTaskId(pendingBreakFocus, sessionById);
+  const activeTaskId = referencedTaskId(activeSession, sessionById, taskById);
+  const pendingBreakTaskId = referencedTaskId(pendingBreakFocus, sessionById, taskById);
   const mergeGroupById = new Map(mergeGroups.map((group) => [group.id, group]));
   /** 按 Session.taskIds 的顺序取出成员 Task（这就是合并卡片内的先后顺序）。 */
   const sessionTasks = (session: Session | null): Task[] =>

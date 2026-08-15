@@ -269,3 +269,14 @@ read as, a reconstruction of the lost atomic S0–S5 commit history.
 - Review: Implementer 自审 `PASS`。核对写入顺序：complete / dissolve / 成员不足解散均先 `clearMembership` 再写 Group 终态，事务内逐笔校验只看到合法状态，任一步失败整事务回滚。核对 Event 契约：`mergeGroup.completed` 顶层必填 `sessionId`，payload 含完成快照且 `incompleteTaskIds` 必须是 `finalTaskIds` 子集。核对统计不再依赖已清空的 `Task.mergeGroupId`。自审修了一处：`validFocusCountAtCompletion` 补上 `type === 'focus'`，与 §7.19 及 Task 完成快照口径对齐。
 - Findings and resolution: （1）Major：完成快照计数原先只滤 `mergeGroupId` + `status='completed'`，未按 §7.19 限制 `type='focus'`。已改为与 `completeTaskFromPomodoro` 相同的标准 focus 口径。无其他 Blocking / Major 项。
 - Residual risk or user decision: （1）UI 仍按旧口径展示/写入，下一批才能重接；本 commit 只建立数据层基线。（2）终态 rename-only validator 要求后续本地写入必须改 `title`，并把 `deviceId` / `syncedAt` 一并冻结；当前没有同步回写终态组合并组的路径，云端结构升级与真实多端验收仍需用户另行确认。（3）`markMergeGroupLimitReached` 仍用 `getAllIncludingDeleted` 计完成轮次，与完成快照排除软删 Session 的口径尚未统一；本轮不顺手改相邻命令。（4）工作树仍保留用户原有未跟踪文件 `docs/ui-handoff-empty-states-and-beyond.md`，未纳入本提交。
+
+### 合并番茄钟 v4.3.2 独立 review 缺陷修复
+
+- Status: `PASS`（Implementer 自审；关闭独立 Reviewer 对 `c7e0d75`..`8d6ca03` 的 `BLOCKED`）。
+- Scope: 逐条修复独立 review 的 9 个 bug 与 2 个 suggestion：手动完成/取消完成锁定、重排同步活动 Session、合并崩溃恢复写分段、当前视图不再把 completed 组当在用、计时视图按当前未完成成员取值、结算解散保留终态快照、历史空分段可再写入、终态组允许软删/同步簿记、结束本轮拒绝活动 Session、活组成员不能单独 startFocus、修正过时文件头。不含 UI。
+- Commit: 本原子提交（subject：`fix(data): 关闭 v4.3.2 合并番茄独立 review 缺陷`）。
+- Specification: v4.3.2 §3.3 关键规则 13/14、§3.8 关键规则 11–15、红线 24/27。
+- Verification: `npm run test:run` → 65 files / 541 tests passed；`npm run typecheck` → passed；`npm run build` → 144 modules built；`git diff --check` → passed。仓库未提供 lint 命令。未做浏览器验证：本轮仍无 UI 改动。
+- Review: Implementer 自审 `PASS`。独立 Reviewer 原 verdict 为 `BLOCKED`，所列 11 条均已在本提交关闭。
+- Findings and resolution: 见独立审查记录；本提交按建议方向全部落地，并补对应测试。
+- Residual risk or user decision: UI 仍未按新语义重接，但数据层锁定与查询洞已补上，可以开始 UI 重接。`markMergeGroupLimitReached` 软删 Session 计数口径仍未统一。未跟踪的 `docs/ui-handoff-empty-states-and-beyond.md` 仍不纳入。

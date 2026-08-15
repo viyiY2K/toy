@@ -17,6 +17,7 @@ import {
   type ValidatedAtomicWriteTransaction,
 } from '../writes/executeAtomicWrite';
 import type { InitializationClock } from '../initialization/currentAppDate';
+import { segmentsForTermination } from './timerCommands';
 
 export type RecoveryDetectionSource = Extract<
   UnresolvedIntervalSource,
@@ -350,12 +351,30 @@ export async function resolveRecoveryInterval(
       if (!sourceSession || !isStandardActiveSession(sourceSession)) {
         throw new Error('恢复关联的原 Session 不再是 active 标准 Session');
       }
-      const { resolved, coverageEndMs } = buildResolvedSession(
+      const built = buildResolvedSession(
         sourceSession,
         interval,
         input.original,
         input.now,
       );
+      let resolved = built.resolved;
+      const coverageEndMs = built.coverageEndMs;
+      if (
+        resolved.type === 'focus' &&
+        resolved.mergeGroupId !== null &&
+        resolved.endedAt !== null &&
+        resolved.actualDuration !== null
+      ) {
+        resolved = {
+          ...resolved,
+          taskSegments: await segmentsForTermination(
+            transaction,
+            sourceSession,
+            resolved.endedAt,
+            resolved.actualDuration,
+          ),
+        };
+      }
       // Layer 1 先进入同一事务；任何后续 Layer 2 校验/写入失败都必须回滚此更新。
       await transaction.put(STORE.sessions, resolved);
 

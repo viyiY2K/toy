@@ -151,15 +151,13 @@ async function validateTerminalUpdate(
   const previous = await context.getMergeGroup(group.id);
   if (!previous || (previous.status !== 'completed' && previous.status !== 'dissolved')) return;
 
-  const unchangedFields = MERGE_GROUP_KEYS.filter(
-    (field) => field !== 'title' && field !== 'updatedAt',
-  );
+  const bookkeeping = new Set(['title', 'updatedAt', 'deletedAt', 'deviceId', 'syncedAt']);
+  const frozenFields = MERGE_GROUP_KEYS.filter((field) => !bookkeeping.has(field));
   collector.check(
-    group.title !== previous.title &&
-      unchangedFields.every((field) => valuesEqual(group[field], previous[field])),
+    frozenFields.every((field) => valuesEqual(group[field], previous[field])),
     'mergeGroup.terminal.renameOnly',
     'MergeGroup',
-    'completed / dissolved 后只允许重命名，不得改变成员、预估、状态或终结事实',
+    'completed / dissolved 后只允许改显示名或软删/同步簿记字段，不得改变成员、预估、状态或终结事实',
   );
 }
 

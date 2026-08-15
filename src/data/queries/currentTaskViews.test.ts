@@ -489,4 +489,34 @@ describe('合并组视图（v4.1 §3.8、§8.10.3）', () => {
     expect(views.mergeGroups.map(({ id }) => id)).not.toContain(group.id);
     expect(views.mergeGroupMembersById[group.id]).toBeUndefined();
   });
+
+  it('已完成的合并组不再出现在当前卡片与预算派生里', async () => {
+    const [a, b] = [await mergeChore('完成组A'), await mergeChore('完成组B')];
+    const group = (await createMergeGroup({ ...mergeClock(), taskIds: [a.id, b.id] })).value;
+    const completedAt = mergeClock().now;
+    await executeAtomicWrite(
+      {
+        storeNames: [STORE.tasks, STORE.mergeGroups],
+        now: completedAt,
+        timezone: TIMEZONE,
+      },
+      async (transaction) => {
+        for (const taskId of group.taskIds) {
+          const task = (await transaction.get<Task>(STORE.tasks, taskId))!;
+          await transaction.put(STORE.tasks, { ...task, mergeGroupId: null, updatedAt: completedAt });
+        }
+        await transaction.put(STORE.mergeGroups, {
+          ...group,
+          status: 'completed',
+          completedAt,
+          updatedAt: completedAt,
+        });
+      },
+    );
+
+    const views = await loadCurrentTaskViews(mergeClock());
+    expect(views.mergeGroups.map(({ id }) => id)).not.toContain(group.id);
+    expect(views.mergeGroupMembersById[group.id]).toBeUndefined();
+    expect(views.mergeGroupRemainingById[group.id]).toBeUndefined();
+  });
 });

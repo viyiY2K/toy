@@ -271,4 +271,19 @@ describe('validateSession (S6b, v4 §3.3)', () => {
     );
     await expect(validateSession(invalid, context())).rejects.toBeInstanceOf(EntityValidationError);
   });
+
+  it('allows historical merged Sessions to keep empty taskSegments', async () => {
+    const mergeGroupId = '01900000-0000-7000-8000-0000000000aa';
+    const historical = focus({
+      status: 'completed',
+      endedAt: ENDED,
+      actualDuration: 1500,
+      mergeGroupId,
+      taskSegments: [],
+    });
+    await expect(validateSession(historical, {
+      ...context(),
+      getMergeGroup: async (id) => (id === mergeGroupId ? { id: mergeGroupId } as never : undefined),
+    })).resolves.toBe(historical);
+  });
 });

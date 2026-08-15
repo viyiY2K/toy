@@ -223,7 +223,9 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     );
   }
 
-  const liveGroups = mergeGroups.filter((group) => group.status !== 'dissolved');
+  const liveGroups = mergeGroups.filter(
+    (group) => group.status === 'active' || group.status === 'limitReached',
+  );
   const mergeGroupMembersById: Record<string, Task[]> = {};
   const mergeGroupRemainingById: Record<string, number> = {};
   const mergeGroupValidFocusCountById: Record<string, number> = {};

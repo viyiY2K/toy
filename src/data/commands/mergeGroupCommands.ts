@@ -1,11 +1,10 @@
 /**
- * 合并番茄钟生命周期命令（v4.1 §3.8 + §7.19）。
+ * 合并番茄钟生命周期命令（v4.3.2 §3.8 + §7.19）。
  *
- * 合并组是**平等的集合关系**：几件单独都不够占一个番茄的琐事凑在一起，用一段专注
- * 同时推进，每个成员各自记一个完整的有效番茄。它与 §3.1 `parentId` 的母子从属关系
- * 是两个维度，本模块不碰子任务。
+ * 合并组是平等集合：几件单独都不够占一个番茄的琐事用一段专注依次推进。
+ * 有效番茄与整段时长归组，成员只拿自己的 `taskSegments` 耗时。
  *
- * 本模块只管成员与预估的增删改与解散；"从合并卡启动专注"属 timerCommands。
+ * 本模块只管成员与预估的增删改、完成与解散；从合并卡启动专注属 timerCommands。
  */
 
 import { EVENT_STORE, STORE } from '../dataStore';
@@ -412,6 +411,7 @@ export async function reorderMergeGroupMember(
       taskIds.splice(input.toIndex, 0, taskId!);
       const updated: MergeGroup = { ...group, taskIds, updatedAt: input.now };
       await transaction.put(STORE.mergeGroups, updated);
+      await syncActiveSessionMembers(transaction, group.id, taskIds, input.now);
       await transaction.appendEvent(
         makeEvent({
           ...eventFields(input, transaction.correlationId),
@@ -521,6 +521,9 @@ export async function endMergeGroupRound(
     },
     async (transaction) => {
       const group = await requireLiveGroup(transaction, input.mergeGroupId);
+      if ((await activeSessionOf(transaction, group.id)) !== null) {
+        throw new Error('本轮合并专注还在进行中，无法移出未完成成员');
+      }
       const unfinished = await unfinishedMembers(transaction, group);
       if (unfinished.length === 0) {
         return { value: group, correlationId: transaction.correlationId };
@@ -571,7 +574,7 @@ export async function settleMergeGroupRound(
 
       const updated: MergeGroup = {
         ...group,
-        taskIds: [],
+        taskIds: [...group.taskIds],
         status: 'dissolved',
         dissolvedAt: input.now,
         dissolvedReason: 'membersBelowMinimum',
@@ -584,7 +587,7 @@ export async function settleMergeGroupRound(
           ...eventFields(input, transaction.correlationId),
           type: 'mergeGroup.dissolved',
           mergeGroupId: group.id,
-          payload: { finalTaskIds: [], dissolvedReason: 'membersBelowMinimum' },
+          payload: { finalTaskIds: [...group.taskIds], dissolvedReason: 'membersBelowMinimum' },
         }),
       );
       return { value: updated, correlationId: transaction.correlationId };

@@ -25,6 +25,7 @@ import {
   markMergeGroupLimitReached,
   removeTaskFromMergeGroup,
   renameMergeGroup,
+  settleMergeGroupRound,
 } from './mergeGroupCommands';
 import { createManualTask } from './taskCommands';
 import {
@@ -32,6 +33,7 @@ import {
   completeTaskFromPomodoro,
   discardFocus,
   skipPendingBreak,
+  startFocus,
   startMergeGroupFocus,
 } from './timerCommands';
 
@@ -445,6 +447,37 @@ describe('合并番茄钟端到端流程', () => {
     expect(event!.payload).toMatchObject({
       finalTaskIds: [a.id], incompleteTaskIds: [a.id],
     });
+  });
+
+  it('本轮结束后只剩 1 个成员时，结算解散保留终态成员快照', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    const group = (await createMergeGroup({ ...clock(), taskIds: [a.id, b.id] })).value;
+    const started = (await startMergeGroupFocus({ ...clock(), mergeGroupId: group.id })).value;
+    await removeTaskFromMergeGroup({
+      ...clock(), mergeGroupId: group.id, taskId: b.id, reason: 'manualUnmerge',
+    });
+    await completeFocus({ ...clock(), sessionId: started.id, actualDuration: 1500 });
+
+    const settled = await settleMergeGroupRound({ ...clock(), mergeGroupId: group.id });
+    expect(settled.value).toMatchObject({
+      status: 'dissolved',
+      taskIds: [a.id],
+      dissolvedReason: 'membersBelowMinimum',
+    });
+    expect((await taskById(a.id)).mergeGroupId).toBeNull();
+    const event = (await allEvents()).find(
+      (candidate) => candidate.type === 'mergeGroup.dissolved' && candidate.mergeGroupId === group.id,
+    );
+    expect(event!.payload).toMatchObject({
+      finalTaskIds: [a.id], dissolvedReason: 'membersBelowMinimum',
+    });
+  });
+
+  it('仍挂在活组上的成员不能单独 startFocus', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    await createMergeGroup({ ...clock(), taskIds: [a.id, b.id] });
+    await expect(startFocus({ ...clock(), taskId: a.id }))
+      .rejects.toThrow('合并组成员不能单独开始专注');
   });
 
   it('完成事务在 Group 更新失败时回滚成员指针清空且不写 completed Event', async () => {

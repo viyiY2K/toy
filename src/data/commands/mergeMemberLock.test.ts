@@ -8,8 +8,22 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { dataStore, STORE } from '../dataStore';
 import type { Session, Task } from '../schema';
-import { adjustTaskEstimate, createManualTask, deleteActiveTask } from './taskCommands';
-import { discardFocus, completeFocus, skipPendingBreak, startFocus } from './timerCommands';
+import {
+  adjustTaskEstimate,
+  completeTaskManually,
+  createManualTask,
+  deleteActiveTask,
+  uncompleteTask,
+} from './taskCommands';
+import { createMergeGroup } from './mergeGroupCommands';
+import {
+  completeFocus,
+  completeTaskFromPomodoro,
+  discardFocus,
+  skipPendingBreak,
+  startFocus,
+  startMergeGroupFocus,
+} from './timerCommands';
 
 const TIMEZONE = 'Asia/Shanghai';
 let tick = 0;
@@ -91,5 +105,35 @@ describe('活动 focus 锁定当前执行对象（§3.3 关键规则 14）', () 
       ...clock(), taskId: bystander.id, estimatedPomodoros: 4,
     });
     expect(adjusted.value.estimatedPomodoros).toBe(4);
+  });
+
+  it('计时中不能从清单手动完成当前任务', async () => {
+    const task = await activityTask('正在做的事');
+    await startFocus({ ...clock(), taskId: task.id });
+    await expect(completeTaskManually({ ...clock(), taskId: task.id }))
+      .rejects.toThrow('正在计时中');
+  });
+
+  it('合并专注中不能从清单手动完成当前或未来成员，也不能取消已完成成员', async () => {
+    const [a, b, c] = [
+      await activityTask('当前成员'),
+      await activityTask('未来一'),
+      await activityTask('未来二'),
+    ];
+    const group = (await createMergeGroup({
+      ...clock(), taskIds: [a.id, b.id, c.id],
+    })).value;
+    const session = (await startMergeGroupFocus({
+      ...clock(), mergeGroupId: group.id,
+    })).value;
+
+    await expect(completeTaskManually({ ...clock(), taskId: a.id }))
+      .rejects.toThrow('正在计时中');
+    await expect(completeTaskManually({ ...clock(), taskId: b.id }))
+      .rejects.toThrow('合并专注进行中不能从清单手动完成成员');
+
+    await completeTaskFromPomodoro({ ...clock(), sessionId: session.id, taskId: a.id });
+    await expect(uncompleteTask({ ...clock(), taskId: a.id }))
+      .rejects.toThrow('合并专注进行中不能取消成员完成');
   });
 });

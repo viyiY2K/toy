@@ -34,7 +34,7 @@ function eventFields(clock: InitializationClock, correlationId: string) {
  * 成员被勾完成的时刻取自本轮的 `task.completed` 事件（append-only 的事实记录），
  * 不读 Task.completedAt：后者会被"取消完成再重新完成"改写，不是本轮的历史事实。
  */
-async function segmentsForTermination(
+export async function segmentsForTermination(
   transaction: { getAll<T>(store: string): Promise<T[]> },
   session: Session,
   endedAt: string,
@@ -135,6 +135,9 @@ export async function startFocus(
         transaction.getAll<Event>(EVENT_STORE),
       ]);
       if (!task || task.status !== 'active') throw new Error('只有 active Task 可以开始标准 focus');
+      if (task.mergeGroupId !== null) {
+        throw new Error('合并组成员不能单独开始专注，请从合并组启动或先离开该组');
+      }
       if (!settings || !dayPlan) throw new Error('当前 Settings/DayPlan 不可用');
       assertNoActiveSession(sessions);
       assertNoOpenBreakOpportunity(historicalSessions, events);

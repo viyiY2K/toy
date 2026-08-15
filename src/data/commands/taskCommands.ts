@@ -8,7 +8,7 @@ import {
   executeAtomicWrite,
   type ValidatedAtomicWriteTransaction,
 } from '../writes/executeAtomicWrite';
-import { assertTaskNotLocked } from './mergeMemberLock';
+import { activeFocusSession, assertTaskNotLocked } from './mergeMemberLock';
 
 export interface TaskCommandResult<T> {
   value: T;
@@ -843,6 +843,11 @@ export async function completeTaskManually(
       if (!task || (task.status !== 'active' && task.status !== 'splitNeeded')) {
         throw new Error('只有有效的 active/splitNeeded Task 可以手动完成');
       }
+      await assertTaskNotLocked(transaction, input.taskId, '无法手动完成');
+      const activeFocus = await activeFocusSession(transaction);
+      if (activeFocus?.mergeGroupId && activeFocus.taskIds.includes(input.taskId)) {
+        throw new Error('合并专注进行中不能从清单手动完成成员');
+      }
       /*
        * 红线 24：合并 focus 不给任何成员记有效番茄，因此这里只数**非合并**的
        * completed focus——口径必须与 completeTaskFromPomodoro 完全一致，否则同一个
@@ -886,7 +891,7 @@ export async function uncompleteTask(
 ): Promise<TaskCommandResult<Task>> {
   return executeAtomicWrite(
     {
-      storeNames: [STORE.tasks, EVENT_STORE],
+      storeNames: [STORE.tasks, STORE.sessions, EVENT_STORE],
       now: input.now,
       timezone: input.timezone,
       diagnosticContext: { entityType: 'Task', entityId: input.taskId, operation: 'update' },
@@ -895,6 +900,10 @@ export async function uncompleteTask(
       const task = await transaction.get<Task>(STORE.tasks, input.taskId);
       if (!task || task.status !== 'completed') {
         throw new Error('只有尚未归档的 completed Task 可以取消完成');
+      }
+      const activeFocus = await activeFocusSession(transaction);
+      if (activeFocus?.mergeGroupId && activeFocus.taskIds.includes(input.taskId)) {
+        throw new Error('合并专注进行中不能取消成员完成');
       }
       const active: Task = {
         ...task,

@@ -8,6 +8,7 @@ import {
   adjustMergeGroupEstimate,
   createMergeGroup,
   dissolveMergeGroup,
+  endMergeGroupRound,
   removeTaskFromMergeGroup,
   reorderMergeGroupMember,
 } from './mergeGroupCommands';
@@ -326,7 +327,7 @@ describe('mergeGroupCommands（v4.1 §3.8 / §7.19）', () => {
     const group = (await createMergeGroup({
       now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id, c.id],
     })).value;
-    await seedActiveMergedFocus(group);
+    const session = await seedActiveMergedFocus(group);
 
     await expect(reorderMergeGroupMember({
       now: at(), timezone: TIMEZONE, mergeGroupId: group.id, fromIndex: 0, toIndex: 2,
@@ -340,6 +341,19 @@ describe('mergeGroupCommands（v4.1 §3.8 / §7.19）', () => {
       now: at(), timezone: TIMEZONE, mergeGroupId: group.id, fromIndex: 2, toIndex: 1,
     });
     expect(reordered.value.taskIds).toEqual([a.id, c.id, b.id]);
+    expect((await dataStore.get<Session>(STORE.sessions, session.id))!.taskIds).toEqual([
+      a.id, c.id, b.id,
+    ]);
+  });
+
+  it('计时途中不能用结束本轮绕过当前成员锁定', async () => {
+    const [a, b] = [await chore('A'), await chore('B')];
+    const group = (await createMergeGroup({ now: at(), timezone: TIMEZONE, taskIds: [a.id, b.id] })).value;
+    await seedActiveMergedFocus(group);
+
+    await expect(endMergeGroupRound({
+      now: at(), timezone: TIMEZONE, mergeGroupId: group.id,
+    })).rejects.toThrow('还在进行中');
   });
 
   it('计时途中不能用整体解散绕过当前成员锁定', async () => {

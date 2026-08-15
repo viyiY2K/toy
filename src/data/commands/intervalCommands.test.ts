@@ -5,7 +5,15 @@ import { newId } from '../id';
 import { loadCurrentRecoveryView } from '../queries/currentRecoveryView';
 import { recordInterrupt } from './awarenessCommands';
 import { createManualTask } from './taskCommands';
-import { completeBreak, completeFocus, discardFocus, startBreak, startFocus } from './timerCommands';
+import { createMergeGroup } from './mergeGroupCommands';
+import {
+  completeBreak,
+  completeFocus,
+  discardFocus,
+  startBreak,
+  startFocus,
+  startMergeGroupFocus,
+} from './timerCommands';
 import {
   detectRecoveryInterval,
   resolveRecoveryInterval,
@@ -198,6 +206,33 @@ describe('Phase 2 S2a interval detection and atomic recovery', () => {
     expect(events.map(({ type }) => type)).toEqual([
       'focus.discarded', 'interval.sessionResolved', 'interval.classified',
     ]);
+  });
+
+  it('writes merge taskSegments when recovering an active merge focus', async () => {
+    const [a, b] = [
+      await createManualTask({ now: at(11, 0), timezone: TIMEZONE, title: '恢复合并A', destination: 'today' }),
+      await createManualTask({ now: at(11, 1), timezone: TIMEZONE, title: '恢复合并B', destination: 'today' }),
+    ];
+    const group = (await createMergeGroup({
+      now: at(11, 2), timezone: TIMEZONE, taskIds: [a.value.id, b.value.id],
+    })).value;
+    const focus = await startMergeGroupFocus({
+      now: at(11, 3), timezone: TIMEZONE, mergeGroupId: group.id,
+    });
+    const detected = await detectRecoveryInterval({
+      now: at(11, 10), timezone: TIMEZONE, source: 'appReopened',
+    });
+    const resolved = await resolveRecoveryInterval({
+      now: at(11, 11),
+      timezone: TIMEZONE,
+      intervalId: detected.interval!.id,
+      original: { resolvedAs: 'discarded', actualDuration: 180 },
+      remainder: { kind: 'ignore', ignoreReason: '合并恢复不记剩余' },
+    });
+    expect(resolved.sourceSession.taskSegments).toHaveLength(2);
+    expect(resolved.sourceSession.taskSegments.reduce((sum, segment) => sum + segment.actualDuration, 0))
+      .toBe(180);
+    expect((await visibleSession(focus.value.id)).taskSegments).toHaveLength(2);
   });
 
   it('supports completed recovered break and mirrors the standard break event', async () => {

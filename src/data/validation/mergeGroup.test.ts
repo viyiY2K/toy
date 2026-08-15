@@ -109,6 +109,25 @@ describe('validateMergeGroup（v4.1 §3.8）', () => {
     );
   });
 
+  it('终态组允许软删和同步簿记字段变化，不必改名', async () => {
+    const completed = group({ status: 'completed', completedAt: NOW });
+    const tombstone = {
+      ...completed,
+      deletedAt: '2026-06-05T16:00:00+08:00',
+      updatedAt: '2026-06-05T16:00:00+08:00',
+    };
+    await expect(validateMergeGroup(tombstone, context([memberA, memberB], false, completed)))
+      .resolves.toBe(tombstone);
+    const synced = {
+      ...completed,
+      deviceId: '01900000-0000-7000-8000-0000000000dd',
+      syncedAt: '2026-06-05T16:05:00+08:00',
+      updatedAt: '2026-06-05T16:05:00+08:00',
+    };
+    await expect(validateMergeGroup(synced, context([memberA, memberB], false, completed), 'sync'))
+      .resolves.toBe(synced);
+  });
+
   it('字段一致性约束 4/5：预估 1–7、最多三轮，且必须等于最新一轮', async () => {
     await expectCode(
       group({ estimatedPomodoros: 8, estimateRounds: [{ index: 1, pomodoros: 8, occurredAt: NOW }] }),
