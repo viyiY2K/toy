@@ -160,3 +160,18 @@ export function statsHasRangeActivity({
     || interruptCount > 0
     || energyCount > 0;
 }
+
+/** 这段时间里真正有投入的合并组：番茄归组，整段时长也归组。 */
+export function statsMergeGroupRows(mergeGroups) {
+  return (mergeGroups ?? []).filter((group) =>
+    group.validFocusInRange > 0
+    || (group.standardSeconds ?? 0) > 0
+    || (group.discardedSeconds ?? 0) > 0);
+}
+
+export function mergeGroupStatusLabel(status) {
+  if (status === 'completed') return '已完成';
+  if (status === 'dissolved') return '已取消';
+  if (status === 'limitReached') return '已达上限';
+  return '进行中';
+}

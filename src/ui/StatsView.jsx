@@ -7,8 +7,10 @@ import {
   formatDuration,
   formatRatio,
   formatStatsRange,
+  mergeGroupStatusLabel,
   shiftStatsAnchor,
   statsHasRangeActivity,
+  statsMergeGroupRows,
   timerSettingChangeNotice,
 } from './statsViewModel';
 
@@ -147,10 +149,14 @@ function Section({ title, hint = null, children, className = '' }) {
 }
 
 function Dashboard({ stats }) {
-  const { session, tasks, completions, estimates, energy, recovery, interrupts, budget } = stats;
+  const {
+    session, tasks, completions, estimates, mergeGroups = [], mergeGroupEstimates,
+    energy, recovery, interrupts, budget,
+  } = stats;
   const skippedTotal = Object.values(session.rest.skipped).reduce((sum, count) => sum + count, 0);
   const taskRows = tasks.filter(({ validFocusInRange, totalSeconds }) =>
     validFocusInRange > 0 || totalSeconds > 0);
+  const mergeGroupRows = statsMergeGroupRows(mergeGroups);
   const energyTrend = energyTrendPresentation(session.range.kind, energy);
   const interruptValues = interrupts.dailyTrend.map(({ total }) => total);
   const budgetDays = budget.dailyTrend.filter(({ budgetPomodoros, validPomodoros }) =>
@@ -290,7 +296,7 @@ function Dashboard({ stats }) {
           <div className="stats-legend"><span className="internal">内部</span><span className="external">外部</span></div>
         </Section>
 
-        <Section className="stats-section--muted" title="任务结果" hint="手动完成的任务不计入准确率">
+        <Section className="stats-section--muted" title="任务结果" hint="番茄归合并组，时间归成员；手动完成不计入准确率">
           <Rows>
             <Row
               label="预估准确率"
@@ -299,7 +305,31 @@ function Dashboard({ stats }) {
             />
             <Row label="有效样本" value={estimates.sampleCount}/>
             <Row label="改过预估仍不准" value={estimates.adjustedInaccurate}/>
+            {mergeGroupEstimates?.sampleCount > 0 && (
+              <Row
+                label="合并组预估准确率"
+                value={formatRatio(mergeGroupEstimates.accuracyRate)}
+                detail={`准确 ${mergeGroupEstimates.accurate} · 估大 ${mergeGroupEstimates.overestimated} · 估小 ${mergeGroupEstimates.underestimated} · 样本 ${mergeGroupEstimates.sampleCount}`}
+              />
+            )}
           </Rows>
+          {mergeGroupRows.length > 0 && (
+            <div className="stats-task-list">
+              <p className="stats-sub-head">这段时间的合并组</p>
+              {mergeGroupRows.map((group) => (
+                <div key={group.mergeGroupId}>
+                  <span>{group.title}</span>
+                  <strong>{group.validFocusInRange} 番茄 · {formatDuration(group.standardSeconds)}</strong>
+                  <small>
+                    {mergeGroupStatusLabel(group.status)}
+                    {' · '}标准 {formatDuration(group.standardSeconds)}
+                    {' · '}作废 {formatDuration(group.discardedSeconds)}
+                    {' · '}历史有效番茄 {group.historicalValidFocus}
+                  </small>
+                </div>
+              ))}
+            </div>
+          )}
           {taskRows.length === 0 ? (
             <div className="stats-chart-empty">这段时间还没有归到具体任务的专注记录。</div>
           ) : (

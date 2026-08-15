@@ -5,8 +5,10 @@ import {
   formatDuration,
   formatRatio,
   formatStatsRange,
+  mergeGroupStatusLabel,
   shiftStatsAnchor,
   statsHasRangeActivity,
+  statsMergeGroupRows,
   timerSettingChangeNotice,
 } from './statsViewModel';
 
@@ -108,5 +110,14 @@ describe('S4 stats view model', () => {
     expect(timerSettingChangeNotice('month', [
       { appDate: '2026-07-21', occurredAt: '2026-07-21T05:00:00Z', field: 'longBreakMinutes', oldValue: 15, newValue: 20 },
     ]).caveat).toContain('本月内');
+  });
+
+  it('只列出这段时间有番茄或时长的合并组', () => {
+    const idle = { mergeGroupId: 'g0', validFocusInRange: 0, standardSeconds: 0, discardedSeconds: 0 };
+    const used = { mergeGroupId: 'g1', validFocusInRange: 1, standardSeconds: 1500, discardedSeconds: 0 };
+    expect(statsMergeGroupRows([idle, used]).map(({ mergeGroupId }) => mergeGroupId)).toEqual(['g1']);
+    expect(mergeGroupStatusLabel('completed')).toBe('已完成');
+    expect(mergeGroupStatusLabel('dissolved')).toBe('已取消');
+    expect(mergeGroupStatusLabel('active')).toBe('进行中');
   });
 });
