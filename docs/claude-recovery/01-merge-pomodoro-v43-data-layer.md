@@ -1,9 +1,9 @@
 # 合并番茄钟 v4.3 数据层交接
 
-> 状态：数据层主体已实现；v4.3.2 最终整合正在当前工作树中，尚未提交；UI 尚未按新语义重接。
+> 状态：数据层已按 v4.3.2 收口并完成本地原子提交；UI 尚未按新语义重接。
 > 原会话：`f903d7b7-8d60-4891-8da5-91bf1c43d94f`
 > 原实现分支：`claude/pomodoro-spec-data-layer-f89a02`
-> 实现锚点：`f2a2c9c`；原交接提交：`1ce98fe`
+> 实现锚点：`f2a2c9c`；v4.3.2 收口提交：本分支 `feat(data): 收口 v4.3.2 合并番茄数据层最终整合`（旧 docs-only 交接 `1ce98fe` 只作历史索引，不再表示“整合尚未落地”）
 
 ## 1. 任务目标
 
@@ -145,9 +145,9 @@ incompleteTaskIds
 
 `f2a2c9c` 当时实际验证：519 tests / 65 files、typecheck 通过、build 成功；项目无 lint 脚本。这个结果只证明该提交，不证明当前未提交整合工作树。
 
-## 4. 当前 v4.3.2 整合现场
+## 4. v4.3.2 整合结果
 
-当前分支为 `codex/v43-2-reconcile`，数据层实现基线是 `f2a2c9c`；本恢复目录只有一个额外的 docs-only commit，不改变该代码基线。工作树中另有尚未提交的 v4.3.2 整合修改。已看到的意图包括：
+当前分支为 `codex/v43-2-reconcile`，数据层实现基线是 `f2a2c9c`；恢复目录 docs-only commit 为 `ed6f090`。2026-08-15 Implementer 已 review 当时 19 个未提交文件，修掉完成快照漏计 `type='focus'`，并完成本地原子提交。已落地内容：
 
 - `completeMergeGroup` 新增必填 `sessionId`；
 - 允许组内仍有未完成成员时确认完成；
@@ -159,26 +159,24 @@ incompleteTaskIds
 - 规范头已经写为 v4.3.2，并标记 V43-1～V43-6 全部结案；
 - 对应命令、事件、schema、validator 和统计测试已增加或修改。
 
-这些内容尚未形成 commit，本交接不把它们宣称为已完成。接手者必须先 review 当前 diff，再运行验证。
-
-本次恢复整理在 **2026-08-15** 对当前未提交工作树做了只读验证：
+收口验证：
 
 - `npm run test:run`：65 files / 531 tests passed；
 - `npm run typecheck`：passed；
 - `npm run build`：144 modules，成功；
 - build 仅有既存的单包体积大于 500 kB 警告，不是构建失败。
 
-这证明当前现场在上述检查下可通过，不替代最终 diff review，也不代表这些用户原有修改已经提交。
+未跟踪文件 `docs/ui-handoff-empty-states-and-beyond.md` 仍留在工作树，本提交未包含、未修改。
 
 ## 5. 尚未完成
 
-### 5.1 先收口当前数据层工作树
+### 5.1 数据层工作树已收口
 
-- 检查 19 个现有修改文件，确认与 v4.3.2 一致；
-- 特别检查 `completeMergeGroup`、dissolve、跨实体 validator 的写入顺序，确保逐笔校验和事务最终状态都合法；
-- 若继续改动，重新运行相关单测、全量 `npm run test:run`、`npm run typecheck` 与 `npm run build`；
-- 自审后创建只包含本轮整合的原子本地 commit，不 push；
-- 更新实现交接状态，移除旧 `1ce98fe` 文档的“整合前草稿”含义。
+- 已检查当时 19 个修改文件，并与 v4.3.2 对齐；
+- 已核对 `completeMergeGroup`、dissolve、跨实体 validator 的写入顺序：先清空成员指针，再写终态，失败整事务回滚；
+- 已重新运行全量 `npm run test:run`、`npm run typecheck` 与 `npm run build`；
+- 已创建只包含本轮整合的原子本地 commit，未 push；
+- 旧 `1ce98fe` 只保留为历史交接索引，不再表示“整合尚未落地”。
 
 ### 5.2 UI 仍是下一批
 
@@ -203,16 +201,16 @@ incompleteTaskIds
 
 ## 6. 验收清单
 
-- [ ] 独立 active focus 锁定删除与预估修改
-- [ ] 合并当前成员不能移出 / 换位 / 被插队 / 被整体解散绕过
-- [ ] 未来成员可增删和内部排序
-- [ ] 当前成员完成后正确推进下一位
-- [ ] completed / discarded 都写完整分段，分段和精确等于 `actualDuration`
-- [ ] 开轮要求至少 2 个未完成成员；已开跑记录可缩到 1
-- [ ] 一条 completed 合并 Session：全局 +1、组 +1、成员 +0
-- [ ] discarded 只计实际作废时长
-- [ ] 合并成员不进 Task 预估准确率
-- [ ] 完成允许仍有未完成成员，并原子清空全部 `Task.mergeGroupId`
-- [ ] completed Event 带 sessionId 和两份成员快照
-- [ ] completed / dissolved 后只允许重命名
+- [x] 独立 active focus 锁定删除与预估修改（数据层）
+- [x] 合并当前成员不能移出 / 换位 / 被插队 / 被整体解散绕过（数据层）
+- [x] 未来成员可增删和内部排序（数据层）
+- [x] 当前成员完成后正确推进下一位（数据层）
+- [x] completed / discarded 都写完整分段，分段和精确等于 `actualDuration`
+- [x] 开轮要求至少 2 个未完成成员；已开跑记录可缩到 1
+- [x] 一条 completed 合并 Session：全局 +1、组 +1、成员 +0
+- [x] discarded 只计实际作废时长
+- [x] 合并成员不进 Task 预估准确率
+- [x] 完成允许仍有未完成成员，并原子清空全部 `Task.mergeGroupId`
+- [x] completed Event 带 sessionId 和两份成员快照
+- [x] completed / dissolved 后只允许重命名
 - [ ] UI 不再展示或写入旧口径

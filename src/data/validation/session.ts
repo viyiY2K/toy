@@ -462,9 +462,8 @@ export async function collectSessionValidationIssues(
       '只有标准 focus 可以关联合并组',
     );
     /*
-     * ≥ 2 是"组成合并组"的门槛（§3.8 一致性约束 1），不是每一轮 Session 的门槛：
-     * 追加预估后的续轮会排除本轮之前就已完成的成员，只剩最后 1 个未完成成员是正常
-     * 终局（§3.3 一致性约束 15、§3.8 关键规则 4）。这一轮仍归属该合并组。
+     * 开轮命令要求至少 2 个未完成成员；这里是已开跑 Session 的存储约束，必须保持 ≥ 1。
+     * 进行中移出未来成员后，终结快照可合法缩到 1（§3.8 关键规则 15）。
      */
     collector.check(
       Array.isArray(session.taskIds) && session.taskIds.length >= 1,

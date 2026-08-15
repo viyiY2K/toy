@@ -8,7 +8,7 @@
 
 | 序号 | 任务 | 原 Claude 会话 | 原分支 / 关键提交 | 当前结论 |
 |---|---|---|---|---|
-| 01 | 合并番茄钟 v4.3 数据层收口与 v4.3.2 整合 | `f903d7b7-8d60-4891-8da5-91bf1c43d94f` | `claude/pomodoro-spec-data-layer-f89a02`，实现锚点 `f2a2c9c`，交接提交 `1ce98fe` | 数据层主体已完成；当前 `codex/v43-2-reconcile` 工作树正在做 v4.3.2 最终整合，但尚未提交；新 UI 尚未重接 |
+| 01 | 合并番茄钟 v4.3 数据层收口与 v4.3.2 整合 | `f903d7b7-8d60-4891-8da5-91bf1c43d94f` | `claude/pomodoro-spec-data-layer-f89a02`，实现锚点 `f2a2c9c`，v4.3.2 收口提交见本分支最新 `feat(data): 收口 v4.3.2 合并番茄数据层最终整合` | 数据层已按 v4.3.2 收口并完成本地原子提交；新 UI 尚未重接 |
 | 02 | Goal（中长期主线目标）与 v4.3 规范 | `d907ea96-8721-4793-bd2b-be4f3b15d206` | `claude/mainline-task-discussion-692f08`，最终提交 `3c9db61` | 产品语义和规范已定；实现尚未开始 |
 | 03 | 任务分类、自动打标与批量分类 | `6ba8cfa6-cf98-4e7d-bc0d-a29fdb6491b0` | `claude/task-category-plan-3a4e6a`，最终提交 `b39c0dd` | 旧基线上已完整实现并测试，但未合入 main；需按 v4.3.2 重新移植，不能整分支直接合并 |
 | 04 | v0.1.4 合并番茄钟发布与同步适配 | `5877d444-d9cd-400c-b753-f42ca1217608` | `claude/pomodoro-merge-improvement-7473b5`，发布提交 `c7e0d75` | 已合入本地与远端 main，并发布 `v0.1.4`；它是历史基线，部分语义已被 v4.3 推翻 |
@@ -40,20 +40,19 @@
 ## 3. 2026-08-15 的仓库现场
 
 - 当前分支：`codex/v43-2-reconcile`
-- 当前分支的数据层实现基线：`f2a2c9c`；本恢复目录以一个独立的 docs-only commit 叠在其上，不改变代码基线
+- 数据层实现基线：`f2a2c9c`；恢复目录 docs-only commit：`ed6f090`；v4.3.2 最终整合已在本分支完成本地原子提交，未 push
 - main / origin/main：`c7e0d75`（v0.1.4）
-- 当前工作树存在一批**尚未提交**的 v4.3.2 整合修改，覆盖规范、MergeGroup 命令、Event 契约、跨实体校验和测试。
-- 2026-08-15 本次恢复整理对该现场运行了全量检查：65 个测试文件 / 531 个测试通过，typecheck 与 build 通过；仍需完成 diff review 和原子提交。
-- 当前工作树另有用户原先的未跟踪文件 `docs/ui-handoff-empty-states-and-beyond.md`。
-- 本恢复任务没有修改上述文件，也没有切换分支或合并旧分支。
+- 2026-08-15 Implementer 接手后：完整 review 了当时 19 个未提交文件，补上完成快照只计 `type='focus'`，跑通 65 files / 531 tests、typecheck、build，并更新本交接与 `docs/phase1-review-log.md`
+- 工作树另有用户原先的未跟踪文件 `docs/ui-handoff-empty-states-and-beyond.md`；收口提交没有包含或修改它
+- 本恢复任务没有切换分支，也没有丢弃现有改动
 
-后续操作前不要执行会丢工作树的命令。应先完成或妥善保存 `codex/v43-2-reconcile` 当前改动。
+后续不要对 `codex/v43-2-reconcile` 执行会丢提交或工作树的命令。UI 重接应基于本 v4.3.2 数据层提交另开批次。
 
 ## 4. 推荐的依赖顺序
 
 这不是产品优先级，只是减少返工的工程依赖顺序：
 
-1. 完成并提交当前 v4.3.2 合并番茄数据层整合，跑全量测试、typecheck、build。
+1. ~~完成并提交当前 v4.3.2 合并番茄数据层整合，跑全量测试、typecheck、build。~~ 已完成本地提交，未 push。
 2. 以 v4.3.2 为新基线，重接合并番茄 UI；v0.1.4 的 UI 只能作为交互原型参考。
 3. 先把“任务分类不允许清空、采用批量分类”的最终决定写回 v4.3，再从 `b39c0dd` 移植分类功能。
 4. 实现 Goal 与废除旧 `parentId` 子任务机制；Goal 和任务分类都依赖当前 v4.3 数据结构，不能从旧分支整包合并。

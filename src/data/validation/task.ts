@@ -238,10 +238,10 @@ export async function collectTaskValidationIssues(
           '合并组的 taskIds 必须包含本 Task',
         );
         collector.check(
-          group.status !== 'dissolved',
-          'task.mergeGroup.dissolved',
+          group.status === 'active' || group.status === 'limitReached',
+          'task.mergeGroup.terminal',
           'mergeGroupId',
-          '已解散的合并组不得再有成员',
+          'Task.mergeGroupId 只能指向 active 或 limitReached 合并组',
         );
       }
     } else {

@@ -258,3 +258,14 @@ read as, a reconstruction of the lost atomic S0–S5 commit history.
 - Review: Implementer 自审 `PASS`。重点核对：Event append-only（迁移一律不动 Event）、实体变更与 Event 同事务原子提交、`actualDuration` 仍是唯一事实源（分段不用 `endedAt − startedAt` 重推）、无新旧双轨统计、无小数番茄、无暂停态。
 - Findings and resolution: 自审发现并修掉两个真 bug——（1）迁移链原按版本各开一趟游标，同一 versionchange 事务里两个游标读到的都是原始记录，v3 那趟会覆盖 v2 补的 `mergeGroupId`，改为一趟游标跑完整条链并把 v1 → v3 升级测试扩成回归守卫；（2）`startMergeGroupFocus` 未挡 `completed` 的组，会掉到成员数检查报出文不对题的错误，已补分支并分开文案。另修掉自己引入的一处：锁定校验读 `sessions`，但 `deleteActiveTask` / `adjustTaskEstimate` 未声明该 store，已补声明。
 - Residual risk or user decision: （1）用户在本轮明确改判「开新一轮前必须有 ≥ 2 个未完成成员」为通用规则，**推翻**了 commit `5559660`「续轮只剩 1 个未完成成员也照开」的决定；已同步改写 §3.8 新增关键规则 16 与 `CLAUDE.md` 红线 29，并把续轮测试改为三成员场景。存储层 §3.3 一致性约束 15 仍保持 `≥ 1`——已开跑的一轮允许合法缩到 1，门槛只由开轮命令强制。（2）迁移进来的历史合并 Session 没有分段事实（当时没有逐个勾选成员的入口），`taskSegments` 一律留空，统计侧表现为各成员在这些历史 Session 上投入 0；这是有意的诚实少算，不伪造平均分摊数据。（3）UI 尚未按新语义重接，`completeMergeGroup` / `renameMergeGroup` / `settleMergeGroupRound` 三条命令目前只有数据层与测试覆盖，无界面入口。
+
+### 合并番茄钟 v4.3.2 数据层最终整合
+
+- Status: `PASS`（Implementer 自审）。
+- Scope: 在 `f2a2c9c` 数据层基线上收口 v4.3.2 独立可验证 sub-block。含：`Task.mergeGroupId` 只表示当前所属，进入 `completed` / `dissolved` 时先清空全部成员指针再写终态；`completeMergeGroup` 必填触发确认的 `sessionId`；允许仍有未完成成员时确认整组完成，并写入 `finalTaskIds` / `incompleteTaskIds`；终态组不得再被 Task 指向、之后只允许重命名；completed 终结快照与已开跑 Session 允许缩到 1；规范升为 v4.3.2 且 V43-1～V43-6 全部结案。**不含 UI**，不改 `src/ui/**` / `styles.css`，也不纳入未跟踪的 `docs/ui-handoff-empty-states-and-beyond.md`。
+- Commit: 本原子提交（subject：`feat(data): 收口 v4.3.2 合并番茄数据层最终整合`）。
+- Specification: `docs/data-layer-spec-v4.3.md`（v4.3.2）§3.1 `mergeGroupId`、§3.3 关键规则 12/14 与一致性约束 15/16、§3.8 关键规则 10/12–16 与一致性约束 1/9/10/12、§7.1、§7.19 `mergeGroup.completed`、§8.3、§8.5、§10.7、§14；`CLAUDE.md` 红线 24–29；`docs/claude-recovery/01-merge-pomodoro-v43-data-layer.md` §6 数据层验收项。
+- Verification: `npm run test:run` → 65 files / 531 tests passed；`npm run typecheck` → passed；`npm run build` → 144 modules built（仅既存单包 >500 kB 警告）；`git diff --check` → passed。仓库未提供 lint 命令，故未运行 lint。未做浏览器验证：本轮不含 UI 改动。
+- Review: Implementer 自审 `PASS`。核对写入顺序：complete / dissolve / 成员不足解散均先 `clearMembership` 再写 Group 终态，事务内逐笔校验只看到合法状态，任一步失败整事务回滚。核对 Event 契约：`mergeGroup.completed` 顶层必填 `sessionId`，payload 含完成快照且 `incompleteTaskIds` 必须是 `finalTaskIds` 子集。核对统计不再依赖已清空的 `Task.mergeGroupId`。自审修了一处：`validFocusCountAtCompletion` 补上 `type === 'focus'`，与 §7.19 及 Task 完成快照口径对齐。
+- Findings and resolution: （1）Major：完成快照计数原先只滤 `mergeGroupId` + `status='completed'`，未按 §7.19 限制 `type='focus'`。已改为与 `completeTaskFromPomodoro` 相同的标准 focus 口径。无其他 Blocking / Major 项。
+- Residual risk or user decision: （1）UI 仍按旧口径展示/写入，下一批才能重接；本 commit 只建立数据层基线。（2）终态 rename-only validator 要求后续本地写入必须改 `title`，并把 `deviceId` / `syncedAt` 一并冻结；当前没有同步回写终态组合并组的路径，云端结构升级与真实多端验收仍需用户另行确认。（3）`markMergeGroupLimitReached` 仍用 `getAllIncludingDeleted` 计完成轮次，与完成快照排除软删 Session 的口径尚未统一；本轮不顺手改相邻命令。（4）工作树仍保留用户原有未跟踪文件 `docs/ui-handoff-empty-states-and-beyond.md`，未纳入本提交。

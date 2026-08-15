@@ -4,7 +4,7 @@
 
 数据真值、字段、事件、payload、统计口径与 Phase 语义，始终以 `docs/data-layer-spec-v4.3.md` 为最高权威。本文件若与 v4.3 冲突，以 v4.3 为准。`docs/data-layer-spec-v4.md`（v4.0）、`docs/data-layer-spec-v4.1.md`（v4.1）与 `docs/data-layer-spec-v4.2.md`（v4.2）已归档，仅供历史查阅，不再作为开发依据。
 
-> **现状（2026-08）**：数据层三个阶段（Phase 1 数据地基 / Phase 2 核心自用 / Phase 3 真实统计与完整任务管理）均已封板并通过独立 review，随后完成过一轮 UI 打磨并已合入 `main`。**合并番茄钟**（MergeGroup，见 `docs/data-layer-spec-v4.3.md` §3.3、§3.8、§7.19、§8.5）的数据层已按 v4.3.1 语义落地：成员分段 `taskSegments`、`MergeGroup.title`、成功终态 `status='completed'`、活动 Session 锁定当前执行对象，以及「番茄归合并组、时间归成员」的统计口径；**UI 尚未按新语义重接**，交底文档见 `docs/merge-pomodoro-plan.md`。v4.2 新增的"任务分类"数据规范（Task `category`/`categorySource`、DayPlan 今日主线分类、Settings 自动打标时间窗口，见 v4.3 §3.1、§3.2、§3.7、§7.1、§7.3、§7.12、§8.5.6），与 v4.3 新增的 **Goal（中长期主线目标）**规范（§3.9、§7.20、§8.13、Task `goalId`、废除 `parentId` 子任务机制），均只完成规范定义，真实 UI/代码实现尚未开工。下面第五节的「数据层实现红线」在任何碰数据的改动里长期有效，与阶段无关。文中出现的 "Phase 1 / P2 …" 指的是 v4.3 规范里的功能阶段语义（数据契约的一部分），不是施工进度。
+> **现状（2026-08）**：数据层三个阶段（Phase 1 数据地基 / Phase 2 核心自用 / Phase 3 真实统计与完整任务管理）均已封板并通过独立 review，随后完成过一轮 UI 打磨并已合入 `main`。**合并番茄钟**（MergeGroup，见 `docs/data-layer-spec-v4.3.md` §3.3、§3.8、§7.19、§8.5）的数据层已按 v4.3.2 语义落地：成员分段 `taskSegments`、`MergeGroup.title`、成功终态 `status='completed'`、活动 Session 锁定当前执行对象、「番茄归合并组、时间归成员」的统计口径，以及终态清空成员当前归属指针与完成快照；**UI 尚未按新语义重接**，交底文档见 `docs/merge-pomodoro-plan.md`。v4.2 新增的"任务分类"数据规范（Task `category`/`categorySource`、DayPlan 今日主线分类、Settings 自动打标时间窗口，见 v4.3 §3.1、§3.2、§3.7、§7.1、§7.3、§7.12、§8.5.6），与 v4.3 新增的 **Goal（中长期主线目标）**规范（§3.9、§7.20、§8.13、Task `goalId`、废除 `parentId` 子任务机制），均只完成规范定义，真实 UI/代码实现尚未开工。下面第五节的「数据层实现红线」在任何碰数据的改动里长期有效，与阶段无关。文中出现的 "Phase 1 / P2 …" 指的是 v4.3 规范里的功能阶段语义（数据契约的一部分），不是施工进度。
 
 ---
 
@@ -98,13 +98,13 @@
 22. DayPlan 超载（今日预估总和 > budgetPomodoros）是派生状态，不写入字段、不发事件；数据层只是"不拒绝写入"，查询/UI 层按需派生超载提示（§3.2、§8.10）。
 23. actualDuration 是 Session 实际时长唯一事实源，统计不得用 endedAt − startedAt 重算（§3.3，本批修订 5）。
 
-### 合并番茄钟（v4.3.1 收口，碰这块必看）
+### 合并番茄钟（v4.3.2 收口，碰这块必看）
 
 24. **番茄归合并组，时间归成员**。一次正常完成的合并 focus：全局有效番茄 +1、该 MergeGroup +1、**每个成员 Task +0**；成员只从 `Session.taskSegments` 拿属于自己的那段耗时。禁止给 `taskIds` 里每个成员各记 1 个番茄，禁止把整段 `actualDuration` 给每个成员各记一遍。"任务维度加总 > 全局"自 v4.3 起一律是**缺陷**，不是设计如此（§3.3 关键规则 12、§8.3.1、§8.5.1/8.5.2）。
 25. **成员耗时只能读 `taskSegments.actualDuration`**，不得用时间戳相减重推。一条 Session 内各分段之和必须**精确等于** `Session.actualDuration`；未轮到的成员保留显式 0 分段，不许为了凑总和把它删掉（§3.3 一致性约束 16）。
 26. **`completionSource='pomodoro'` ≠ 该 Task 有有效番茄**。合并成员完成时写 `completionSource='pomodoro'` + `validFocusCountAtCompletion=0`，这是合法组合。任何下游统计都不得由 `'pomodoro'` 反推有效番茄；合并成员必须排除出 Task 预估准确率样本（判据取关联 Session 的 `mergeGroupId`）（§7.1、§8.5.3）。
 27. **活动 focus Session 锁定当前执行对象，锁必须落在数据层**。独立专注锁定它引用的 Task；合并专注锁定本轮**当前成员**（= 按组内顺序第一个尚未完成的成员，**不是**字面 `taskIds[0]`）。锁定期间必须由 command / write path **拒绝**删除、预估调整、移出组、换位、把未来成员排到它之前、以及整体解散；只开放未来队列的增删与内部排序。不得只在 UI 隐藏按钮。产品**没有暂停态**，focus 只有 `active` / `completed` / `discarded`，中途终止一律作废（§3.3 关键规则 14、§3.8 关键规则 13/15）。
-28. **`'completed'` 与 `'dissolved'` 是两回事**。MergeGroup 的 `'completed'` 是用户确认做完的成功终态（配 `completedAt` + `mergeGroup.completed` 事件）；`'dissolved'` 只表示中途拆散 / 取消合并。两者都是终态，之后不许再增删成员、重排、追加预估或开新一轮（§3.8 关键规则 12、一致性约束 9/10）。
+28. **`'completed'` 与 `'dissolved'` 是两回事**。MergeGroup 的 `'completed'` 是用户确认做完的成功终态（配 `completedAt` + `mergeGroup.completed` 事件）；`'dissolved'` 只表示中途拆散 / 取消合并。两者都是终态，全部成员 `Task.mergeGroupId` 必须清空；终态之后只允许重命名，不许再增删成员、重排、追加预估或开新一轮（§3.8 关键规则 12–14、一致性约束 9/10）。
 29. **≥ 2 既是建组门槛，也是每一轮的开轮门槛；但已开跑的一轮允许缩到 1**。`mergeGroup.created` 的初始成员必须 ≥ 2；**开启任何一轮合并 focus（含续轮）前，组内未完成成员也必须 ≥ 2**——只剩一件事要做时，它就该作为独立任务自己跑一个完整番茄，不再挂在合并组里。这条推翻了早先「续轮只剩 1 个未完成成员也照开」的决定（commit `5559660`，用户已于 v4.3.1 明确改判为通用规则）。
 
     但**不要**据此把存储层收紧成 `mergeGroupId != null ⇒ taskIds ≥ 2`：一轮**已经开跑之后**，用户移出最后一个未来成员会让 `Session.taskIds` 合法地缩到 1（成员数量不足只阻止下一轮开始，不打断正在进行的 Session）。因此 §3.3 一致性约束 15 仍是 `≥ 1`，门槛只由开轮命令强制。缩到 1 的那一轮仍带原 `mergeGroupId`、仍用合并组轮次编号、番茄仍归该组，**不退化成独立任务番茄**（§3.3 一致性约束 15、§3.8 关键规则 1/14/15）。

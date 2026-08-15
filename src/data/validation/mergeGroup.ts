@@ -33,6 +33,10 @@ const DISSOLVED_REASONS = new Set(['membersBelowMinimum', 'manualDissolved']);
 /** 在用态：仍挂着成员、仍可能开新一轮。`completed` / `dissolved` 都是终态。 */
 const LIVE_STATUSES = new Set(['active', 'limitReached']);
 
+function valuesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 /**
  * 成员列表校验（§3.8 字段表 + 字段一致性约束 6）。
  * 长度下限按 status 分流：active / limitReached 必须 ≥ 2，dissolved 不作下限要求
@@ -112,6 +116,51 @@ async function validateMemberReferences(
       '引用的成员 Task 不存在',
     );
   }
+}
+
+/** completed / dissolved 都是终态，不能再有 Task 的“当前所属”指针指向本组。 */
+async function validateTerminalMembershipPointers(
+  group: Record<string, unknown>,
+  context: ValidationContext | undefined,
+  collector: ValidationCollector,
+): Promise<void> {
+  if (group.status !== 'completed' && group.status !== 'dissolved') return;
+  if (typeof group.id !== 'string' || !context?.hasTasksInMergeGroup) {
+    collector.add(
+      'validation.context.required',
+      'status',
+      '校验终态合并组成员指针需要事务查询上下文',
+    );
+    return;
+  }
+  collector.check(
+    !(await context.hasTasksInMergeGroup(group.id)),
+    'mergeGroup.terminal.membershipPointers',
+    'status',
+    'completed / dissolved 合并组不得再被任何 Task.mergeGroupId 指向',
+  );
+}
+
+/** 终态记录只允许改显示名；成员、预估、状态与终结事实全部冻结。 */
+async function validateTerminalUpdate(
+  group: Record<string, unknown>,
+  context: ValidationContext | undefined,
+  collector: ValidationCollector,
+): Promise<void> {
+  if (typeof group.id !== 'string' || !context?.getMergeGroup) return;
+  const previous = await context.getMergeGroup(group.id);
+  if (!previous || (previous.status !== 'completed' && previous.status !== 'dissolved')) return;
+
+  const unchangedFields = MERGE_GROUP_KEYS.filter(
+    (field) => field !== 'title' && field !== 'updatedAt',
+  );
+  collector.check(
+    group.title !== previous.title &&
+      unchangedFields.every((field) => valuesEqual(group[field], previous[field])),
+    'mergeGroup.terminal.renameOnly',
+    'MergeGroup',
+    'completed / dissolved 后只允许重命名，不得改变成员、预估、状态或终结事实',
+  );
 }
 
 /**
@@ -212,6 +261,12 @@ export async function collectMergeGroupValidationIssues(
     );
   } else if (group.status === 'completed') {
     collector.check(
+      Array.isArray(group.taskIds) && group.taskIds.length >= 1,
+      'mergeGroup.taskIds.completedMinimum',
+      'taskIds',
+      'completed 终结快照至少保留 1 个成员',
+    );
+    collector.check(
       group.completedAt !== null,
       'mergeGroup.completedAt.required',
       'completedAt',
@@ -246,6 +301,8 @@ export async function collectMergeGroupValidationIssues(
   }
 
   await validateMemberReferences(group, context, collector);
+  await validateTerminalMembershipPointers(group, context, collector);
+  await validateTerminalUpdate(group, context, collector);
   return collector.issues;
 }
 

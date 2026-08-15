@@ -124,6 +124,24 @@ const mergeMemberIds: Rule = (value, path, collector) => {
     collector.check(value.length >= 2, 'array.minLength', path, '合并组初始成员至少 2 个');
   }
 };
+/** 完成快照允许 1 个成员：开轮时 ≥2，但已开跑 Session/组名单可合法缩到 1。 */
+const mergeCompletionMemberIds: Rule = (value, path, collector) => {
+  stringArrayRule({ nonEmpty: true, unique: true })(value, path, collector);
+};
+
+function validateMergeGroupCompleted(
+  payload: Record<string, unknown>,
+  collector: ValidationCollector,
+): void {
+  if (!Array.isArray(payload.finalTaskIds) || !Array.isArray(payload.incompleteTaskIds)) return;
+  const finalIds = new Set(payload.finalTaskIds);
+  collector.check(
+    payload.incompleteTaskIds.every((taskId) => finalIds.has(taskId)),
+    'event.mergeGroup.completed.incompleteSubset',
+    'payload.incompleteTaskIds',
+    '必须是 finalTaskIds 的子集',
+  );
+}
 const promptContext = enumRule([
   'beforeFocus',
   'afterFocus',
@@ -330,7 +348,16 @@ export const EVENT_PAYLOAD_SCHEMAS = {
   'mergeGroup.reordered': schema({ fromIndex: nonNegativeInteger, toIndex: nonNegativeInteger }, undefined, (p, c) => requireDifferent(p, 'fromIndex', 'toIndex', c)),
   'mergeGroup.estimateAdjusted': schema({ round: literalRule([2, 3]), oldEstimate: integerRule(1, 7), newEstimate: integerRule(1, 7) }, undefined, (p, c) => requireDifferent(p, 'oldEstimate', 'newEstimate', c)),
   'mergeGroup.renamed': schema({ oldTitle: mergeGroupTitle, newTitle: mergeGroupTitle }, undefined, (p, c) => requireDifferent(p, 'oldTitle', 'newTitle', c)),
-  'mergeGroup.completed': schema({ completedAt: isoRule(), validFocusCountAtCompletion: nonNegativeInteger }),
+  'mergeGroup.completed': schema(
+    {
+      completedAt: isoRule(),
+      validFocusCountAtCompletion: nonNegativeInteger,
+      finalTaskIds: mergeCompletionMemberIds,
+      incompleteTaskIds: stringArrayRule({ unique: true }),
+    },
+    undefined,
+    validateMergeGroupCompleted,
+  ),
   'mergeGroup.dissolved': schema({ finalTaskIds: stringArrayRule({ unique: true }), dissolvedReason: enumRule(['membersBelowMinimum', 'manualDissolved'] as const) }),
   'error.dataWriteFailed': schema({ errorCode: nonEmptyString, errorMessage: nullableString, context: objectRule }),
   'error.unexpectedState': schema({ errorCode: nonEmptyString, errorMessage: nullableString, context: objectRule }),
@@ -379,7 +406,7 @@ export const EVENT_ASSOCIATION_SCHEMAS = {
   'prompt.shown': a([], ['taskId', 'sessionId', 'mergeGroupId']), 'prompt.dismissed': a([], ['taskId', 'sessionId', 'mergeGroupId']),
   'mergeGroup.created': a(['mergeGroupId']), 'mergeGroup.taskAdded': a(['mergeGroupId', 'taskId']), 'mergeGroup.taskRemoved': a(['mergeGroupId', 'taskId']),
   'mergeGroup.reordered': a(['mergeGroupId', 'taskId']), 'mergeGroup.estimateAdjusted': a(['mergeGroupId']),
-  'mergeGroup.renamed': a(['mergeGroupId']), 'mergeGroup.completed': a(['mergeGroupId']),
+  'mergeGroup.renamed': a(['mergeGroupId']), 'mergeGroup.completed': a(['mergeGroupId', 'sessionId']),
   'mergeGroup.dissolved': a(['mergeGroupId']),
   'error.dataWriteFailed': a([], ['taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId']),
   'error.unexpectedState': a([], ['taskId', 'sessionId', 'dayPlanId', 'energyRecordId', 'unresolvedIntervalId', 'settingsId']), 'diagnosticLog.exported': a([]),
@@ -554,6 +581,7 @@ async function validateEntityConsistency(
     if (type === 'mergeGroup.completed') {
       checkSame(mergeGroup.status, 'completed', 'event.mergeGroup.completed.status', 'mergeGroupId', collector);
       checkSame(mergeGroup.completedAt, payload.completedAt, 'event.mergeGroup.completed.at', 'payload.completedAt', collector);
+      checkSame(mergeGroup.taskIds, payload.finalTaskIds, 'event.mergeGroup.completed.finalTaskIds', 'payload.finalTaskIds', collector);
     }
     if (type === 'mergeGroup.dissolved') {
       checkSame(mergeGroup.status, 'dissolved', 'event.mergeGroup.dissolved.status', 'mergeGroupId', collector);
@@ -562,6 +590,17 @@ async function validateEntityConsistency(
     if (type === 'prompt.shown' && payload.promptType === 'mergeGroupLimitReached') {
       checkSame(mergeGroup.status, 'limitReached', 'event.mergeGroup.limitReached.status', 'mergeGroupId', collector);
     }
+  }
+
+  if (type === 'mergeGroup.completed' && session) {
+    collector.check(
+      session.type === 'focus' &&
+        session.status === 'completed' &&
+        session.mergeGroupId === event.mergeGroupId,
+      'event.mergeGroup.completed.session',
+      'sessionId',
+      '必须关联同一合并组刚收尾的 completed focus Session',
+    );
   }
 
   if (task) {

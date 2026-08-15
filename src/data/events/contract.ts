@@ -351,7 +351,12 @@ export interface EventPayloadMap {
    * 那一刻本组已累计的有效标准 focus 轮次数——语义与 task.completed 的同名字段对应，
    * 只是归属单位从 Task 换成 MergeGroup，供 §8.5.7 复用 Task 的预估准确率算法。
    */
-  'mergeGroup.completed': { completedAt: string; validFocusCountAtCompletion: number };
+  'mergeGroup.completed': {
+    completedAt: string;
+    validFocusCountAtCompletion: number;
+    finalTaskIds: string[];
+    incompleteTaskIds: string[];
+  };
   'mergeGroup.dissolved': {
     finalTaskIds: string[];
     dissolvedReason: 'membersBelowMinimum' | 'manualDissolved';

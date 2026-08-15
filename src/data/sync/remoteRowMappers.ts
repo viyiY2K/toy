@@ -3,7 +3,7 @@
  *
  * 每个实体一个显式映射分支，不做通用反射式驼峰转下划线——字段集合、类型转换需要
  * 显式可读，避免"某个字段改名后映射悄悄错位"这类问题难以在 review 中发现。
- * 远端表结构见 supabase/schema.sql，字段一一对应 docs/data-layer-spec-v4.md §3/§7。
+ * 远端表结构见 supabase/schema.sql，字段一一对应 docs/data-layer-spec-v4.3.md §3/§7。
  *
  * `syncedAt` 不出现在任何返回的行里：它是纯本地簿记字段，远端没有对应列（见 ADR-0035）。
  */

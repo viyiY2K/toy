@@ -8,8 +8,16 @@ const NOW = '2026-06-05T14:37:12+08:00';
 const memberA = makeTask({ now: NOW, title: '回复 Slack 消息' });
 const memberB = makeTask({ now: NOW, title: '订咖啡豆' });
 
-function context(tasks: Task[] = [memberA, memberB]): ValidationContext {
-  return { getTask: async (id) => tasks.find((task) => task.id === id) };
+function context(
+  tasks: Task[] = [memberA, memberB],
+  hasTasksInMergeGroup = false,
+  previous?: MergeGroup,
+): ValidationContext {
+  return {
+    getTask: async (id) => tasks.find((task) => task.id === id),
+    hasTasksInMergeGroup: async () => hasTasksInMergeGroup,
+    getMergeGroup: async (id) => (previous?.id === id ? previous : undefined),
+  };
 }
 
 function group(overrides: Partial<MergeGroup> = {}): MergeGroup {
@@ -53,6 +61,52 @@ describe('validateMergeGroup（v4.1 §3.8）', () => {
       dissolvedReason: 'membersBelowMinimum',
     });
     await expect(validateMergeGroup(dissolved, context())).resolves.toBe(dissolved);
+  });
+
+  it('completed / dissolved 终态拒绝仍被 Task.mergeGroupId 指向', async () => {
+    const completed = group({ status: 'completed', completedAt: NOW });
+    await expectCode(
+      completed,
+      'mergeGroup.terminal.membershipPointers',
+      context([memberA, memberB], true),
+    );
+    const dissolved = group({
+      status: 'dissolved',
+      taskIds: [],
+      dissolvedAt: NOW,
+      dissolvedReason: 'membersBelowMinimum',
+    });
+    await expectCode(
+      dissolved,
+      'mergeGroup.terminal.membershipPointers',
+      context([memberA, memberB], true),
+    );
+  });
+
+  it('completed 终结快照允许 1 个成员但不得为空', async () => {
+    const oneMember = group({ status: 'completed', completedAt: NOW, taskIds: [memberA.id] });
+    await expect(validateMergeGroup(oneMember, context([memberA]))).resolves.toBe(oneMember);
+    await expectCode(
+      group({ status: 'completed', completedAt: NOW, taskIds: [] }),
+      'mergeGroup.taskIds.completedMinimum',
+    );
+  });
+
+  it('completed / dissolved 终态唯一允许的后续写入是重命名', async () => {
+    const completed = group({ status: 'completed', completedAt: NOW });
+    const renamed = { ...completed, title: '历史杂事', updatedAt: '2026-06-05T15:00:00+08:00' };
+    await expect(validateMergeGroup(renamed, context([memberA, memberB], false, completed))).resolves.toBe(renamed);
+
+    await expectCode(
+      { ...renamed, estimatedPomodoros: 2 },
+      'mergeGroup.terminal.renameOnly',
+      context([memberA, memberB], false, completed),
+    );
+    await expectCode(
+      { ...completed, status: 'dissolved', completedAt: null, dissolvedAt: NOW, dissolvedReason: 'manualDissolved' },
+      'mergeGroup.terminal.renameOnly',
+      context([memberA, memberB], false, completed),
+    );
   });
 
   it('字段一致性约束 4/5：预估 1–7、最多三轮，且必须等于最新一轮', async () => {

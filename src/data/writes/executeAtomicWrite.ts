@@ -298,6 +298,10 @@ function makeValidationContext(transaction: AtomicDataTransaction): ValidationCo
         await transaction.getAllIncludingDeleted<Session>(STORE.sessions)
       ).some((session) => session.suggestedRest === key || session.actualRest === key),
     getMergeGroup: (id) => transaction.getIncludingDeleted(STORE.mergeGroups, id),
+    hasTasksInMergeGroup: async (mergeGroupId) =>
+      (await transaction.getAllIncludingDeleted<SyncableEntityMap['tasks']>(STORE.tasks)).some(
+        (task) => task.mergeGroupId === mergeGroupId,
+      ),
     getActiveFocusSessionByMergeGroupId: async (mergeGroupId) =>
       (await transaction.getAll<Session>(STORE.sessions)).find(
         (session) => session.mergeGroupId === mergeGroupId && session.status === 'active',

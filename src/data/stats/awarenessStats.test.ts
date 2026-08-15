@@ -271,7 +271,10 @@ describe('Phase 3 S3b task, energy, interrupt, and budget aggregation', () => {
 
 describe('合并番茄的统计口径（§8.5，红线 24–26）', () => {
   const groupId = '01900000-0000-7000-8000-0000000000aa';
-  const group = () => makeMergeGroup({ id: groupId, now: NOW, taskIds: ['a', 'b'], title: '杂事番茄' });
+  const group = (overrides: Partial<MergeGroup> = {}) => ({
+    ...makeMergeGroup({ id: groupId, now: NOW, taskIds: ['a', 'b'], title: '杂事番茄' }),
+    ...overrides,
+  });
 
   it('番茄归合并组、时间归成员：成员各记 0 个有效番茄，只拿自己那段耗时', () => {
     const [a, b] = [task('a', 'A', 1), task('b', 'B', 1)];
@@ -320,6 +323,45 @@ describe('合并番茄的统计口径（§8.5，红线 24–26）', () => {
     // 跨两轮，合并组番茄数 2；成员无论横跨多少轮仍是 0。
     expect(stats.mergeGroups[0]!.validFocusInRange).toBe(2);
     expect(stats.tasks.every((t) => t.validFocusInRange === 0)).toBe(true);
+  });
+
+  it('历史合并 Session 没有分段事实时保留空数组，成员时长按 0 贡献', () => {
+    const [a, b] = [task('a', 'A', 1), task('b', 'B', 1)];
+    const historical = mergedFocus('historical', groupId, [
+      { taskId: 'a', actualDuration: 500 },
+      { taskId: 'b', actualDuration: 1000 },
+    ]);
+    historical.taskSegments = [];
+
+    const stats = aggregateAwarenessStats({
+      ...inputBase(), tasks: [a, b], sessions: [historical], mergeGroups: [group()],
+    });
+
+    expect(stats.tasks.map((entry) => entry.standardSeconds)).toEqual([0, 0]);
+    expect(stats.mergeGroups[0]).toMatchObject({
+      validFocusInRange: 1,
+      standardSeconds: 1500,
+    });
+  });
+
+  it('组完成并清空 Task 当前归属后，历史统计仍只依赖 Group 与 Session 事实', () => {
+    const [a, b] = [task('a', 'A', 1), task('b', 'B', 1)];
+    expect(a.mergeGroupId).toBeNull();
+    expect(b.mergeGroupId).toBeNull();
+    const session = mergedFocus('s1', groupId, [
+      { taskId: 'a', actualDuration: 400 },
+      { taskId: 'b', actualDuration: 1100 },
+    ]);
+    const completedGroup = group({ status: 'completed', completedAt: NOW });
+
+    const stats = aggregateAwarenessStats({
+      ...inputBase(), tasks: [a, b], sessions: [session], mergeGroups: [completedGroup],
+    });
+
+    expect(stats.tasks.map((entry) => entry.standardSeconds)).toEqual([400, 1100]);
+    expect(stats.mergeGroups[0]).toMatchObject({
+      status: 'completed', validFocusInRange: 1, standardSeconds: 1500,
+    });
   });
 
   it('作废的合并 focus 只按分段计作废时长，不给任何维度记有效番茄', () => {
@@ -374,8 +416,13 @@ describe('合并番茄的统计口径（§8.5，红线 24–26）', () => {
   it('MergeGroup 预估准确率复用独立 Task 那套算法，不另写一份', () => {
     const completion = makeEvent({
       id: 'e1', now: NOW, occurredAt: NOW, timezone: ZONE, type: 'mergeGroup.completed',
-      mergeGroupId: groupId,
-      payload: { completedAt: NOW, validFocusCountAtCompletion: 1 },
+      mergeGroupId: groupId, sessionId: 's1',
+      payload: {
+        completedAt: NOW,
+        validFocusCountAtCompletion: 1,
+        finalTaskIds: ['a', 'b'],
+        incompleteTaskIds: [],
+      },
     } as never);
 
     const stats = aggregateAwarenessStats({

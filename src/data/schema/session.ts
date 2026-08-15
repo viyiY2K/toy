@@ -57,8 +57,8 @@ export interface Session extends SyncableBaseFields, LocalDateFields {
   taskIds: string[];
   /**
    * 触发本次专注的合并组 id（§3.3）；非 null 时 type 必须为 focus 且 taskIds 长度 ≥ 1。
-   * ≥ 2 是**建组**门槛（§3.8 关键规则 1），不是每一轮 Session 的门槛：续轮排除更早
-   * 轮次已完成的成员后可能只剩 1 个，那一轮仍归属该合并组（红线 29）。
+   * 开轮命令要求 ≥ 2 个未完成成员；存储约束保持 ≥ 1，因为已开跑的一轮可在移出未来
+   * 成员后缩到 1，并仍需合法终结（红线 29）。
    */
   mergeGroupId: string | null;
   /**

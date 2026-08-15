@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file defines repository-level rules for Codex work on the Phase 1 data-layer refactor. It is not an implementation plan, and it does not replace `CLAUDE.md` or `docs/data-layer-spec-v4.md`.
+This file defines repository-level rules for Codex work on the Phase 1 data-layer refactor. It is not an implementation plan, and it does not replace `CLAUDE.md` or `docs/data-layer-spec-v4.3.md`.
 
 ## Codex Roles and Workflow
 
@@ -32,7 +32,7 @@ This file defines repository-level rules for Codex work on the Phase 1 data-laye
 
 When reviewing, use the following authority order:
 
-1. `docs/data-layer-spec-v4.md` is the highest-authority data specification. It decides fields, events, payloads, constraints, statistics semantics, and Phase semantics.
+1. `docs/data-layer-spec-v4.3.md` is the highest-authority data specification. It decides fields, events, payloads, constraints, statistics semantics, and Phase semantics. v4.2 and earlier files are historical archives only.
 2. `docs/phase1-plan.md` decides implementation order and the current S-step scope.
 3. `docs/phase1-checklist.md` is the Phase 1 acceptance checklist. Use it to verify fields, schema, `EventType`, payloads, defaults, nullability, and write paths.
 4. `CLAUDE.md` defines the Phase 1 implementation workflow and red lines. Review must also check whether a commit violates its applicable operation constraints or data-layer red lines, subject to the explicit Implementer exception above.
@@ -57,7 +57,7 @@ Codex review should prioritize blocking issues, including but not limited to:
 - The commit prematurely implements complete P2/P3/P4 behavior that is not included in Phase 1.
 - Old prototype fields or old state are kept as new data truth.
 - New and old write paths coexist as dual-track writes.
-- Fields, enums, payloads, defaults, or nullability violate `docs/data-layer-spec-v4.md`.
+- Fields, enums, payloads, defaults, or nullability violate `docs/data-layer-spec-v4.3.md`.
 - Required Phase 1 reserved structures are missing.
 - The full `EventType` enum or payload schema is missing.
 - `localDate` is used where `appDate` is required.
@@ -84,7 +84,7 @@ Group findings by severity:
 - **Minor**: Non-blocking issue.
 - **Question**: Only for product semantics, spec conflicts, missing documentation, or decisions that genuinely require user confirmation.
 
-Do not send ordinary engineering implementation choices to the user as `Question`. For normal implementation issues, Codex should give a suggested direction based on `docs/data-layer-spec-v4.md`, `docs/phase1-plan.md`, and `docs/phase1-checklist.md`.
+Do not send ordinary engineering implementation choices to the user as `Question`. For normal implementation issues, Codex should give a suggested direction based on `docs/data-layer-spec-v4.3.md`, `docs/phase1-plan.md`, and `docs/phase1-checklist.md`.
 
 Each finding must include:
 

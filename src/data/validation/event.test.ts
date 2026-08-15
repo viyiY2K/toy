@@ -98,7 +98,12 @@ const VALID_PAYLOADS = {
   'mergeGroup.reordered': { fromIndex: 1, toIndex: 0 },
   'mergeGroup.estimateAdjusted': { round: 2, oldEstimate: 1, newEstimate: 2 },
   'mergeGroup.renamed': { oldTitle: '杂事番茄', newTitle: '周一杂事清理' },
-  'mergeGroup.completed': { completedAt: NOW, validFocusCountAtCompletion: 1 },
+  'mergeGroup.completed': {
+    completedAt: NOW,
+    validFocusCountAtCompletion: 1,
+    finalTaskIds: [ID, ID_2],
+    incompleteTaskIds: [ID_2],
+  },
   'mergeGroup.dissolved': { finalTaskIds: [ID, ID_2], dissolvedReason: 'manualDissolved' },
   'error.dataWriteFailed': { errorCode: 'ERR_WRITE_FAILED', errorMessage: null, context: {} },
   'error.unexpectedState': { errorCode: 'ERR_UNEXPECTED_STATE', errorMessage: null, context: {} },
@@ -208,6 +213,14 @@ function contextFor(event: Event): ValidationContext {
     session = { id: event.sessionId, type: payload.breakType, status: 'active', taskIds: [], dayPlanId: null, actualRest: event.type === 'restItem.selected' ? payload.selectedKey : event.type === 'restItem.selectionChanged' ? payload.newKey : null };
   } else if (event.type === 'task.completed' && payload.completionSource === 'pomodoro') {
     session = { id: event.sessionId, type: 'focus', status: 'completed', taskIds: [event.taskId], dayPlanId: event.dayPlanId };
+  } else if (event.type === 'mergeGroup.completed') {
+    session = {
+      id: event.sessionId,
+      type: 'focus',
+      status: 'completed',
+      taskIds: payload.finalTaskIds,
+      mergeGroupId: event.mergeGroupId,
+    };
   } else if (event.type === 'energy.recorded' && typeof payload.source === 'string' && payload.source.startsWith('after')) {
     const types: Record<string, string> = { afterFocus: 'focus', afterShortBreak: 'shortBreak', afterLongBreak: 'longBreak', afterExtraFocus: 'extraFocus', afterExtraRest: 'extraRest' };
     session = { id: event.sessionId, type: types[payload.source], status: 'completed' };
@@ -233,7 +246,7 @@ function contextFor(event: Event): ValidationContext {
       : event.type === 'mergeGroup.taskAdded' ? [ID_2, event.taskId]
       : event.type === 'mergeGroup.taskRemoved' ? [ID_2, ID_3]
       : event.type === 'mergeGroup.reordered' ? [event.taskId, ID_2]
-      : event.type === 'mergeGroup.dissolved' ? payload.finalTaskIds
+      : event.type === 'mergeGroup.dissolved' || event.type === 'mergeGroup.completed' ? payload.finalTaskIds
       : [ID, ID_2],
     estimatedPomodoros: payload.newEstimate ?? payload.estimatedPomodoros ?? 1,
     estimateRounds: Array.from({ length: typeof payload.round === 'number' ? payload.round : 1 }, (_, index) => ({ index: index + 1, pomodoros: 1, occurredAt: NOW })),
@@ -382,6 +395,14 @@ describe('validateEvent (S7b, v4 §3.4/§7)', () => {
     expect(await codes({ ...validEvent('restItem.shown', VALID_PAYLOADS['restItem.shown']), payload: { breakType: 'shortBreak', shownKeys: ['a', 'b'], eligibleCount: 1 } })).toContain('event.restItem.eligibleCount');
     expect(await codes({ ...validEvent('statsBaseline.updated', VALID_PAYLOADS['statsBaseline.updated']), payload: { oldValue: 1, newValue: 1 } })).toContain('event.payload.noChange');
     expect(await codes({ ...validEvent('task.deleted', {}), payload: { deletedReason: 'invalid' } })).toContain('value.enum');
+    const completed = validEvent('mergeGroup.completed', VALID_PAYLOADS['mergeGroup.completed']);
+    expect(await codes({
+      ...completed,
+      payload: {
+        ...VALID_PAYLOADS['mergeGroup.completed'],
+        incompleteTaskIds: [ID_3],
+      },
+    })).toContain('event.mergeGroup.completed.incompleteSubset');
     const deleted = { ...validEvent('task.deleted', {}), payload: { deletedReason: 'userDeleted' } } as Event;
     await expect(validateEvent(deleted, contextFor(deleted))).resolves.toBeDefined();
   });

@@ -144,6 +144,19 @@ describe('validateTask (S6a, v4 §3.1)', () => {
     await expectCode(validTask({ title: ' '.repeat(3) }), 'task.title');
     await expectCode(validTask({ sortIndex: -1 }), 'number.min');
   });
+
+  it('mergeGroupId 只能指向当前在用的 active / limitReached 合并组', async () => {
+    const mergeGroupId = newId();
+    const member = validTask({ mergeGroupId });
+    const group = {
+      id: mergeGroupId,
+      taskIds: [member.id],
+      status: 'completed',
+    } as never;
+    await expectCodeWithContext(member, 'task.mergeGroup.terminal', {
+      getMergeGroup: async () => group,
+    });
+  });
 });
 
 async function expectCodeWithContext(

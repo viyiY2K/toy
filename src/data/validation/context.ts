@@ -28,6 +28,8 @@ export interface ValidationContext {
   getActiveSettings?(): Promise<Settings | undefined>;
   isRestSuggestionReferenced?(key: string): Promise<boolean>;
   getMergeGroup?(id: string): Promise<MergeGroup | undefined>;
+  /** 是否仍有 Task 的当前归属指针指向指定合并组（含软删除记录）。 */
+  hasTasksInMergeGroup?(mergeGroupId: string): Promise<boolean>;
   /**
    * 该合并组当前那条 `status='active'` 的 focus Session（没有则 undefined）。
    * §3.8 一致性约束 1 的瞬时例外要用它：进行中允许把未来成员移空到只剩当前成员，

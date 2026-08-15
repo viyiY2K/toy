@@ -163,7 +163,7 @@ async function clearMembership(
   now: IsoDateTime,
 ): Promise<void> {
   for (const taskId of taskIds) {
-    const task = await transaction.get<Task>(STORE.tasks, taskId);
+    const task = await transaction.getIncludingDeleted<Task>(STORE.tasks, taskId);
     if (!task || task.mergeGroupId === null) continue;
     await transaction.put(STORE.tasks, { ...task, mergeGroupId: null, updatedAt: now });
   }
@@ -306,8 +306,13 @@ async function removeMembers(
         updatedAt: clock.now,
       }
     : { ...group, taskIds: remaining, updatedAt: clock.now };
-  await transaction.put(STORE.mergeGroups, updated);
-  await clearMembership(transaction, dissolving ? group.taskIds : taskIds, clock.now);
+  if (dissolving) {
+    await clearMembership(transaction, group.taskIds, clock.now);
+    await transaction.put(STORE.mergeGroups, updated);
+  } else {
+    await transaction.put(STORE.mergeGroups, updated);
+    await clearMembership(transaction, taskIds, clock.now);
+  }
   await syncActiveSessionMembers(transaction, group.id, remaining, clock.now);
 
   for (const { taskId, removedAtIndex } of removals) {
@@ -572,8 +577,8 @@ export async function settleMergeGroupRound(
         dissolvedReason: 'membersBelowMinimum',
         updatedAt: input.now,
       };
-      await transaction.put(STORE.mergeGroups, updated);
       await clearMembership(transaction, group.taskIds, input.now);
+      await transaction.put(STORE.mergeGroups, updated);
       await transaction.appendEvent(
         makeEvent({
           ...eventFields(input, transaction.correlationId),
@@ -682,12 +687,16 @@ export async function renameMergeGroup(
  * `dissolved` 只表示中途拆散 / 取消合并。两者都是终态，之后一律不许再增删成员、
  * 重排、追加预估或开新一轮（由 `requireLiveGroup` 统一挡掉）。
  *
+ * 必须点名触发确认的刚收尾合并 focus Session，并把它写进 Event 顶层 `sessionId`。
  * `validFocusCountAtCompletion` 记这一组完成时累计拿到的有效番茄数——注意它是**组**
  * 的番茄数（每条正常完成的合并 Session 记 1 个），不是任何成员的番茄数（成员恒为 0）。
  * 这样 MergeGroup 的预估准确率就能复用独立 Task 那套算法，不必另写一份。
+ * 完成允许仍有未完成成员；事件保存 final/incomplete 两份当时快照。为让逐笔 validator
+ * 只看到合法状态，事务内先清空全部 Task 的当前归属指针，再写 Group 终态与 Event；
+ * 绝不改变 Task 自身状态，也不追加 task.* Event。
  */
 export async function completeMergeGroup(
-  input: InitializationClock & { mergeGroupId: string },
+  input: InitializationClock & { mergeGroupId: string; sessionId: string },
 ): Promise<TaskCommandResult<MergeGroup>> {
   return executeAtomicWrite(
     {
@@ -701,13 +710,22 @@ export async function completeMergeGroup(
       if ((await activeSessionOf(transaction, group.id)) !== null) {
         throw new Error('本轮合并专注还在进行中，无法确认完成');
       }
-      const unfinished = await unfinishedMembers(transaction, group);
-      if (unfinished.length > 0) {
-        throw new Error('组内还有未完成的成员，无法确认整组完成');
+      const triggeringSession = await transaction.get<Session>(STORE.sessions, input.sessionId);
+      if (
+        !triggeringSession ||
+        triggeringSession.type !== 'focus' ||
+        triggeringSession.status !== 'completed' ||
+        triggeringSession.mergeGroupId !== group.id
+      ) {
+        throw new Error('完成确认必须关联本组合并 focus 的刚收尾 Session');
       }
-      const sessions = await transaction.getAllIncludingDeleted<Session>(STORE.sessions);
+      const unfinished = await unfinishedMembers(transaction, group);
+      const sessions = await transaction.getAll<Session>(STORE.sessions);
       const validFocusCountAtCompletion = sessions.filter(
-        (session) => session.mergeGroupId === group.id && session.status === 'completed',
+        (session) =>
+          session.type === 'focus' &&
+          session.status === 'completed' &&
+          session.mergeGroupId === group.id,
       ).length;
 
       const updated: MergeGroup = {
@@ -716,13 +734,24 @@ export async function completeMergeGroup(
         completedAt: input.now,
         updatedAt: input.now,
       };
+      /*
+       * 终态前先清空全部“当前所属”指针，再写 Group 终态，确保两边的逐笔 validator
+       * 都只看到合法状态；外部仍只会看到整个事务一次提交，不存在可观察的中间态。
+       */
+      await clearMembership(transaction, group.taskIds, input.now);
       await transaction.put(STORE.mergeGroups, updated);
       await transaction.appendEvent(
         makeEvent({
           ...eventFields(input, transaction.correlationId),
           type: 'mergeGroup.completed',
           mergeGroupId: group.id,
-          payload: { completedAt: input.now, validFocusCountAtCompletion },
+          sessionId: triggeringSession.id,
+          payload: {
+            completedAt: input.now,
+            validFocusCountAtCompletion,
+            finalTaskIds: [...group.taskIds],
+            incompleteTaskIds: unfinished,
+          },
         }),
       );
       return { value: updated, correlationId: transaction.correlationId };
@@ -759,8 +788,8 @@ export async function dissolveMergeGroup(
         dissolvedReason: 'manualDissolved',
         updatedAt: input.now,
       };
-      await transaction.put(STORE.mergeGroups, updated);
       await clearMembership(transaction, group.taskIds, input.now);
+      await transaction.put(STORE.mergeGroups, updated);
       await transaction.appendEvent(
         makeEvent({
           ...eventFields(input, transaction.correlationId),

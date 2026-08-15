@@ -1,7 +1,7 @@
 # 番茄钟数据层规范 v4.3
 
-> **正式基准文档。本文件取代 v1 / v2 / v2.1 / v3 / v4.0（`data-layer-spec-v4.md`）/ v4.1（`data-layer-spec-v4.1.md`）/ v4.2（`data-layer-spec-v4.2.md`）。后续所有开发仅参考本文件（v4.3.0）。**
-> 版本：4.3.1 | 制定日期：2026-05-29 | 最近修订：2026-08-09（**4.3.1**：合并番茄钟产品语义收口——活动 focus Session 锁定当前执行对象（独立任务 / 合并组当前成员），锁定由数据层每条 write path 强制保证（§3.3 关键规则 14、§3.8 关键规则 13/15）；MergeGroup 新增成功终态 `status='completed'` + `completedAt` + `mergeGroup.completed` 事件（§3.8、§7.19）；结案 §14【V43-1】【V43-2】【V43-3】（成员完成记 `completionSource='pomodoro'` + `validFocusCountAtCompletion=0`、不另设投入快照字段、作废合并 focus 仍写分段）；补回两条只落到已归档 v4.1 的修订——§7.15 `mergeGroupLimitReached` 强阻断、§3.3 一致性约束 15 续轮 `taskIds ≥ 1`；新增 §8.5.7 MergeGroup 维度统计口径。**4.3.0**：新增"中长期主线目标"能力：Goal 实体（§3.9）、Task `goalId` 字段（§3.1）、9 个 `goal.*` 事件（§7.20）、`task.goalLinked` / `task.goalUnlinked`（§7.4）、Goal 维度统计口径（§8.13）；**废除子任务机制**：Task `parentId` 字段、§7.2 `subtask.*` 全部 4 个事件、§7.4 `task.reparented` 整体移除；**改写合并番茄钟统计口径**：番茄与专注时长归属合并组，成员任务按 Session `taskSegments` 分段各记耗时，新增 MergeGroup `title` 与 `mergeGroup.renamed`（§3.3、§3.8、§7.19、§8.3、§8.5）。独立成 `data-layer-spec-v4.3.md` 文件，`data-layer-spec-v4.2.md` 保留原内容作历史存档）
+> **正式基准文档。本文件取代 v1 / v2 / v2.1 / v3 / v4.0（`data-layer-spec-v4.md`）/ v4.1（`data-layer-spec-v4.1.md`）/ v4.2（`data-layer-spec-v4.2.md`）。后续所有开发仅参考本文件（v4.3.2）。**
+> 版本：4.3.2 | 制定日期：2026-05-29 | 最近修订：2026-08-10（**4.3.2**：整合后续规范结论——`Task.mergeGroupId` 严格表示当前所属，MergeGroup 进入 `completed` / `dissolved` 终态时清空全部成员指针；`mergeGroup.completed` 顶层新增触发确认的 `sessionId`，payload 扩展为 `completedAt` / `validFocusCountAtCompletion` / `finalTaskIds` / `incompleteTaskIds`，允许仍有未完成成员时确认整组完成，并按“开轮至少 2 个未完成成员、已开跑 Session 与终结快照允许缩到 1”统一约束；§14 V43-1～V43-6 全部结案。**4.3.1**：合并番茄钟产品语义收口——活动 focus Session 锁定当前执行对象；开启任何一轮合并 focus 前未完成成员必须 ≥2，但 Session 存储约束保持 `taskIds ≥ 1`；MergeGroup 保留成功终态 `completed`、`renamed` 与 §7.19 共 8 个 `mergeGroup.*` 事件；成员耗时改用 `taskSegments`，番茄归组、时间归成员。**4.3.0**：新增 Goal、废除子任务机制并改写合并番茄钟统计口径。`data-layer-spec-v4.2.md` 及更早版本保留作历史归档）
 
 ---
 
@@ -48,7 +48,8 @@
 | v4.1.0 | 新增"合并番茄钟"能力：MergeGroup 实体（§3.8）、Session `taskId`→`taskIds` 结构调整（§3.3）、Task `mergeGroupId` 字段（§3.1）、6 个 mergeGroup.* 事件（§7.19）、新增 promptType='mergeGroupLimitReached'（§7.15）、对应统计口径补充（§8.3、§8.5） | 已归档，内容已内嵌进 v4.2 |
 | v4.2.0 | 新增"任务分类"能力：Task `category` / `categorySource` 字段（§3.1）、DayPlan `mainCategory` / `mainCategorySource` 今日主线分类字段（§3.2）、Settings `taskCategoryWindows` 自动打标时间窗口配置（§3.7）、`task.categoryChanged` / `dayPlan.mainCategoryChanged` / `settings.taskCategoryWindowsChanged` 三个事件（§7.1、§7.3、§7.12）、按分类统计投入时长口径（§8.5.6） | 已归档，内容已内嵌进 v4.3 |
 | v4.3.0 | 新增"中长期主线目标"能力：Goal 实体（§3.9）、Task `goalId`（§3.1）、9 个 `goal.*` 事件（§7.20）、`task.goalLinked` / `task.goalUnlinked`（§7.4）、Goal 维度统计（§8.13）；废除子任务机制（`parentId`、`subtask.*`、`task.reparented`）；改写合并番茄钟统计口径（Session `taskSegments` 分段、MergeGroup `title` 与 `mergeGroup.renamed`，§3.3、§3.8、§7.19、§8.3、§8.5） | 已并入 v4.3.1 |
-| **v4.3.1（本文）** | 合并番茄钟产品语义收口：活动 focus Session 锁定当前执行对象（§3.3 关键规则 14、§3.8 关键规则 13/15）；MergeGroup 新增成功终态 `'completed'` + `completedAt` + `mergeGroup.completed`（§3.8、§7.19，本节共 8 个 `mergeGroup.*` 事件）；结案 §14【V43-1】【V43-2】【V43-3】；补回只落到已归档 v4.1 的两条修订（§7.15 强阻断、§3.3 约束 15 续轮 `taskIds ≥ 1`）；新增 §8.5.7 MergeGroup 维度统计 | **唯一有效版本** |
+| v4.3.1 | 合并番茄钟产品语义收口：活动 focus Session 锁定当前执行对象；开轮前未完成成员 ≥2、Session 存储约束保持 `taskIds ≥1`；保留成功终态 `completed`、`renamed` 与 8 个 `mergeGroup.*` 事件；补齐 `taskSegments` 与 MergeGroup 统计口径 | 已并入 v4.3.2 |
+| **v4.3.2（本文）** | 整合 V43-3～V43-6 最终结论：终态清空成员当前归属指针；`mergeGroup.completed` 增加顶层 `sessionId` 与成员终结快照，允许仍有未完成成员时确认完成；completed / dissolved 终态与重命名例外统一；保留 v4.3.1 的开轮 ≥2 / 已开跑记录 ≥1 分层规则 | **唯一有效版本** |
 
 **声明**：自本文件制定之日起，v1 / v2 / v2.1 / v3 / v4.0 / v4.1 / v4.2 均降级为历史归档，仅供溯源查阅，**不再作为任何开发决策的依据**。如历史版本内容与本文有出入，以本文为准。v4.0.0、v4.1.0 与 v4.2.0 的内容已完整内嵌入本文（v4.3.0），未被 v4.3 修订的部分保持不变。
 
@@ -311,7 +312,7 @@ Task 是产品的核心实体，表示一个**独立任务**——单天内能�
 | `schemaVersion` | `number` | 否 | 写入时取当前 schema 版本 | 该条记录写入时的 schema 版本号（见 §2.3）；取值约束：正整数，≥ 1 |
 | `deviceId` | `string \| null` | 是 | `null` | （可选预留）写入设备标识（见 §2.3，Phase 5+ 启用）；取值约束：null 或非空字符串 |
 | `syncedAt` | `string \| null` | 是 | `null` | （可选预留）最近一次同步成功时间（见 §2.3，Phase 5+ 启用）；取值约束：ISO 8601 带时区格式或 null |
-| `mergeGroupId` | `string \| null` | 是 | `null` | 当前所属合并组（MergeGroup，见 §3.8）id；`null` 表示未参与任何合并组；有值表示该任务当前正被并入某个合并番茄钟，与其他共享同一 `mergeGroupId` 的任务地位完全平等，不构成父子关系；取值约束：null 或合法的 MergeGroup UUID v7，且该 id 对应的 MergeGroup 的 `taskIds` 必须包含本 Task 的 id |
+| `mergeGroupId` | `string \| null` | 是 | `null` | **当前**所属合并组（MergeGroup，见 §3.8）id；`null` 表示当前未参与任何合并组；有值表示该任务此刻正被并入某个进行中的合并番茄钟，与其他成员地位平等。本字段严格表示“当前所属”，**不承载历史来源**：MergeGroup 进入 `completed` 或 `dissolved` 终态时，全部成员的本字段必须清空；历史归属由 `MergeGroup.taskIds`、`Session.mergeGroupId`、`Session.taskSegments` 与 Event 关联共同承载，查询不得依赖本字段。取值约束：null 或合法的 MergeGroup UUID v7；非 null 时该组必须包含本 Task，且状态必须为 `active` 或 `limitReached` |
 | `category` | `string \| null`（枚举） | 是 | `null` | 任务大类标签，用于统计投入时间比例（v4.2 新增）；`null` = 未分类；取值约束：取值为 `null` / `'work'` / `'study'` / `'side'` / `'life'` 之一 |
 | `categorySource` | `string \| null`（枚举） | 是 | `null` | `category` 的写入来源（v4.2 新增）；`null` = 尚未被自动或手动设置过；`'auto'` = 由系统自动判定写入；`'manual'` = 用户手动设置或修改；完整触发规则见 §7.1 `task.categoryChanged`；取值约束：取值为 `null` / `'auto'` / `'manual'` 之一 |
 
@@ -585,14 +586,14 @@ Session 表示一次用户行为执行单元，可以是一段专注计时（typ
 | `id` | `string` (UUID v7) | 否 | 写入时生成 | 实体唯一标识；取值约束：UUID v7 格式 |
 | `type` | `string`（枚举） | 否 | 无 | 会话类型，枚举值见下方；取值约束：取值为 `'focus'` / `'shortBreak'` / `'longBreak'` / `'extraFocus'` / `'extraRest'` 之一 |
 | `status` | `string`（枚举） | 否 | `'active'` | 会话状态；focus 合法值为 `'active'` / `'completed'` / `'discarded'`；extraFocus 固定为 `'completed'`；shortBreak / longBreak 合法值为 `'active'` / `'completed'` / `'skipped'`；extraRest 固定为 `'completed'`；取值约束：必须取自该 type 对应的合法集合，且不得将 extraFocus / extraRest 写入其他状态。 |
-| `taskIds` | `string[]` | 否 | `[]` | 关联任务 id 列表；focus 时长度必须 ≥ 1（不允许空数组，产品不支持无任务自由专注）——单任务专注时数组只有 1 个元素，合并番茄钟场景下数组可包含 2 个及以上元素，元素间完全平等、不区分主次（见 §3.8 MergeGroup）；extraFocus 不支持合并，长度固定为 1；shortBreak / longBreak / extraRest 固定为空数组 `[]`；取值约束：数组元素均为合法 Task UUID v7，数组内不允许重复 |
-| `mergeGroupId` | `string \| null` | 是 | `null` | 若本次专注由某个合并组（MergeGroup，见 §3.8）触发，则指向该合并组 id；未参与合并的普通单任务专注、以及 extraFocus / 全部休息类型固定为 null；取值约束：null 或合法的 MergeGroup UUID v7；非 null 时 `taskIds` 长度必须 ≥ 1（**≥ 2 是「组成合并组」的门槛，见 §3.8 关键规则 1，不是每一轮 Session 的门槛**——续轮排除更早轮次已完成的成员后可能只剩 1 个未完成成员，那一轮仍归属该合并组） |
+| `taskIds` | `string[]` | 否 | `[]` | 关联任务 id 列表；focus 时长度必须 ≥ 1（不允许空数组，产品不支持无任务自由专注）——单任务专注时数组只有 1 个元素；合并番茄钟开轮时至少 2 个未完成成员，但已开跑记录可合法缩到 1，元素间完全平等、不区分主次（见 §3.8 MergeGroup）；extraFocus 不支持合并，长度固定为 1；shortBreak / longBreak / extraRest 固定为空数组 `[]`；取值约束：数组元素均为合法 Task UUID v7，数组内不允许重复 |
+| `mergeGroupId` | `string \| null` | 是 | `null` | 若本次专注由某个合并组（MergeGroup，见 §3.8）触发，则指向该合并组 id；普通单任务专注、extraFocus 与全部休息类型固定为 null。取值约束：null 或合法的 MergeGroup UUID v7；非 null 时 `taskIds` 长度必须 ≥ 1。**开轮命令**另行要求开始时至少 2 个未完成成员；这里是**已开跑 Session 的存储约束**，必须允许进行中移出未来成员后缩到 1 并正常收尾（见 §3.8 关键规则 15/16） |
 | `taskSegments` | `array` | 否 | `[]` | **成员分段（v4.3 新增）**：合并番茄钟场景下，本次专注的实际时长按组内成员的执行先后顺序切分而成的分段明细，结构见下方 taskSegments 数组元素结构；这是"某个成员任务在这次合并番茄里实际花了多少时间"的**唯一事实源**（切分规则见关键规则 12、统计口径见 §8.5）；`mergeGroupId` 为 null 的单任务专注、以及 extraFocus / 全部休息类型固定为空数组 `[]`（单任务专注的任务耗时即 `actualDuration` 本身，无需分段）；Session 终结时一次性写入，写入后固定不再变化；取值约束：数组（可为空），元素须符合下方 taskSegments 结构定义；非空时各元素 `actualDuration` 之和必须**精确等于**本 Session 的 `actualDuration`（见字段一致性约束 16） |
 | `startedAt` | `string` | 否 | 写入时生成 | session 开始时刻（session 创建即开始计时）；5 种 type 均必填；取值约束：ISO 8601 带时区格式，不允许 null |
 | `endedAt` | `string \| null` | 是 | `null` | session 终结时刻；status=`'active'` 时为 null；status ∈ {`'completed'`, `'discarded'`, `'skipped'`} 时必须非 null；extraFocus / extraRest（status 恒为 `'completed'`）的 endedAt 始终非 null；取值约束：ISO 8601 带时区格式或 null |
 | `plannedDuration` | `number \| null` | 是 | `null` | 计划时长，单位秒；focus / shortBreak / longBreak 必填，取写入时 Settings 对应时长配置（如 focus 默认 1500 秒 = 25 分钟）；extraFocus / extraRest 无计划时长概念，固定为 null；取值约束：type ∈ {`'focus'`, `'shortBreak'`, `'longBreak'`} 时必须为正整数（> 0）；type ∈ {`'extraFocus'`, `'extraRest'`} 时必须为 null |
 | `actualDuration` | `number \| null` | 是 | `null` | 实际持续时长，单位秒；status=`'active'` 时为 null；status=`'skipped'` 时固定存 `0`（明确表示 0 秒，区别于 null 的"未知"语义）；status ∈ {`'completed'`, `'discarded'`} 时为实际经过秒数；type=`'extraFocus'` 或 type=`'extraRest'` 时，由于 status 固定为 `'completed'`，actualDuration 必须为正整数（> 0），不得为 null 或 0；取值约束：null、0 或正整数 |
-| `pomodoroIndex` | `number \| null` | 是 | `null` | 单任务专注（`taskIds` 长度为 1）时，该 Task 下当前 focus 的发生序号，从 1 起递增；**合并番茄钟场景（`taskIds` 长度 ≥ 2）时，本字段是该 MergeGroup 自己的发生序号**（第几轮合并番茄），不是各成员各自的序号——合并组一旦成立即被当作与标准任务同级别的一个整体来编号，不存在"组内某成员是第 3 个、另一成员是第 1 个"这种混合场景（见 §3.8 关键规则 1：合并只允许在成员均未开始过任何 focus 的初始状态发生）；shortBreak / longBreak / extraFocus / extraRest 固定 null；discarded 的 focus 也占用序号，不回收（序号记发生顺序，不等于有效番茄数）；取值约束：正整数（≥ 1）或 null |
+| `pomodoroIndex` | `number \| null` | 是 | `null` | 普通独立 focus（`mergeGroupId=null`）时，是该 Task 的 focus 发生序号；**合并 focus（`mergeGroupId` 非 null）时，是该 MergeGroup 的发生序号**，即使已开跑后 `taskIds` 缩到 1 也不改变归属、不退化为独立 Task 序号。shortBreak / longBreak / extraFocus / extraRest 固定 null；discarded focus 也占用序号，不回收；取值约束：正整数（≥1）或 null |
 | `skipKind` | `string \| null` | 是 | `null` | 休息未完成的原因；仅 shortBreak / longBreak 在 status=`'skipped'` 时适用（此时必须非 null），status=`'completed'` 时必须为 null；extraRest 虽属休息类，但 status 固定为 `'completed'`，因此 skipKind 固定 null；focus / extraFocus 固定 null；枚举值见下方；取值约束：null 或枚举值之一 |
 | `originIntervalId` | `string \| null` | 是 | `null` | 产生该 extra session 的 UnresolvedInterval 的 id；extraFocus / extraRest 必填（不允许 null）；同一 UnresolvedInterval 拆多 segment 时多条 extra session 可共享同一 originIntervalId；focus / shortBreak / longBreak 固定 null；取值约束：null 或合法的 UnresolvedInterval UUID v7 |
 | `sourceFocusSessionId` | `string \| null` | 是 | `null` | 触发该休息的上一段 focus session 的 id；shortBreak / longBreak 必填；focus / extraFocus / extraRest 固定 null；引用目标必须是一条已存在的标准 focus Session（type=`'focus'` 且 status=`'completed'`），不得引用 extraFocus、shortBreak、longBreak、extraRest，也不得引用 status=`'active'` 或 status=`'discarded'` 的 focus；取值约束：null 或合法的 focus Session UUID v7（且该 Session 满足 type=`'focus'` 且 status=`'completed'`） |
@@ -675,7 +676,7 @@ shortBreak / longBreak / extraRest 适用值：
 | `status` | 必填 | 必填 | 必填 | 必填（固定 `'completed'`） | 必填（固定 `'completed'`） |
 | `taskIds` | 必填（长度 ≥ 1） | 不适用（固定 `[]`） | 不适用（固定 `[]`） | 必填（长度固定为 1） | 不适用（固定 `[]`） |
 | `mergeGroupId` | 可选 | 不适用（固定 null） | 不适用（固定 null） | 不适用（固定 null） | 不适用（固定 null） |
-| `taskSegments` | `mergeGroupId` 非 null 且已终结时必填（长度 = `taskIds` 长度，≥ 1）；否则不适用（固定 `[]`） | 不适用（固定 `[]`） | 不适用（固定 `[]`） | 不适用（固定 `[]`） | 不适用（固定 `[]`） |
+| `taskSegments` | 当前版本新写入中，`mergeGroupId` 非 null 且已终结时必填（长度 = `taskIds` 长度，≥ 1）；历史迁移例外保持 `[]`（见关键规则 13）；否则不适用（固定 `[]`） | 不适用（固定 `[]`） | 不适用（固定 `[]`） | 不适用（固定 `[]`） | 不适用（固定 `[]`） |
 | `startedAt` | 必填 | 必填 | 必填 | 必填 | 必填 |
 | `endedAt` | 可选 | 可选 | 可选 | 必填 | 必填 |
 | `plannedDuration` | 必填 | 必填 | 必填 | 不适用（固定 null） | 不适用（固定 null） |
@@ -733,6 +734,8 @@ shortBreak / longBreak / extraRest 适用值：
 
     本规则同样适用于 `status='discarded'` 的合并 focus：作废的合并专注仍写入 `taskSegments`（用户确实投入了这段时间），当前正在执行的成员的分段结束于作废时刻，尚未轮到的成员一律记 `0`、不得分到等待时间；其分段耗时按 §8.3.5 计入各成员任务的作废专注时长，不计入全局有效番茄数、不计入 MergeGroup 有效番茄数、也不计入任何成员任务的有效番茄数。
 
+    **历史迁移例外**：从旧 schema 迁入、且当时没有逐个成员完成时刻可供还原的历史合并 Session，必须保持 `taskSegments: []`。迁移不得伪造平均分摊或其他推测分段；统计侧将这类 Session 对各成员的时长贡献按 `0` 计算。此例外只适用于无法还原分段事实的历史迁移记录，不放宽当前版本新终结 Session 的完整分段写入约束。
+
 14. **活动 focus Session 对其执行对象的锁定（v4.3 新增）**。一条 `status='active'` 的 focus Session 会锁定它当前正在执行的对象，锁定期间数据层**必须拒绝**改变该对象的普通写入——这条约束由数据层的每一条相关 command / write path 强制保证，**不得只靠 UI 隐藏或禁用按钮**。
 
     - **独立任务专注**（`mergeGroupId` 为 null）：被引用的那个 Task 处于锁定态。锁定期间必须拒绝：删除 / 软删除该 Task；从计划页直接修改预估番茄数；绕过正式计时流程调整 `estimatedPomodoros` / `estimateRounds`；以及其他会改变本轮执行对象或任务核心状态的普通修改。
@@ -762,13 +765,14 @@ shortBreak / longBreak / extraRest 适用值：
 14. **不**校验 `actualDuration` 与 `(endedAt − startedAt)` 的一致性；validator 仅按字段表规则校验 `actualDuration` 自身的非空与范围（active=null、skipped=0、completed / discarded 为实际经过秒数、extraFocus / extraRest 为正整数 > 0）。`actualDuration` 为实际时长唯一事实源，见关键规则第 10 条。
 15. `mergeGroupId` 非 null 时，`type` 必须为 `'focus'`，且 `taskIds` 长度必须 ≥ 1。反向亦然：`type='focus'` 且 `taskIds` 长度 ≥ 2 时，`mergeGroupId` 必须非 null（多任务专注只可能来自合并组）。
 
-    > **不得把这里收紧回 ≥ 2**。「≥ 2」是 §3.8 关键规则 1 的**建组门槛**，只约束 `mergeGroup.created` 的初始成员，不是每一轮 Session 的门槛。合法成立的合并组在前一轮完成部分成员后，即使只剩 1 个未完成成员也允许追加预估并开启下一轮：该轮 `taskIds.length === 1` 合法、`mergeGroupId` 继续指向原组、`pomodoroIndex` 继续用合并组的轮次、有效番茄继续归属该合并组，**不退化为普通独立 Task focus**。此外 §3.8 关键规则 15 允许 active Session 进行中把未来成员移出到组内暂时只剩当前成员，那一轮的快照同样可能是 1。
+    > **不得把这里收紧回 ≥ 2**。§3.8 关键规则 16 要求开轮命令在开始时校验未完成成员至少 2 个；本条只校验已经存在的 Session。合法开跑后，用户可在 active Session 期间移出未来成员，使 `taskIds` 与终结快照缩到 1；该轮仍带原 `mergeGroupId`、继续使用合并组轮次，且必须能够正常写入 `taskSegments` 并收尾，不退化为普通独立 Task focus。
 16. **（v4.3 新增）** `taskSegments` 的适用性与内部一致性：
     - `mergeGroupId` 为 null 时（含全部非 focus type），`taskSegments` 必须为空数组 `[]`；
     - `mergeGroupId` 非 null 且 `status='active'` 时，`taskSegments` 必须为空数组 `[]`（分段在 Session 终结时才一次性写入）；
-    - `mergeGroupId` 非 null 且 `status ∈ {'completed', 'discarded'}` 时，`taskSegments` 长度必须与 `taskIds` 长度相等，且两者的 taskId 集合必须**完全一致**（每个参与本轮的成员都必须有且只有一条分段记录，即使其耗时为 0）；
+    - 当前版本新终结写入中，`mergeGroupId` 非 null 且 `status ∈ {'completed', 'discarded'}` 时，`taskSegments` 长度必须与 `taskIds` 长度相等，且两者的 taskId 集合必须**完全一致**（每个参与本轮的成员都必须有且只有一条分段记录，即使其耗时为 0）；
     - 各分段的 `actualDuration` 之和必须**精确等于**本 Session 的 `actualDuration`；不相等的写入必须被拒绝；
     - 每条分段的 `endedAt` 不得早于其 `startedAt`；数组内不允许出现重复的 `taskId`。
+    - 关键规则 13 所述历史迁移 Session 是唯一例外：无法还原分段事实时允许 `taskSegments: []`，成员贡献按 0；不得据此放宽任何当前版本业务写入。
 
 ---
 
@@ -1182,13 +1186,15 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 
 这是**平等的集合关系**：成员之间没有主次，也**不代表它们属于同一件事**——合并只说明"这几件事各自都不足以占满一个番茄"，纯粹是执行层面的临时归并。因此**同一个合并组内的成员，可以各自关联到不同的 Goal（§3.9），也可以有的关联、有的不关联**；任何实现都不得从"同属一个合并组"推断"同属一个中长期目标"（见 §3.1 关键规则 12）。
 
+**MergeGroup 是与独立 Task 同级的一个番茄执行任务，不是可无限复用的长期容器。**它有初始预估、可追加预估、完成确认与成功终态；用户确认完成后必须新建另一组来承载下一批杂事，不得复用旧组。它仍是独立的 MergeGroup 实体，不伪造成 Task。
+
 **完整字段定义**
 
 | 字段名 | 类型 | 可空 | 默认值 | 含义说明 |
 |---|---|---|---|---|
 | `id` | `string`（UUID v7） | 否 | 写入时生成 | 实体唯一标识；取值约束：UUID v7 格式 |
 | `title` | `string` | 否 | 创建时由系统生成的默认名（如"杂事番茄"） | **合并组名称（v4.3 新增）**：这一个"杂事番茄"在统计页与历史记录里的显示名。新口径下合并组本身是番茄与专注时长的归属单位（见 §3.3 关键规则 12），会作为一个独立条目出现在统计与历史列表中，因此必须有名字，否则多个合并组无法区分。创建时由系统写入默认名，用户可随时重命名（→ `mergeGroup.renamed`，见 §7.19）；取值约束：非空字符串（不允许空字符串或纯空白），最大长度 200 字符（与 §3.1 Task.title 一致） |
-| `taskIds` | `string[]` | 否 | 创建时的初始成员 | 组内成员 Task id 列表，有序，数组顺序即合并卡片内的展示顺序**、也是成员被推进的先后顺序（决定 §3.3 `taskSegments` 的切分顺序）**；**是持续的成员名单，不因成员完成而自动移除**——已完成的任务仍保留在这里，只是不再计入后续 focus Session 的 credit（见 §3.3 关键规则 11）；可动态增删（见关键规则 1）；取值约束：数组元素均为合法 Task UUID v7，数组内不允许重复；`status='active'` 时长度必须 ≥ 2 |
+| `taskIds` | `string[]` | 否 | 创建时的初始成员 | 组内成员 Task id 列表，有序，数组顺序即展示与推进顺序（决定 §3.3 `taskSegments` 切分）；是持续的成员名单，不因成员完成自动移除；进入终态后固定为终结成员快照，供历史回溯。取值约束：元素均为合法 Task UUID v7、不得重复；`active` / `limitReached` 常态长度 ≥2，活动 Session 期间可暂时缩到 1；`completed` 终结记录允许长度 ≥1 |
 | `estimatedPomodoros` | `number` | 否 | `1` | 当前预估这组总共要花几个番茄；创建时默认为 1，可通过追加预估上调；取值范围与 §3.1 Task.estimatedPomodoros 完全一致；取值约束：整数，1–7 |
 | `estimateRounds` | `array` | 否 | 创建时写入第一轮 | 每次预估的完整记录，结构与 §3.1 Task.estimateRounds 完全一致（`index` / `pomodoros` / `occurredAt`）；取值约束：数组，元素须符合 §3.1 estimateRounds 结构定义，`index` 最多为 3 |
 | `status` | `string`（枚举） | 否 | `'active'` | 合并组状态；`'active'` = 进行中；`'limitReached'` = 已达到预估 / 番茄数硬上限且组内仍有未完成成员，被阻塞；`'completed'` = 用户已明确确认这一组做完了（**v4.3 新增**，成功终态）；`'dissolved'` = 已解散（中途拆散 / 取消合并，**不代表成功完成**）；取值约束：`'active'` / `'limitReached'` / `'completed'` / `'dissolved'` 之一 |
@@ -1208,8 +1214,8 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 |---|---|
 | `'active'` | 进行中，`taskIds` 长度 ≥ 2（唯一例外见关键规则 15），可继续增删成员、追加预估、发起 focus Session |
 | `'limitReached'` | 已达到硬上限（`estimateRounds` 用满第 3 轮，或该组已完成的 focus 轮次达到 7 次），且组内仍有未完成成员，被阻塞——不允许追加预估、不允许开启新一轮 focus Session，需移出剩余成员或整体解散才能解除（见关键规则 6） |
-| `'completed'` | **（v4.3 新增）** 用户已明确确认这一组做完了，是合并组的**成功终态**。终态不可逆：不允许再增删成员、重排、追加预估或开启新的 focus Session（见关键规则 12） |
-| `'dissolved'` | 已解散，组内不再有任何任务归属于本组，历史记录保留供回溯。它只表示**中途拆散 / 取消合并**，**不代表成功完成**——成功完成是 `'completed'`，两者语义不得混用 |
+| `'completed'` | 用户已明确确认这一组做完了，是合并组的**成功终态**。全部成员的 `Task.mergeGroupId` 已清空；除重命名外不允许任何 MergeGroup 业务写入（见关键规则 12） |
+| `'dissolved'` | 已解散的未成功终态。全部成员的 `Task.mergeGroupId` 已清空；历史记录保留供回溯。它只表示中途拆散 / 取消合并，不代表成功完成；除重命名外不允许任何 MergeGroup 业务写入 |
 
 **dissolvedReason 枚举值说明**（仅 `status='dissolved'` 时适用）
 
@@ -1220,12 +1226,13 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 
 **关键规则**
 
-1. `taskIds` 是有序数组，顺序即合并卡片内的展示顺序；可动态增删：加入触发 `mergeGroup.taskAdded`，移出触发 `mergeGroup.taskRemoved`（见 §7.19）。**建组门槛是至少 2 个成员**（`mergeGroup.created` 的初始成员必须 ≥ 2）；这只是**成立**门槛，不是每一轮 focus Session 的门槛（见 §3.3 字段一致性约束 15）。加入 / 移出既可以发生在还没开始计时的规划阶段，也可以发生在 focus Session 进行中——但 focus Session 进行中**只允许编辑未来队列**，当前正在执行的成员被锁定，详见 §3.3 关键规则 14 与本节关键规则 13。
+1. `taskIds` 是有序数组，顺序即合并卡片内的展示与推进顺序；可动态增删：加入触发 `mergeGroup.taskAdded`，移出触发 `mergeGroup.taskRemoved`（见 §7.19）。**建组门槛与每一轮开轮门槛都要求至少 2 个未完成成员**；但开跑后的 Session 存储合法性仍是 `taskIds ≥1`，活动期间只允许编辑未来队列，当前成员被锁定（详见关键规则 15/16 与 §3.3 一致性约束 15）。
 2. `taskIds` 长度掉到 1（含）以下时，MergeGroup 自动解散（`dissolvedReason='membersBelowMinimum'`），若还剩最后 1 个任务，其 `Task.mergeGroupId` 一并清空。**唯一例外**：该组正有一条 `status='active'` 的 focus Session 时，自动解散**推迟**到本轮结算，见关键规则 15。
 3. 组内任务被标记完成（`Task.status='completed'`），**不会**触发合并组自动解散，即使组内全部成员当时都已完成——focus Session 仍在进行时，用户可能继续往组里添加新任务丰满这个番茄。只有当该 focus Session 响铃到点（终结）时，才进入关键规则 4 的分叉判断。
-4. focus Session 响铃到点、组内仍有未完成任务时，用户二选一：
-   - **结束**：组内**未完成**的任务逐个退出组（`mergeGroup.taskRemoved`，`reason='sessionEndedIncomplete'`），`mergeGroupId` 清空，保持 `Task.status='active'`，作为独立任务重新出现在今日待办 / 活动清单；**已完成**的任务不受影响，`mergeGroupId` 不清空，继续留在 `taskIds` 里作为这个合并组的历史成员。若移出未完成成员后剩余成员（此时全是已完成的）数量掉到 1（含）以下，按关键规则 2 自动解散；否则合并组保持 `'active'`，只是当前没有未完成成员，`estimatedPomodoros` 与 `estimateRounds` 不再变化，直到用户再次往组里加入新任务。
-   - **追加预估番茄**：合并组保持 `'active'`，`estimatedPomodoros` 递增、`estimateRounds` 新增一条记录（规则见关键规则 6）；**已完成的任务不移出组**，继续留在 `taskIds` 里；紧接着开启下一个 focus Session，其 `taskIds` 快照按 §3.3 关键规则 11 自动排除本轮之前已经拿过 credit 的成员，因此不会被重复计有效番茄。
+4. 一轮标准 focus 正常结束、对应休息流程收尾后，用户在三条路径中显式选择：
+   - **确认本合并组完成**：允许仍有未完成成员；原子写入 `status='completed'`、`completedAt`，清空全部成员当前归属指针并追加 `mergeGroup.completed`。未完成成员保持 `active`，之后作为独立任务继续处理。
+   - **追加预估继续**：合并组保持 `active`，更新 `estimatedPomodoros` / `estimateRounds`；但真正开启下一轮前仍必须重新满足至少 2 个未完成成员，不能因为已追加预估就绕过关键规则 16。
+   - **放弃本次合并**：未完成成员可逐个移出（`reason='sessionEndedIncomplete'`），必要时按成员不足转入 `dissolved`；也可走主动整体解散。解散不是成功完成。
 5. 用户也可以在未到点、未经"到点选择"流程的情况下随时主动整体解散合并组（`dissolvedReason='manualDissolved'`），效果等同于把组内全部任务（不论完成与否）一次性逐个移出。**解散只清空这些任务的 `mergeGroupId`，不改变它们在今日待办 / 活动清单的归属，也不删除任务本身**——原来在今日待办里的任务解散后依旧留在今日待办，只是不再以合并卡片形式展示，回到独立任务展示。
 6. `estimatedPomodoros` / `estimateRounds` 的取值范围、三轮上限，**完全照搬** §3.1 Task 对应规则（关键规则 9/11，1–7 番茄封顶、最多三轮）；合并组同样有"已完成 7 个番茄仍未完成"的硬上限，**完全照搬** §3.1 关键规则 10 的严格路线 A（**强制卡住，不是软提示**）：第三轮 `estimateRounds` 用满仍未全部完成、或该组已完成的 focus 轮次达到 7 次仍未全部完成时，`status` 变为 `'limitReached'`——不允许继续追加预估（拒绝新的 `mergeGroup.estimateAdjusted`），不允许开启新的 focus Session，直至用户移出剩余未完成成员（`mergeGroup.taskRemoved`，移完后组内不再有未完成成员，自然无需再开新一轮）或整体解散（`mergeGroup.dissolved`）解除阻塞。进入该状态时同步触发 `prompt.shown`（`promptType='mergeGroupLimitReached'`，见 §7.15），提示文案说明"这些零碎事项已经占满一个多番茄的量，建议拆开处理"，不使用任务拆分（`task.split`）语境下的"拆分"表述——合并组不支持拆分，只能解散或移出成员；用户关闭 / 跳过该提示**不解除阻塞**，与 §3.1 关键规则 10 的 `taskSplitSuggestion` 一样是强阻断语义。承载追加动作的事件是 `mergeGroup.estimateAdjusted`（§7.19），不是 `task.estimateAdjusted`。
 7. MergeGroup **不物理删除**；`deletedAt` 遵循 §2.4 软删除规则，仅用于数据同步层面的 tombstone。业务意义上的"已解散"由 `status='dissolved'` 表达，是正常的生命周期终点，不等于删除；已解散的 MergeGroup 历史记录默认保留（不写 `deletedAt`），供事后回溯"这组当时有哪些任务、花了几个番茄"。
@@ -1234,15 +1241,15 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 10. **合并组是番茄与专注时长的归属单位（v4.3 新增）**。一次由本组触发的 focus Session 正常完成，记 1 个有效番茄、全额 `actualDuration` 计入本组；组内成员任务的有效番茄数不增加，成员只从 `taskSegments` 拿到各自那一段耗时（见 §3.3 关键规则 12）。统计页默认以合并组为条目展示（用 `title` 作为条目名），成员明细需展开该条目才可见；Goal（§3.9）维度的投入时长取成员分段耗时，不取本组的整段时长（见 §8.13）。
 11. **成员在组内被勾完成，是 `taskSegments` 切分的事实来源（v4.3 新增）**。产品必须提供"在专注进行中逐个勾选组内成员完成"的入口，否则时间无法按成员切分。勾完成即写 `Task.completed`（§7.1），同时确定该成员分段的结束时刻；具体切分算法见 §3.3 关键规则 13。进行中只允许勾选**当前成员**（判定见 §3.3 关键规则 13）——分段模型是严格顺序的，跳过当前成员去勾选后面的未来成员无法切分时间，必须拒绝。
 
-12. **合并组的成功终态 `'completed'`（v4.3 新增）**。MergeGroup 与独立 Task 一样，是可以被用户明确确认完成的番茄执行单位，因此需要一个独立的成功终态，**不能**用"没有未完成成员的 `'active'`"代替——否则数据无法区分"仍在进行、只是暂时没有待处理成员"与"用户已经明确确认完成"，没有稳定的 `completedAt`，也锁不住预估准确率所需的完成时快照，并且已完成的旧组还可能被误当作 `'active'` 组继续加入成员或开启 Session。
+12. **合并组的成功终态 `'completed'`**。触发时机是一轮合并 focus 正常 `completed`、对应休息流程结束后，用户明确确认整组完成。完成不要求全部成员已完成；`mergeGroup.completed` 必须保存完成时 `finalTaskIds` 与 `incompleteTaskIds` 快照。完成事务必须同时写 Group 终态、`completedAt`、清空全部成员 `Task.mergeGroupId` 并追加 Event，任一步失败整体回滚。
 
-    **触发时机**：一轮 focus 正常 `completed`、其对应休息流程也已结束后，用户在收尾选择中明确选"不再追加预估、这一组已经做完了"，此时原子写入 `status='completed'`、`completedAt`，并追加 `mergeGroup.completed` 事件（§7.19）。**终态不可逆**：`'completed'` 之后不允许增删成员、重排、追加预估，也不允许开启新的 focus Session。
+    清空归属只改变“当前所属”，不改变 Task 自身状态：已完成成员保留 `completedAt` / `completionSource`，未完成成员保持 `active`；不自动归档、删除、取消完成，也不追加任何 `task.*` Event。`completed` 与 `dissolved` 互斥；两种终态之后唯一允许的 MergeGroup 写入都是重命名，且改名只改显示名，不改变成员、耗时、番茄数、执行或统计事实。
 
-    `'completed'` 与 `'dissolved'` 的业务语义**不得混用**：前者是"这一组杂事干完了"，后者只是"这个临时归并被拆散 / 取消了"（不论是用户主动整体解散，还是成员不足自动解散）。
+    历史归属由 `MergeGroup.taskIds`、`Session.mergeGroupId`、`Session.taskSegments` 与 Event 关联共同承载；查询与统计不得依赖已被清空的 `Task.mergeGroupId`。
 
 13. **活动 focus Session 期间的成员锁定（v4.3 新增）**。该组存在 `status='active'` 的 focus Session 时，本轮当前成员被锁定，数据层必须拒绝：把当前成员移出本组（`mergeGroup.taskRemoved`）、把当前成员重排到其他位置、把未来成员排到当前成员之前（`mergeGroup.reordered`）、通过 `mergeGroup.dissolved` 整体解散来间接移出当前成员，以及对当前成员的删除 / 预估调整等普通 Task 修改。未来成员不受锁定，可自由新增、移出与在未来队列内部重排；新加入的成员一律排在当前成员之后。完整规则与"解除锁定的两条路径"见 §3.3 关键规则 14——这条约束必须由每一条相关 command / write path 强制保证，**不得只靠 UI 隐藏按钮**。
 
-14. **移出未来成员不会缩小已开跑 Session 的名单**。focus Session 进行中把一个尚未轮到的未来成员移出本组后，它不再属于本组，因此也不会出现在本轮 Session 终结时的 `taskIds` 快照里（快照口径见 §3.3 关键规则 11）。快照因此可能只剩 1 个成员，这是合法的（§3.3 字段一致性约束 15）。
+14. **移出未来成员会同步缩小已开跑 Session 的名单**。focus Session 进行中把一个尚未轮到的未来成员移出本组后，它不再属于本组，因此也不会出现在本轮 Session 终结时的 `taskIds` 快照里（快照口径见 §3.3 关键规则 11）。快照因此可能只剩 1 个成员，这是合法的（§3.3 字段一致性约束 15）。
 
 15. **成员数量不足不打断正在进行的 Session（v4.3 新增）**。用户在 active focus Session 进行中移出最后一个未来成员，会使 `MergeGroup.taskIds` 的总成员数暂时降到 1。此时：
 
@@ -1270,9 +1277,10 @@ MergeGroup 表示"合并番茄钟"：把清单页里几个耗时不足一个番�
 6. `taskIds` 数组内不允许重复。
 7. `status='limitReached'` 时不允许写入新的 `mergeGroup.estimateAdjusted` 或新的 focus Session（`mergeGroupId` 指向该组）；这两类写入操作必须被拒绝，直至 `status` 变回其他值。
 8. **（v4.3 新增）** `title` 必须为非空字符串，长度 ≤ 200；不允许写入空字符串或纯空白字符串。创建 MergeGroup 时若调用方未提供名称，由实现端写入系统默认名，**不允许**留空。
-9. **（v4.3 新增）** `status='completed'` 时，`completedAt` 必须非 null，`dissolvedAt` / `dissolvedReason` 必须为 null；`status ≠ 'completed'` 时 `completedAt` 必须为 null。
-10. **（v4.3 新增）** `status ∈ {'completed', 'dissolved'}` 是终态：不允许写入 `mergeGroup.taskAdded` / `taskRemoved` / `reordered` / `estimateAdjusted` / `renamed`，也不允许开启 `mergeGroupId` 指向该组的新 focus Session；这些写入必须被拒绝。
+9. **（v4.3 新增）** `status='completed'` 时，`completedAt` 必须非 null，`taskIds` 长度必须 ≥1，`dissolvedAt` / `dissolvedReason` 必须为 null；`status ≠ 'completed'` 时 `completedAt` 必须为 null。
+10. **（v4.3.2 修订）** `status ∈ {'completed', 'dissolved'}` 是终态：除 `mergeGroup.renamed` 外，不允许写入 `mergeGroup.taskAdded` / `taskRemoved` / `reordered` / `estimateAdjusted`，也不允许开启指向该组的新 focus Session。
 11. **（v4.3 新增）** 该组存在 `status='active'` 的 focus Session 时，本轮当前成员被锁定（关键规则 13）：任何会把当前成员移出本组、改变其在 `taskIds` 中位置、或把未来成员排到它之前的写入，以及 `mergeGroup.dissolved`，必须被拒绝。
+12. **（v4.3.2 新增）** `status ∈ {'completed', 'dissolved'}` 时，不允许存在任何 `Task.mergeGroupId` 指向本组；反向地，`Task.mergeGroupId` 非 null 时只能指向 `active` / `limitReached` 合并组。
 
 实现端在写入或更新 MergeGroup 时，必须验证以上规则，违反规则的写入操作应被拒绝。
 
@@ -2060,7 +2068,7 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 - extraFocus Session 由用户对 UnresolvedInterval 执行归类操作产生，不通过 `focus.*` 事件触发，相关事件见 §7.11（interval 域）。
 - v4 不支持暂停 / 恢复功能。focus Session 的合法状态仅为 `'active'` / `'completed'` / `'discarded'`；历史 v3 的 `focus.paused` / `focus.resumed` 不迁移。用户在专注中遇到打扰但继续专注时，由 §7.8 interrupt 事件记录；若因此放弃本次番茄，则结束为 `focus.discarded`。
 - v3 的 `focus.earlyEnded` 在 v4 中不定义。v4 只区分正常完成（响铃）与作废（中途停止）；提前停止的会话统一归入 `focus.discarded`，不计入有效番茄。
-- **合并番茄钟场景**（`Session.taskIds` 长度 ≥ 2，见 §3.3、§3.8）：`focus.started` / `focus.completed` / `focus.discarded` 按 `taskIds` 数组的每个成员**各写一条独立事件**（`taskId` 分别对应各自成员），共享同一个 `sessionId`、同一个 `mergeGroupId`，可共享同一个 `correlationId`——这是 §3.4 关键规则 5 明确允许的既有机制（一次操作可产生多条 Event），不为合并场景新增事件类型。
+- **合并番茄钟场景**（以 `Session.mergeGroupId` 非 null 判断，见 §3.3、§3.8）：`focus.started` / `focus.completed` / `focus.discarded` 按 `taskIds` 数组的每个成员各写一条独立事件，共享同一个 `sessionId` / `mergeGroupId` / `correlationId`。已开跑后名单缩到 1 仍是合并场景，不能仅用 `taskIds.length ≥2` 判断。
 
 ---
 
@@ -2433,7 +2441,7 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 
 #### interrupt.internal（P2）
 
-**顶层关联字段**：`sessionId`（正在进行的 focus Session id）、`taskId`（关联任务）；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。**合并番茄钟场景**（`Session.taskIds` 长度 ≥ 2）：打扰不特定针对某一个成员任务，`taskId` 固定为 null，只通过 `sessionId` 关联，需要时经 `sessionId` 反查 `Session.taskIds` 得到全部涉及任务；不按成员数量重复触发本事件。
+**顶层关联字段**：`sessionId`（正在进行的 focus Session id）、`taskId`（关联任务）；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。**合并番茄钟场景**（以 `Session.mergeGroupId` 非 null 判断）：打扰不特定针对某一个成员任务，`taskId` 固定为 null，只通过 `sessionId` 关联，需要时反查该 Session 的成员快照；不按成员数量重复触发本事件。
 
 **payload**：`{ offsetSeconds, note }`
 
@@ -2452,7 +2460,7 @@ Event 顶层关联字段（`taskId`、`sessionId` 等）定义见 §3.4；不适
 
 #### interrupt.external（P2）
 
-**顶层关联字段**：`sessionId`（正在进行的 focus Session id）、`taskId`（关联任务）；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。**合并番茄钟场景**（`Session.taskIds` 长度 ≥ 2）：打扰不特定针对某一个成员任务，`taskId` 固定为 null，只通过 `sessionId` 关联，需要时经 `sessionId` 反查 `Session.taskIds` 得到全部涉及任务；不按成员数量重复触发本事件。
+**顶层关联字段**：`sessionId`（正在进行的 focus Session id）、`taskId`（关联任务）；若对应 `Session.dayPlanId` 非 null，则同步填写 `dayPlanId`。**合并番茄钟场景**（以 `Session.mergeGroupId` 非 null 判断）：打扰不特定针对某一个成员任务，`taskId` 固定为 null，只通过 `sessionId` 关联，需要时反查该 Session 的成员快照；不按成员数量重复触发本事件。
 
 **payload**：`{ offsetSeconds, note }`
 
@@ -3355,7 +3363,7 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 - 合并组触发的 focus Session 本身（开始 / 完成 / 作废）仍归 §7.5 `focus.*` 域，不在本节重复定义；合并场景下 `focus.started` / `focus.completed` 按参与任务数量各发一条，见 §7.5 补充说明。
 - 本节共 **8 个**事件（v4.1 最初 6 个：`created` / `taskAdded` / `taskRemoved` / `reordered` / `estimateAdjusted` / `dissolved`；v4.3 新增 `renamed` 与 `completed`），所属功能批次为"合并番茄钟"，是 Phase 1–3 封板之后新增的独立功能批次，不套用 §10 既有 P1–P5 编号（避免与既定 Phase 范围混淆），Phase 归属见 §10.7。文档其他位置若出现"5 个 / 6 个 mergeGroup.\* 事件"的旧计数，一律以本节实际定义为准。
 - **活动 Session 期间的写入限制**：该组存在 `status='active'` 的 focus Session 时，本轮当前成员被锁定（§3.8 关键规则 13、§3.3 关键规则 14）。`taskRemoved` / `reordered` 若会移出当前成员、改变其位置、或把未来成员排到它之前，必须**拒绝写入、不产生事件**；`dissolved` 在此期间一律拒绝（不得用整体解散绕过锁定）。`taskAdded` 允许，但新成员只能排在当前成员之后。
-- **终态限制**：`status ∈ {'completed', 'dissolved'}` 时，本节除历史查询外的全部写入事件（`taskAdded` / `taskRemoved` / `reordered` / `estimateAdjusted` / `renamed`）一律拒绝，见 §3.8 字段一致性约束 10。
+- **终态限制**：`status ∈ {'completed', 'dissolved'}` 时，只允许 `mergeGroup.renamed`；`taskAdded` / `taskRemoved` / `reordered` / `estimateAdjusted` 一律拒绝。终态改名只改变显示名，不改变任何成员、执行或统计事实，见 §3.8 字段一致性约束 10。
 - 合并组的预估追加（第三轮用满，或已完成的 focus 轮次达到 7 次）触发 `prompt.shown`（`promptType='mergeGroupLimitReached'`，见 §7.15），并使 `MergeGroup.status` 变为 `'limitReached'`——**完全比照** §3.1 Task 的 `splitNeeded` 强阻断语义：不允许继续追加预估、不允许开启新一轮 focus Session，直至移出剩余未完成成员或整体解散（见 §3.8 关键规则 6）。`mergeGroup.estimateAdjusted` 复用 Task 预估追加的数值上限规则（1–7 封顶、最多三轮），promptType 文案独立于 `taskSplitSuggestion`，但阻断行为与之一致。
 - 合并只允许发生在成员均"从未开始过任何 focus"的初始状态（见 §3.8 关键规则 9）：`mergeGroup.created` / `mergeGroup.taskAdded` 写入前必须校验目标 Task 不存在任何 `type='focus'` 的 Session，不满足则拒绝写入，不产生事件。
 
@@ -3449,7 +3457,7 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 **说明**：focus Session 响铃到点、组内仍有未完成任务时，用户选择"追加预估番茄"，`estimateRounds` 数组新增一条记录时触发；写入前必须校验 `MergeGroup.status` 不是 `'limitReached'`。`newEstimate` 表示该轮之后合并组的**总预估番茄数**（不是增量）。已完成的成员**不会**因为本事件被移出组（见 §3.8 关键规则 4）；下一轮 focus Session 的 `taskIds` 快照会自动排除这些已经拿过 credit 的成员，不会重复计有效番茄（见 §3.3 关键规则 11）。
 
-**典型触发**：4 个任务合并计时，第一个番茄到点还剩 1 个没做完，用户选"追加预估番茄"，`estimatedPomodoros` 从 1 变为 2，紧接着开启第 2 个 focus Session，已完成的 3 个任务继续留在组内。
+**典型触发**：4 个任务合并计时，第一个番茄到点还剩 2 个没做完，用户选"追加预估番茄"，`estimatedPomodoros` 从 1 变为 2；下一轮开轮前再次校验未完成成员仍至少 2 个，满足后才开启第 2 个 focus Session，已完成成员继续作为历史名单留在组内。
 
 **不应触发**：创建组时的初始预估（→ `mergeGroup.created`）；单个 Task 自己的预估追加（→ §7.1 `task.estimateAdjusted`，两者是不同实体，互不触发）；`MergeGroup.status='limitReached'` 时的追加请求（→ 拒绝写入，不产生事件，用户须先移出成员或解散）。
 
@@ -3476,22 +3484,28 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 #### mergeGroup.completed（合并番茄钟功能批次，v4.3 新增）
 
-**顶层关联字段**：`mergeGroupId`。
+**顶层关联字段**：`mergeGroupId`、`sessionId`（触发完成确认的刚收尾合并 focus Session）。
 
-**payload**：`{ completedAt, validFocusCountAtCompletion }`
+**payload**：`{ completedAt, validFocusCountAtCompletion, finalTaskIds, incompleteTaskIds }`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `completedAt` | `string` | 用户确认这一组完成的时刻，与写入的 `MergeGroup.completedAt` 一致；取值约束：ISO 8601 带时区格式 |
-| `validFocusCountAtCompletion` | `number` | 完成那一刻该 MergeGroup 已累计的有效标准 focus 数（即本组已正常完成的 focus 轮次数）；语义与 §7.1 `task.completed` 的同名字段完全对应，只是归属单位从 Task 换成 MergeGroup；取值约束：整数，≥ 0 |
+| `validFocusCountAtCompletion` | `number` | 完成那一刻该 MergeGroup 已累计的有效标准 focus 数（`type='focus'`、`status='completed'`、`mergeGroupId` 指向本组、`deletedAt` 为 null）；语义与 §7.1 `task.completed` 的同名字段完全对应，只是归属单位从 Task 换成 MergeGroup；取值约束：整数，≥ 0 |
+| `finalTaskIds` | `string[]` | 完成时 `MergeGroup.taskIds` 的完整成员快照；不得重复。开轮时至少 2 个未完成成员，但已开跑 Session 可合法缩到 1，因此本终结快照长度允许 ≥1，不得机械收紧为 ≥2 |
+| `incompleteTaskIds` | `string[]` | 完成时仍未完成成员快照；必须是 `finalTaskIds` 子集，可为空，不得重复 |
 
-**说明**：一轮 focus 正常 `completed`、其对应休息流程也已结束后，用户在收尾选择中明确选"不再追加预估、这一组已经做完了"时触发。本事件与写入 `MergeGroup.status='completed'` / `completedAt` 同属一个原子事务，可共享 `correlationId`。
+**说明**：一轮 focus 正常 `completed`、其对应休息流程也已结束后，用户明确确认整组完成时触发。以下四项必须在同一原子事务内完成，任一步失败整体回滚：写 `status='completed'`、写 `completedAt`、清空全部成员 `Task.mergeGroupId`、追加本事件。
+
+清空当前归属不改变成员 Task 状态：已完成成员继续保持 `completed` 并保留完成事实；未完成成员继续保持 `active`，恢复为独立任务；不自动归档、删除、取消完成，也不追加任何 `task.*` Event。用户可以在仍有未完成成员时确认整组完成；`incompleteTaskIds` 不要求为空。
+
+两份成员快照记录的是完成当时的事实，不能在成员日后继续变化后重算。历史归属查询使用 `MergeGroup.taskIds`、`Session.mergeGroupId`、`Session.taskSegments` 与 Event 关联，不依赖已清空的 `Task.mergeGroupId`。
 
 `validFocusCountAtCompletion` 是快照值，写入后不随后续数据修复 / 恢复反向改变，供 §8.5.3 的预估准确率 / 预估偏差直接复用**独立 Task 的既有算法**（同一套三分法，只是把 Task 的 `estimateRounds` 换成 MergeGroup 的 `estimateRounds`），不另写一套算法。
 
-`'completed'` 是不可逆终态：本事件之后不允许再写入 `taskAdded` / `taskRemoved` / `reordered` / `estimateAdjusted` / `renamed`，也不允许开启新的 focus Session（见 §3.8 关键规则 12、字段一致性约束 10）。
+`'completed'` 是不可逆终态：本事件之后不允许再写入 `taskAdded` / `taskRemoved` / `reordered` / `estimateAdjusted`，也不允许开启新的 focus Session；唯一例外是 `renamed`，只改显示名（见 §3.8 关键规则 12、字段一致性约束 10）。
 
-**典型触发**：3 件杂事合并成一个"杂事番茄"，一轮到点后全部做完，用户在收尾选择里点"这组完成了"。
+**典型触发**：3 件杂事一轮到点后全部做完，用户确认整组完成；或 4 件完成了 3 件，用户决定剩余 1 件之后独立处理，确认整组完成并把该成员写入 `incompleteTaskIds`。
 
 **不应触发**：组内某个成员任务被勾完成（→ §7.1 `task.completed`，改的是成员不是组）；到点选"追加预估番茄"（→ `mergeGroup.estimateAdjusted`）；到点选"结束"移出未完成成员（→ `mergeGroup.taskRemoved`，可能连带 `mergeGroup.dissolved`）；用户主动整体拆散合并卡片（→ `mergeGroup.dissolved`，`dissolvedReason='manualDissolved'`，语义是取消合并而非完成）。
 
@@ -3512,7 +3526,7 @@ extraFocus 本身不触发标准 break。标准 break 只由 completed 标准 fo
 
 **典型触发**：合并组成员被逐个移出，最后只剩 1 个（`dissolvedReason='membersBelowMinimum'`）；用户在还没开始计时前，或计时过程中，主动取消整次合并（`dissolvedReason='manualDissolved'`）；合并组达到三轮 / 7 番茄上限、组内仍有未完成成员，用户选择整体解散而非逐个移出（`dissolvedReason='manualDissolved'`）。
 
-**不应触发**：到点选"结束"但移出未完成成员后剩余成员仍 ≥ 2（→ 只触发 `mergeGroup.taskRemoved`，组不解散，见 §3.8 关键规则 4）；用户完成了组内某个任务但组继续进行（不触发任何 mergeGroup 事件，见 §3.8 关键规则 3）；到点选"追加预估番茄"（→ `mergeGroup.estimateAdjusted`，组不解散）。
+**不应触发**：到点选"结束"但移出未完成成员后剩余成员仍 ≥ 2（→ 只触发 `mergeGroup.taskRemoved`，组不解散，见 §3.8 关键规则 4）；用户完成了组内某个任务但组继续进行（不触发任何 mergeGroup 事件，见 §3.8 关键规则 3）；到点选"追加预估番茄"（→ `mergeGroup.estimateAdjusted`，组不解散）；用户确认成功完成（→ `mergeGroup.completed`，与本事件互斥）。
 
 ---
 
@@ -4179,7 +4193,7 @@ completedValidFocusCountForTask（历史累计有效番茄数）=
 contribution(session, task) =
   session.mergeGroupId === null
     ? session.actualDuration
-    : session.taskSegments.find(s => s.taskId === task.id).actualDuration
+    : (session.taskSegments.find(s => s.taskId === task.id)?.actualDuration ?? 0)
 
 Task 标准专注时长 =
   sum(contribution(session, task) where taskIds.includes(task.id)
@@ -4197,6 +4211,8 @@ Task 专注总时长 = Task 标准专注时长 + Task 额外专注时长 + Task 
 ```
 
 > 跨多轮合并时，某成员的实际投入 = 所有相关 Session 中属于它的 `taskSegments.actualDuration` 之和；break 时间天然不在任何分段里，因此不会被计入。举例：第 1 个番茄的最后 3 分钟开始处理任务 D，休息 5 分钟，第 2 个番茄继续处理 D 共 7 分钟并完成 —— D 的实际投入时间 = 3 + 7 = 10 分钟，D 的有效番茄数 = 0，该 MergeGroup 的有效番茄数 = 2，中间那 5 分钟休息不计入 D。
+
+> 历史迁移的合并 Session 若因没有可还原的成员分段事实而保留 `taskSegments: []`，其对每个成员的贡献按 `0` 计算；不得以 Session 总时长平均分摊，也不得事后猜测补齐。该历史缺口可能使成员维度合计小于全局或 MergeGroup 维度，但不会制造虚假投入事实。
 
 **约束**：
 
@@ -5142,7 +5158,7 @@ todayPlanningCapacityRemaining =
 ### 10.7 合并番茄钟（新增功能批次，范围）
 
 - v4.1 新增的"合并番茄钟"（MergeGroup，见 §3.8、§7.19）是 Phase 1–3 封板、完成一轮 UI 打磨并合入 `main` 之后新增的**独立功能批次**，不是 P1–P5 既定路线图的自然延伸，因此不套用 P1–P5 编号，事件表统一标注为"合并番茄钟功能批次"。
-- 范围：MergeGroup 实体结构、Task/Session/Event 的相应字段扩展、7 个 `mergeGroup.*` 事件、统计口径补充（§8.3、§8.5），在 v4.1 定义、v4.3 修订。**v4.3 对本批次做了两处实质改动**：（1）统计口径改写——番茄与专注时长归属合并组，成员任务只按 `Session.taskSegments` 分段记各自耗时（见 §3.3 关键规则 12/13、§8.3.1、§8.5）；（2）新增 `MergeGroup.title` 与 `mergeGroup.renamed` 事件。已按旧口径开工的实现必须据此返工。
+- 范围：MergeGroup 实体结构、Task/Session/Event 的相应字段扩展、8 个 `mergeGroup.*` 事件、统计口径补充（§8.3、§8.5），在 v4.1 定义、v4.3.2 收口。实质改动包括：番茄归组、成员按 `taskSegments` 记时间；MergeGroup 成为与独立 Task 同级的番茄执行任务并具有 `completed` 成功终态；新增 `title` / `renamed`；完成时清空当前归属指针并保存终结快照；completed 组参与预估准确率。
 - 本轮**只定义数据结构与规则**，真实 UI 交互（清单页"拖到正中间=合并"的手势、计时页合并卡片展示、"结束 / 追加预估"选择界面）未在本文档范围内实现，属于后续独立的施工计划。
 
 ---
@@ -5183,29 +5199,16 @@ todayPlanningCapacityRemaining =
 > 本章记录文档撰写过程中已与用户逐条讨论并确认、但涉及尚未撰写章节、需在对应章节写完后跟进落实的事项，以及撰写过程中发现的待定事项。每条标注待展开位置。已确认事项此前将会删除，而后选择保留，故本章编号不连续。
 
 
-> **【V43-1】【V43-2】【V43-3】已于 2026-08-09 由用户逐条拍板结案，正文已落实，本清单不再挂账**：
+> **【V43-1】～【V43-6】均已确认并落实，§14 不再保留 v4.3 待确认项。**
 >
-> - **【V43-1】** 成员在合并番茄里被勾完成时 `completionSource` 记 `'pomodoro'`（表示"在番茄流程中完成"，不表示拥有有效番茄；是否合并通过关联 Session 的 `mergeGroupId` 判断）。落实位置：§7.1 `task.completed`。
-> - **【V43-2】** 该场景 `validFocusCountAtCompletion` 记 `0`，**不另设**反映真实投入的快照字段；合并组成员整体排除出 §8.5.3 预估准确率样本，成员投入改用 `taskSegments` 分段时长呈现。落实位置：§7.1、§8.5.3。
-> - **【V43-3】** 作废的合并 focus **仍写入** `taskSegments`：当前成员的分段结束于作废时刻，未轮到的成员记 0、不分等待时间；分段耗时按 §8.3.5 计入各成员的作废专注时长，不计入任何有效番茄。落实位置：§3.3 关键规则 13。
+> - **V43-1**：合并成员完成时 `completionSource='pomodoro'`，表示在番茄流程中完成，不表示成员获得有效番茄。
+> - **V43-2**：合并成员 `validFocusCountAtCompletion=0`，不新增投入快照；真实投入只读 `taskSegments`。
+> - **V43-3**：discarded 合并 focus 仍写 `taskSegments`，计入成员作废专注时长，不计入有效番茄。
+> - **V43-4**：保留 Goal `outcome='abandoned'`，与达成归档、软删除分别处理。
+> - **V43-5**：Goal 当前不增加期限 / 截止日期字段；未来若需要，另行扩展字段、事件与统计口径。
+> - **V43-6**：`Task.mergeGroupId` 只表示当前所属；MergeGroup 进入 completed / dissolved 终态时清空全部成员指针。完成事务同时写 Group 终态、`completedAt`、成员指针清空与 `mergeGroup.completed` Event；历史归属由 Group、Session 分段与 Event 关联承载。
 >
-> 同批拍板并已落实的还有两条产品语义（原清单未登记）：合并组新增成功终态 `status='completed'` + `completedAt` + `mergeGroup.completed` 事件（§3.8 关键规则 12、§7.19）；活动 focus Session 锁定其当前执行对象，锁定必须由数据层每条 write path 强制保证（§3.3 关键规则 14、§3.8 关键规则 13/15）。
-
----
-
-**【V43-4】Goal 的 `outcome` 是否保留 `'abandoned'`（v4.3 新增，已按暂定方案写入，待确认）**
-
-§3.9 目前给 Goal 的 `outcome` 定义了 `'completed'`（达成归档）/ `'abandoned'`（放弃归档）两个取值。用户只明确了"完成后归档"这一条路径，`'abandoned'` 是撰写时为"半途放弃的长期目标"补的出口——若不提供，用户只能删除该 Goal，会连带影响其名下任务的历史归属。
-
-待确认：保留 `'abandoned'`，还是收敛为只有 `'completed'` 一种归档结果。涉及位置：§3.9 字段定义与一致性约束 2/4、§7.20 `goal.archived`、`goal.restored`。
-
----
-
-**【V43-5】Goal 是否需要目标期限 / 截止日期字段（v4.3 新增，暂未提供）**
-
-§3.9 当前**未**为 Goal 设置任何期限类字段（如目标完成期限、期望达成日期）。用户未提出该需求，按 `docs/CLAUDE.md` B4 不自行发明。
-
-若后续需要（如计划页要展示"距目标期限还有 N 天"、或统计要按期限分析达成率），需新增字段、对应的 `goal.*` 事件 payload 扩展与 §8.13 口径补充。本条不阻塞当前实现。
+> 另保留 v4.3.1 已确认的分层规则：每轮开轮前至少 2 个未完成成员；已开跑 Session 的存储约束保持 `taskIds ≥1`，允许缩到 1 后正常收尾。`mergeGroup.renamed` 与 `mergeGroup.completed` 均保留，§7.19 共 8 个 `mergeGroup.*` 事件。
 
 ---
 
