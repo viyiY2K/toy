@@ -2242,6 +2242,43 @@ select:focus-visible {
 .merge-group-block.is-blocked .merge-group-hint {
   color: var(--accent-ink);
 }
+
+/* 成员圈必须比独立任务的 9px 圆点更小、更轻。
+   后面有一轮打磨把 .atr-check 拉到 15px，这里单独压回去；
+   视觉用伪元素画 5px 圈，按钮本身留出可点区域。 */
+.merge-group-block .atr-item,
+.timer-merge-tree .atr-item {
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+}
+.merge-group-block .atr-check,
+.merge-group-block .atr-check.is-done,
+.timer-merge-tree .atr-check,
+.timer-merge-tree .atr-check.is-done {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  background: none;
+  opacity: 1;
+  position: relative;
+}
+.merge-group-block .atr-check::after,
+.timer-merge-tree .atr-check::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 5px;
+  height: 5px;
+  border: 1.15px solid var(--muted-2);
+  border-radius: 50%;
+  opacity: .48;
+}
+.merge-group-block .atr-check.is-done::after,
+.timer-merge-tree .atr-check.is-done::after {
+  background: var(--muted-2);
+  border-color: var(--muted-2);
+  opacity: .32;
+}
 .atr-item.is-current .atr-name {
   color: var(--accent-ink);
 }
