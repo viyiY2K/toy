@@ -62,9 +62,22 @@ import {
 
 const React = window.React;
 
-function EditableTitle({ task, value, onSave, disabled = false, label = '编辑标题' }) {
+function EditableTitle({
+  task,
+  value,
+  onSave,
+  disabled = false,
+  label = '编辑标题',
+  editRequested = false,
+  onEditRequestHandled,
+}) {
   const [editing, setEditing] = React.useState(false);
   const current = value ?? task?.title ?? '';
+  React.useEffect(() => {
+    if (!editRequested || disabled) return;
+    setEditing(true);
+    onEditRequestHandled?.();
+  }, [editRequested, disabled, onEditRequestHandled]);
   if (editing && !disabled) {
     return (
       <input
@@ -503,6 +516,8 @@ function MergeGroupBlock({
   dragProps,
   memberDrag,
   runningFocus,
+  renameRequested = false,
+  onRenameRequestHandled,
   showEstimate = false,
   estimateEditRequest,
   onEditRequestHandled,
@@ -542,6 +557,8 @@ function MergeGroupBlock({
           value={group.title}
           disabled={busy}
           label="编辑合并组名称"
+          editRequested={renameRequested}
+          onEditRequestHandled={onRenameRequestHandled}
           onSave={(title) => command((time) => renameMergeGroup({
             ...time, mergeGroupId: group.id, title,
           }))}
@@ -670,6 +687,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
   const [estimateEditRequest, setEstimateEditRequest] = React.useState(null);
   const [activityInputFocusRequest, setActivityInputFocusRequest] = React.useState(0);
   const [todayInputFocusRequest, setTodayInputFocusRequest] = React.useState(0);
+  const [renameGroupId, setRenameGroupId] = React.useState(null);
   // 拖拽排序的纯视觉反馈：draggingKey = 正在拖的行，dragOverKey = 当前悬停的落点行，
   // dropPosition = 悬停在该行的上半还是下半（决定落到目标行前面还是后面，而不是互换）。
   const [draggingKey, setDraggingKey] = React.useState(null);
@@ -836,13 +854,19 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
       window.setTimeout(() => setBlockedReason(null), 2400);
       return;
     }
+    const addSource = runningFocus?.mergeGroupId === target.mergeGroupId
+      ? 'duringActiveSession'
+      : 'drag';
     if (target.mergeGroupId) {
       command((time) => addTaskToMergeGroup({
-        ...time, mergeGroupId: target.mergeGroupId, taskId: draggedId, source: 'drag',
+        ...time, mergeGroupId: target.mergeGroupId, taskId: draggedId, source: addSource,
       }));
       return;
     }
-    command((time) => createMergeGroup({ ...time, taskIds: [target.id, draggedId] }));
+    command((time) => createMergeGroup({ ...time, taskIds: [target.id, draggedId] }))
+      .then((created) => {
+        if (created?.value?.id) setRenameGroupId(created.value.id);
+      });
   };
 
   /** 整张合并卡片作为落点：往上拖任务 = 加入这个组。卡片本身不参与列表排序。 */
@@ -877,7 +901,10 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
       }
       if (group.taskIds.includes(drag.taskId)) return;
       command((time) => addTaskToMergeGroup({
-        ...time, mergeGroupId: group.id, taskId: drag.taskId, source: 'drag',
+        ...time,
+        mergeGroupId: group.id,
+        taskId: drag.taskId,
+        source: runningFocus?.mergeGroupId === group.id ? 'duringActiveSession' : 'drag',
       }));
     },
   });
@@ -1061,6 +1088,8 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
                         dragProps={mergeCardDragProps(row.group)}
                         memberDrag={memberDragProps(row.group)}
                         runningFocus={runningFocus}
+                        renameRequested={renameGroupId === row.group.id}
+                        onRenameRequestHandled={() => setRenameGroupId(null)}
                       />
                     );
                   }
@@ -1208,6 +1237,8 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
                     dragProps={mergeCardDragProps(row.group)}
                     memberDrag={memberDragProps(row.group)}
                     runningFocus={runningFocus}
+                    renameRequested={renameGroupId === row.group.id}
+                    onRenameRequestHandled={() => setRenameGroupId(null)}
                     showEstimate
                     estimateEditRequest={estimateEditRequest}
                     onEditRequestHandled={() => setEstimateEditRequest(null)}
