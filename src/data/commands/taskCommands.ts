@@ -522,7 +522,7 @@ export async function splitTask(
   const initialized = await ensureCurrentAppDateInitialized(input);
   return executeAtomicWrite(
     {
-      storeNames: [STORE.tasks, STORE.dayPlans, EVENT_STORE],
+      storeNames: [STORE.tasks, STORE.dayPlans, STORE.sessions, EVENT_STORE],
       now: input.now,
       timezone: input.timezone,
       diagnosticContext: { entityType: 'Task', entityId: input.taskId, operation: 'update' },
@@ -536,6 +536,10 @@ export async function splitTask(
       if (!source || !isActiveTask(source)) {
         throw new Error('只有有效的 active/splitNeeded Task 可以拆分');
       }
+      if (source.mergeGroupId !== null) {
+        throw new Error('合并组成员不能拆分，请先移出该组或解散合并组');
+      }
+      await assertTaskNotLocked(transaction, input.taskId, '无法拆分');
       const splitIndex = allTasks
         .filter((task) => task.lineageId === source.lineageId)
         .reduce((maximum, task) => Math.max(maximum, task.splitIndex), 0) + 1;

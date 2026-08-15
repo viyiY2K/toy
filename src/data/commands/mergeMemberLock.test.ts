@@ -14,6 +14,7 @@ import {
   completeTaskManually,
   createManualTask,
   deleteActiveTask,
+  splitTask,
   uncompleteTask,
 } from './taskCommands';
 import { createMergeGroup } from './mergeGroupCommands';
@@ -142,5 +143,22 @@ describe('活动 focus 锁定当前执行对象（§3.3 关键规则 14）', () 
       ...clock(), sessionId: session.id, taskId: b.id,
     });
     expect(next.value.id).toBe(b.id);
+  });
+
+  it('计时中不能拆分当前任务；合并组成员无论是否当前成员都不能拆分', async () => {
+    const running = await activityTask('正在拆的独立任务');
+    await startFocus({ ...clock(), taskId: running.id });
+    await expect(splitTask({
+      ...clock(), taskId: running.id, newTitle: '不该留下的后继', estimatedPomodoros: 1,
+    })).rejects.toThrow('正在计时中');
+
+    const [a, b] = [await activityTask('合并拆A'), await activityTask('合并拆B')];
+    await createMergeGroup({ ...clock(), taskIds: [a.id, b.id] });
+    await expect(splitTask({
+      ...clock(), taskId: a.id, newTitle: '不该拆的成员', estimatedPomodoros: 1,
+    })).rejects.toThrow('合并组成员不能拆分');
+    await expect(splitTask({
+      ...clock(), taskId: b.id, newTitle: '不该拆的未来成员', estimatedPomodoros: 1,
+    })).rejects.toThrow('合并组成员不能拆分');
   });
 });

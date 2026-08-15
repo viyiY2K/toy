@@ -291,3 +291,14 @@ read as, a reconstruction of the lost atomic S0–S5 commit history.
 - Review: Implementer 自审 `PASS`。复审 2 个 bug 与 2 个 suggestion 均已关闭。
 - Findings and resolution: （1）归档中途完成的成员会让当前成员判定回跳；（2）合并打扰误写 `taskIds[0]`；（3）恢复视图仍用字面队首；（4）第一次终结写入空分段会被当成历史记录放行。均已按建议方向修复并补测试。
 - Residual risk or user decision: UI 仍未按新语义重接。`markMergeGroupLimitReached` 软删 Session 计数口径仍未统一。未跟踪的 `docs/ui-handoff-empty-states-and-beyond.md` 仍不纳入。
+
+### 合并番茄钟 v4.3.2 第三轮 review：堵住 splitTask 锁洞
+
+- Status: `PASS`（Implementer 自审；关闭独立 Reviewer 对 `c7e0d75`..`ee9bf8f` 的 `NEEDS FIX`）。
+- Scope: `splitTask` 拒绝仍挂在合并组上的 Task，并在独立 active focus 期间走 `assertTaskNotLocked`；补 `STORE.sessions` 与回归测试。不含 UI。
+- Commit: 本原子提交（subject：`fix(data): 拆分不得绕过活动 Session 与合并组`）。
+- Specification: v4.3.2 §3.3 关键规则 14、§3.8 关键规则 6（合并组不支持拆分）、红线 27。
+- Verification: `npm run test:run` → 65 files / 544 tests passed；`npm run typecheck` → passed；`npm run build` → 144 modules built；`git diff --check` → passed。仓库未提供 lint 命令。未做浏览器验证：本轮仍无 UI 改动。
+- Review: Implementer 自审 `PASS`。第三轮唯一 bug 已关闭。
+- Findings and resolution: `splitTask` 可在 Session 仍 active 时把当前执行对象或合并成员归档。已拒绝 `mergeGroupId != null`，并对独立专注加锁定。
+- Residual risk or user decision: UI 仍未按新语义重接。`markMergeGroupLimitReached` 软删 Session 计数口径仍未统一。未跟踪的 `docs/ui-handoff-empty-states-and-beyond.md` 仍不纳入。
