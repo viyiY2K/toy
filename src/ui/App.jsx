@@ -178,9 +178,13 @@ export function App() {
   };
 
   const listTaskCount = snapshot?.taskViews.activeTasks.length ?? 0;
-  const runningFocusTaskId = snapshot?.activeSession?.type === 'focus'
+  const runningFocus = snapshot?.activeSession?.type === 'focus'
     && snapshot.activeSession.status === 'active'
-    ? snapshot.activeTask?.id ?? null
+    ? {
+      taskId: snapshot.activeTask?.id ?? null,
+      sessionId: snapshot.activeSession.id,
+      mergeGroupId: snapshot.activeSession.mergeGroupId ?? null,
+    }
     : null;
   return (
     <div className="app">
@@ -264,7 +268,7 @@ export function App() {
             views={snapshot.taskViews}
             runCommand={runCommand}
             busy={busy}
-            runningFocusTaskId={runningFocusTaskId}
+            runningFocus={runningFocus}
           />
         )}
       </main>

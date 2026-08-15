@@ -218,7 +218,7 @@ export function splitLineagePresentation(task, tasks) {
 export function mergeIneligibleReason(task, views) {
   if (!task) return '任务不存在';
   if (task.status !== 'active') return '只有进行中的任务可以合并';
-  if (task.mergeGroupId !== null) return '这个任务已经在另一个合并卡片里';
+  if (task.mergeGroupId !== null) return '这个任务已经在另一个合并组里';
   if (views.hasFocusHistoryByTaskId?.[task.id]) return '这个任务已经计时过，不能再并进合并番茄';
   return null;
 }
@@ -237,11 +237,10 @@ export function dropIntent(offsetY, height, mergeBandRatio = 0.4) {
 }
 
 /**
- * 把一列任务折叠成渲染行：属于同一个合并组的成员收进一张合并卡，
- * 卡片落在该组**第一个成员**原本的位置，其余成员不再单独出行。
+ * 把一列任务折叠成渲染行：属于同一个合并组的成员收进一组父行+缩进成员，
+ * 组落在该组**第一个成员**原本的位置，其余成员不再单独出行。
  *
- * 合并组成员之间完全平等、互相独立——合并只表示"这几件事各自都占不满一个番茄"，
- * 不表示它们属于同一件事，所以这里不按任何上层归属重排或分组。
+ * 父行是 MergeGroup.title，成员是平等的小事，不是子任务血缘。
  */
 export function foldMergeRows(tasks, views) {
   const rows = [];
@@ -271,7 +270,7 @@ export function foldMergeRows(tasks, views) {
   return rows;
 }
 
-/** 合并卡片上那行说明文字：几件事、这一组占几个番茄、是否被硬上限卡住。 */
+/** 合并组父行上的摘要：进度、预估、是否被硬上限卡住。 */
 export function mergeCardSummary(group, members, remaining) {
   const done = members.filter((task) => task.status === 'completed').length;
   return {
@@ -281,4 +280,47 @@ export function mergeCardSummary(group, members, remaining) {
     remainingLabel: remaining > 0 ? `还剩 ${remaining} 个` : '预估已用满',
     blocked: group.status === 'limitReached',
   };
+}
+
+export function unfinishedMergeMembers(members) {
+  return members.filter((task) => task.status === 'active' || task.status === 'splitNeeded');
+}
+
+/** 组内当前该做的成员：按组内顺序第一个尚未完成的。 */
+export function currentMergeMember(members) {
+  return unfinishedMergeMembers(members)[0] ?? null;
+}
+
+/** 开新一轮合并 focus 的门槛：组仍 active，且未完成成员 ≥ 2。 */
+export function canStartMergeGroup(group, members) {
+  return group?.status === 'active' && unfinishedMergeMembers(members).length >= 2;
+}
+
+/**
+ * 活动列表里已经把成员都勾完、因而 fold 不到的在用合并组。
+ * 仍要露出来，否则用户没法确认整组完成或取消合并。
+ */
+export function completedOnlyMergeRows(rows, views) {
+  const shown = new Set(rows.filter((row) => row.kind === 'merge').map((row) => row.key));
+  return (views.mergeGroups ?? []).flatMap((group) => {
+    if (shown.has(group.id)) return [];
+    const members = views.mergeGroupMembersById?.[group.id] ?? [];
+    if (members.length === 0 || members.some((task) => task.status !== 'completed')) return [];
+    return [{
+      kind: 'merge',
+      key: group.id,
+      group,
+      members,
+      remaining: views.mergeGroupRemainingById?.[group.id] ?? 0,
+    }];
+  });
+}
+
+export function isMergeGroupSessionActive(group, runningFocus) {
+  return runningFocus?.mergeGroupId === group.id;
+}
+
+export function isMergeMemberLocked(task, runningFocus) {
+  return isMergeGroupSessionActive({ id: task.mergeGroupId }, runningFocus)
+    && runningFocus.taskId === task.id;
 }

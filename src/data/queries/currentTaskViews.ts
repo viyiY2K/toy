@@ -56,6 +56,11 @@ export interface CurrentTaskViews {
    * UI 拿它做拖拽防呆——不能等写入被拒绝了才告诉用户。
    */
   hasFocusHistoryByTaskId: Record<string, boolean>;
+  /**
+   * 合并组 id → 该组最近一条已完成 focus Session 的 id。
+   * 清单上确认整组完成必须点名这条 Session（`completeMergeGroup` 必填 sessionId）。
+   */
+  mergeGroupLatestCompletedSessionIdById: Record<string, string>;
 }
 
 function compareListOrder(left: Task, right: Task): number {
@@ -229,6 +234,7 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
   const mergeGroupMembersById: Record<string, Task[]> = {};
   const mergeGroupRemainingById: Record<string, number> = {};
   const mergeGroupValidFocusCountById: Record<string, number> = {};
+  const mergeGroupLatestCompletedSessionIdById: Record<string, string> = {};
   for (const group of liveGroups) {
     mergeGroupMembersById[group.id] = group.taskIds.flatMap((taskId) => {
       const task = taskById.get(taskId);
@@ -243,6 +249,18 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     mergeGroupRemainingById[group.id] = Math.max(0, group.estimatedPomodoros - completedRounds);
     // 每条正常完成的合并 Session 给本组记 1 个有效番茄——这就是该组的有效番茄数。
     mergeGroupValidFocusCountById[group.id] = completedRounds;
+    const latestCompleted = sessions
+      .filter(
+        (session) =>
+          session.type === 'focus' &&
+          session.status === 'completed' &&
+          session.mergeGroupId === group.id,
+      )
+      .sort((left, right) =>
+        Date.parse(right.endedAt ?? right.startedAt) - Date.parse(left.endedAt ?? left.startedAt)
+        || right.id.localeCompare(left.id),
+      )[0];
+    if (latestCompleted) mergeGroupLatestCompletedSessionIdById[group.id] = latestCompleted.id;
   }
 
   /*
@@ -295,5 +313,6 @@ export async function loadCurrentTaskViews(clock: InitializationClock): Promise<
     mergeGroupRemainingById,
     mergeGroupValidFocusCountById,
     hasFocusHistoryByTaskId,
+    mergeGroupLatestCompletedSessionIdById,
   };
 }

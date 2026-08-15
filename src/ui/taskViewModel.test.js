@@ -13,6 +13,9 @@ import {
   currentPlanMetrics,
   dayPlanIndexOf,
   dropInsertIndex,
+  canStartMergeGroup,
+  completedOnlyMergeRows,
+  currentMergeMember,
   dropIntent,
   foldMergeRows,
   hasRetainedChildren,
@@ -282,7 +285,7 @@ describe('合并番茄钟视图模型', () => {
     expect(mergeIneligibleReason(fresh, views)).toBeNull();
     expect(mergeIneligibleReason(fresh, { ...views, hasFocusHistoryByTaskId: { x: true } }))
       .toContain('已经计时过');
-    expect(mergeIneligibleReason({ ...fresh, mergeGroupId: 'g9' }, views)).toContain('另一个合并卡片');
+    expect(mergeIneligibleReason({ ...fresh, mergeGroupId: 'g9' }, views)).toContain('另一个合并组');
     expect(mergeIneligibleReason({ ...fresh, status: 'completed' }, views)).toContain('进行中');
   });
 
@@ -292,5 +295,24 @@ describe('合并番茄钟视图模型', () => {
     expect(summary.estimateLabel).toBe('整组 1 个番茄');
     expect(summary.blocked).toBe(false);
     expect(mergeCardSummary({ ...group, status: 'limitReached' }, [], 0).blocked).toBe(true);
+  });
+
+  it('开轮门槛：未完成成员不足 2 个不能再开合并轮', () => {
+    const active = { status: 'active' };
+    expect(canStartMergeGroup(active, [member('a'), member('b')])).toBe(true);
+    expect(canStartMergeGroup(active, [member('a', { status: 'completed' }), member('b')])).toBe(false);
+    expect(canStartMergeGroup({ status: 'limitReached' }, [member('a'), member('b')])).toBe(false);
+    expect(currentMergeMember([member('a', { status: 'completed' }), member('b')])?.id).toBe('b');
+  });
+
+  it('成员都完成后仍把组合并组露出来，避免确认入口消失', () => {
+    const doneViews = {
+      ...views,
+      mergeGroupMembersById: { g1: [member('a', { status: 'completed' }), member('b', { status: 'completed' })] },
+    };
+    const leftover = completedOnlyMergeRows([], doneViews);
+    expect(leftover).toHaveLength(1);
+    expect(leftover[0].key).toBe('g1');
+    expect(completedOnlyMergeRows([{ kind: 'merge', key: 'g1' }], doneViews)).toEqual([]);
   });
 });

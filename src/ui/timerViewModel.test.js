@@ -41,16 +41,32 @@ describe('S13c timer view model', () => {
     expect(timerDisplayTask({ type: 'shortBreak' }, activeTask, selectedTask)).toBe(activeTask);
   });
 
-  it('合并到点二选一：常态给「结束 + 追加预估」，全部做完则不打扰', () => {
+  it('合并到点：还剩 ≥ 2 件才给追加；全部做完改成确认整组完成', () => {
     const group = { status: 'active', estimateRounds: [{ index: 1 }], estimatedPomodoros: 1 };
     const done = { id: 'a', status: 'completed' };
-    const todo = { id: 'b', status: 'active' };
+    const first = { id: 'b', status: 'active' };
+    const second = { id: 'c', status: 'active' };
 
-    expect(mergeRoundChoiceOptions(group, [done, todo])).toEqual({
-      unfinishedCount: 1, blocked: false, canExtend: true, canDissolve: false,
+    expect(mergeRoundChoiceOptions(group, [first, second])).toEqual({
+      unfinishedCount: 2,
+      blocked: false,
+      canEnd: true,
+      canComplete: true,
+      canExtend: true,
+      canDissolve: false,
     });
-    // 全部做完：没有要决定的事，不弹选择。
-    expect(mergeRoundChoiceOptions(group, [done])).toBeNull();
+    // 只剩 1 件：不能再开下一轮，只能结束或确认整组完成。
+    expect(mergeRoundChoiceOptions(group, [done, first])).toMatchObject({
+      unfinishedCount: 1, canExtend: false, canEnd: true, canComplete: true,
+    });
+    expect(mergeRoundChoiceOptions(group, [done])).toEqual({
+      unfinishedCount: 0,
+      blocked: false,
+      canEnd: false,
+      canComplete: true,
+      canExtend: false,
+      canDissolve: false,
+    });
   });
 
   it('合并硬上限：三轮用满 / 预估到 7 / limitReached 都收起「追加预估」，改给「解散」', () => {
@@ -74,13 +90,14 @@ describe('S13c timer view model', () => {
     });
   });
 
-  it('计时页只在合并场景展示这张卡：单任务专注返回空数组', () => {
+  it('计时页只在合并场景展示成员树：单任务专注返回空数组', () => {
     const a = { id: 'a', title: '回复 Slack' };
     const b = { id: 'b', title: '订咖啡豆' };
+    const group = { id: 'g1' };
 
-    // 合并：列出全部成员，顺序即 Session.taskIds 的顺序。
-    expect(timerMergeMembers([a, b])).toEqual([a, b]);
-    // 普通单任务专注：整张卡片不展示（计时页不再展示子母层级关系）。
+    expect(timerMergeMembers([a, b], group)).toEqual([a, b]);
+    // 已开跑后缩到 1 个成员：仍是合并轮，要继续展示。
+    expect(timerMergeMembers([a], group)).toEqual([a]);
     expect(timerMergeMembers([a])).toEqual([]);
     expect(timerMergeMembers([])).toEqual([]);
   });

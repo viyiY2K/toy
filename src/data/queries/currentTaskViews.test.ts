@@ -458,6 +458,7 @@ describe('合并组视图（v4.1 §3.8、§8.10.3）', () => {
     expect(views.mergeGroups.map(({ id }) => id)).toContain(group.id);
     expect(views.mergeGroupMembersById[group.id]!.map(({ id }) => id)).toEqual([a.id, b.id]);
     expect(views.mergeGroupRemainingById[group.id]).toBe(1);
+    expect(views.mergeGroupLatestCompletedSessionIdById[group.id]).toBeUndefined();
   });
 
   it('今日排期余量按「组」扣一次，不按成员各扣一次', async () => {

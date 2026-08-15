@@ -1,11 +1,14 @@
 import {
   addTaskToMergeGroup,
   addTaskToToday,
+  adjustMergeGroupEstimate,
   adjustTaskEstimate,
   archiveCompletedTask,
   batchAddTasksToToday,
   batchArchiveCompletedTasks,
   batchMoveTasksToList,
+  completeMergeGroup,
+  completeTaskFromPomodoro,
   completeTaskManually,
   createManualTask,
   createMergeGroup,
@@ -18,6 +21,7 @@ import {
   promoteSubtaskToTopLevel,
   removeTaskFromMergeGroup,
   removeTaskFromToday,
+  renameMergeGroup,
   reorderActivityTask,
   reorderMergeGroupMember,
   reorderSubtask,
@@ -37,6 +41,7 @@ import {
   batchResultPresentation,
   batchRetryIds,
   canReorderSubtasks,
+  completedOnlyMergeRows,
   completedTaskTimeLabel,
   completionSourceLabel,
   currentPlanMetrics,
@@ -44,6 +49,8 @@ import {
   dropInsertIndex,
   dropIntent,
   foldMergeRows,
+  isMergeGroupSessionActive,
+  isMergeMemberLocked,
   isTaskRunningFocus,
   mergeCardSummary,
   mergeIneligibleReason,
@@ -55,17 +62,18 @@ import {
 
 const React = window.React;
 
-function EditableTitle({ task, onSave, disabled = false }) {
+function EditableTitle({ task, value, onSave, disabled = false, label = '编辑标题' }) {
   const [editing, setEditing] = React.useState(false);
+  const current = value ?? task?.title ?? '';
   if (editing && !disabled) {
     return (
       <input
         className="input today-name-input"
         autoFocus
-        defaultValue={task.title}
+        defaultValue={current}
         onBlur={(event) => {
           const title = event.target.value.trim();
-          if (title && title !== task.title) onSave(title);
+          if (title && title !== current) onSave(title);
           setEditing(false);
         }}
         onKeyDown={(event) => {
@@ -79,10 +87,10 @@ function EditableTitle({ task, onSave, disabled = false }) {
     <button
       className="atr-name today-name-text editable-title-button"
       disabled={disabled}
-      title="编辑任务标题"
+      title={label}
       onClick={() => setEditing(true)}
     >
-      {task.title}
+      {current}
     </button>
   );
 }
@@ -482,12 +490,10 @@ function SubtaskList({
 }
 
 /**
- * 合并卡片：把几件「各自都占不满一个番茄」的小事装在一个方框里。
- *
- * 刻意不用子任务那套缩进 + 左侧竖线——那表达的是母子从属，这里是平等并列。
- * 成员之间互相独立，不代表它们属于同一件事，所以卡片上不出现任何「共同目标」表达。
+ * 合并组：和活动清单里的父任务同一套树——父行是组名，下面缩进挂成员。
+ * 这不是子任务血缘，只是几件小事共用一个番茄。
  */
-function MergeCard({
+function MergeGroupBlock({
   group,
   members,
   remaining,
@@ -496,67 +502,138 @@ function MergeCard({
   onOpen,
   dragProps,
   memberDrag,
+  runningFocus,
+  showEstimate = false,
+  estimateEditRequest,
+  onEditRequestHandled,
+  onAdvance,
 }) {
   const summary = mergeCardSummary(group, members, remaining);
+  const sessionActive = isMergeGroupSessionActive(group, runningFocus);
+  const latestSessionId = group.latestCompletedSessionId ?? null;
+  const groupAsEstimateTask = {
+    id: group.id,
+    estimatedPomodoros: group.estimatedPomodoros,
+    estimateRounds: group.estimateRounds,
+    status: group.status === 'limitReached' ? 'splitNeeded' : 'active',
+  };
+
+  const completeMember = (task) => {
+    if (sessionActive && runningFocus.sessionId && task.id === runningFocus.taskId) {
+      return command((time) => completeTaskFromPomodoro({
+        ...time, sessionId: runningFocus.sessionId, taskId: task.id,
+      }));
+    }
+    return command((time) => completeTaskManually({ ...time, taskId: task.id }));
+  };
+
   return (
-    <div
-      className={`merge-card ${summary.blocked ? 'is-blocked' : ''} ${dragProps.className}`}
-      draggable={dragProps.draggable}
-      onDragStart={dragProps.onDragStart}
-      onDragOver={dragProps.onDragOver}
-      onDragEnd={dragProps.onDragEnd}
-      onDrop={dragProps.onDrop}
-    >
-      <div className="merge-card-head">
-        <span className="merge-card-mark" aria-hidden="true"/>
-        <span className="merge-card-title">一起做 · {summary.memberLabel}</span>
-        <span className="merge-card-meta">
-          <span>{summary.progressLabel}</span>
-          <span className="mono">{summary.estimateLabel}</span>
-          <span className="merge-card-actions">
+    <div className={`task-tree-group merge-group-block ${summary.blocked ? 'is-blocked' : ''}`}>
+      <div
+        className={`activity-tree-row atr-group ${dragProps.className}`}
+        draggable={dragProps.draggable}
+        onDragStart={dragProps.onDragStart}
+        onDragOver={dragProps.onDragOver}
+        onDragEnd={dragProps.onDragEnd}
+        onDrop={dragProps.onDrop}
+      >
+        <span className="atr-bullet" aria-hidden="true"/>
+        <EditableTitle
+          value={group.title}
+          disabled={busy}
+          label="编辑合并组名称"
+          onSave={(title) => command((time) => renameMergeGroup({
+            ...time, mergeGroupId: group.id, title,
+          }))}
+        />
+        <span className={showEstimate ? 'today-task-tools' : 'atr-actions'}>
+          {showEstimate && (
+            <span className="today-est-pill">
+              <EstimateEditor
+                task={groupAsEstimateTask}
+                disabled={busy || group.status === 'limitReached'}
+                runningFocusTaskId={null}
+                editRequested={estimateEditRequest === group.id}
+                onEditRequestHandled={onEditRequestHandled}
+                onAdvance={onAdvance}
+                onSave={(estimatedPomodoros) => command((time) => adjustMergeGroupEstimate({
+                  ...time, mergeGroupId: group.id, estimatedPomodoros,
+                }))}
+              />
+            </span>
+          )}
+          {latestSessionId && (
             <button
               className="icon-btn"
-              disabled={busy}
-              title="取消合并（任务各自回到原来的位置，不会被删除）"
-              onClick={() => command((time) => dissolveMergeGroup({
-                ...time, mergeGroupId: group.id,
+              disabled={busy || sessionActive}
+              title="确认这一组做完了"
+              onClick={() => command((time) => completeMergeGroup({
+                ...time, mergeGroupId: group.id, sessionId: latestSessionId,
               }))}
             >
-              <Icon name="x" size={12}/>
+              <Icon name="check" size={12}/>
             </button>
-          </span>
+          )}
+          <button
+            className="icon-btn"
+            disabled={busy || sessionActive}
+            title={sessionActive
+              ? '本轮合并专注进行中，结束后才能取消合并'
+              : '取消合并（任务各自回到原来的位置，不会被删除）'}
+            onClick={() => command((time) => dissolveMergeGroup({
+              ...time, mergeGroupId: group.id,
+            }))}
+          >
+            <Icon name="x" size={12}/>
+          </button>
         </span>
       </div>
       {summary.blocked && (
-        <div className="merge-card-blocked-hint" role="status">
-          这些零碎事项已经占满一个多番茄的量，建议拆开单独处理。
-          把还没做完的拖出去，或取消整次合并，才能继续。
+        <div className="merge-group-hint" role="status">
+          这些零碎事项已经占满一个多番茄的量，建议把还没做完的移出去，或取消整次合并。
         </div>
       )}
-      <div className="merge-members">
+      <div className="task-subtree">
         {members.map((task, index) => {
           const completed = task.status === 'completed';
+          const locked = isMergeMemberLocked(task, runningFocus);
+          const otherLocked = sessionActive && !locked;
           return (
             <div
               key={task.id}
-              className={`merge-member ${completed ? 'is-completed' : ''} ${memberDrag.className(task.id)}`}
-              draggable={!busy}
+              className={`activity-tree-row atr-item ${completed ? 'is-completed' : ''} ${locked ? 'is-current' : ''} ${memberDrag.className(task.id)}`}
+              draggable={!busy && !locked}
               onDragStart={(event) => memberDrag.onDragStart(event, task, index)}
               onDragOver={(event) => memberDrag.onDragOver(event, task.id)}
               onDragEnd={memberDrag.onDragEnd}
               onDrop={(event) => memberDrag.onDrop(event, index)}
-              title="拖动可调整这个番茄里先做哪件"
+              title={locked ? '正在做这一件' : '拖动可调整这个番茄里先做哪件'}
             >
               <button
                 className={`atr-check ${completed ? 'is-done' : ''}`}
-                disabled={busy}
-                title={completed ? '取消完成' : '完成这件小事'}
+                disabled={busy || (sessionActive && !locked) || (sessionActive && completed)}
+                title={
+                  completed
+                    ? '取消完成'
+                    : locked
+                      ? '这一件做完了'
+                      : otherLocked
+                        ? '先做完当前这件'
+                        : '完成这件小事'
+                }
                 onClick={() => (completed
                   ? command((time) => uncompleteTask({ ...time, taskId: task.id }))
-                  : command((time) => completeTaskManually({ ...time, taskId: task.id })))}
+                  : completeMember(task))}
               />
-              <span className="merge-member-name">{task.title}</span>
-              <span className="merge-member-actions">
+              <EditableTitle
+                task={task}
+                disabled={busy}
+                onSave={(title) => command((time) => updateTaskTitle({
+                  ...time, taskId: task.id, title,
+                }))}
+              />
+              <span className="atr-actions subtask-actions">
+                {locked && <span className="merge-now">正在做</span>}
                 <button
                   className="icon-btn"
                   disabled={busy}
@@ -567,8 +644,8 @@ function MergeCard({
                 </button>
                 <button
                   className="icon-btn text-icon"
-                  disabled={busy}
-                  title="移出合并（回到独立任务）"
+                  disabled={busy || locked}
+                  title={locked ? '正在做这一件，不能移出' : '移出合并（回到独立任务）'}
                   onClick={() => command((time) => removeTaskFromMergeGroup({
                     ...time, mergeGroupId: group.id, taskId: task.id, reason: 'manualUnmerge',
                   }))}
@@ -582,7 +659,8 @@ function MergeCard({
   );
 }
 
-export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = null }) {
+export function ActivitiesView({ views, runCommand, busy, runningFocus = null }) {
+  const runningFocusTaskId = runningFocus?.taskId ?? null;
   const [plannerOpen, setPlannerOpen] = React.useState(false);
   const [archiveCandidateId, setArchiveCandidateId] = React.useState(null);
   const [detailTaskId, setDetailTaskId] = React.useState(null);
@@ -602,6 +680,22 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
   const [draggedTaskId, setDraggedTaskId] = React.useState(null);
   const [blockedReason, setBlockedReason] = React.useState(null);
   const { activeTasks: activeToday, completedTasks: completedToday } = splitTodayTasks(views.todayTasks);
+  const activityRows = foldMergeRows(views.activeTasks, views);
+  const todayRows = foldMergeRows(activeToday, views);
+  const leftoverMergeOn = (rows, inList) => completedOnlyMergeRows(rows, views)
+    .filter((row) => row.members.some(inList));
+  const activityTreeRows = [
+    ...activityRows,
+    ...leftoverMergeOn(activityRows, (task) => !views.dayPlan.taskIds.includes(task.id)),
+  ];
+  const todayTreeRows = [
+    ...todayRows,
+    ...leftoverMergeOn(todayRows, (task) => views.dayPlan.taskIds.includes(task.id)),
+  ];
+  const liveMergeMemberIds = new Set(
+    (views.mergeGroups ?? []).flatMap((group) =>
+      (views.mergeGroupMembersById?.[group.id] ?? []).map((task) => task.id)),
+  );
   const metrics = currentPlanMetrics(views.dayPlan, views.todayPlanningCapacityRemaining);
   const detachedChildren = unattachedSubtasks(views);
   const detachedGroups = detachedChildren.reduce((groups, task) => {
@@ -764,7 +858,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
       const dragged = allTaskRecords.find((task) => task.id === draggedTaskId) ?? null;
       setBlockedReason(
         group.status === 'limitReached'
-          ? '这个合并卡片已经占满预估，先处理掉里面没做完的事再加新的'
+          ? '这个合并组已经占满预估，先处理掉里面没做完的事再加新的'
           : mergeIneligibleReason(dragged, views),
       );
     },
@@ -940,22 +1034,25 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
               <button className="btn ghost sm" disabled={busy || views.activeTasks.length === 0} onClick={() => beginBatch('addToToday')}>批量加入今日</button>
             </span>
           </div>
-          <ListScrollRegion className={views.activeTasks.length === 0 ? 'is-empty' : ''}>
-            {views.activeTasks.length === 0 && (
+          <ListScrollRegion className={activityTreeRows.length === 0 ? 'is-empty' : ''}>
+            {activityTreeRows.length === 0 && (
               <EmptyState
                 icon="list"
                 title="清单还是空的"
                 hint="在下方输入框写下想做的第一件事，回车就能加进来。"
               />
             )}
-            {views.activeTasks.length > 0 && (
+            {activityTreeRows.length > 0 && (
               <div className="activity-tree">
-                {foldMergeRows(views.activeTasks, views).map((row) => {
+                {activityTreeRows.map((row) => {
                   if (row.kind === 'merge') {
                     return (
-                      <MergeCard
+                      <MergeGroupBlock
                         key={row.key}
-                        group={row.group}
+                        group={{
+                          ...row.group,
+                          latestCompletedSessionId: views.mergeGroupLatestCompletedSessionIdById?.[row.group.id],
+                        }}
                         members={row.members}
                         remaining={row.remaining}
                         busy={busy}
@@ -963,6 +1060,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                         onOpen={setDetailTaskId}
                         dragProps={mergeCardDragProps(row.group)}
                         memberDrag={memberDragProps(row.group)}
+                        runningFocus={runningFocus}
                       />
                     );
                   }
@@ -1093,12 +1191,15 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                 hint="从左边的清单把事项拖过来，或在下方直接新建今日任务。"
               />
             )}
-            {foldMergeRows(activeToday, views).map((row) => {
+            {todayTreeRows.map((row) => {
               if (row.kind === 'merge') {
                 return (
-                  <MergeCard
+                  <MergeGroupBlock
                     key={row.key}
-                    group={row.group}
+                    group={{
+                      ...row.group,
+                      latestCompletedSessionId: views.mergeGroupLatestCompletedSessionIdById?.[row.group.id],
+                    }}
                     members={row.members}
                     remaining={row.remaining}
                     busy={busy}
@@ -1106,6 +1207,11 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
                     onOpen={setDetailTaskId}
                     dragProps={mergeCardDragProps(row.group)}
                     memberDrag={memberDragProps(row.group)}
+                    runningFocus={runningFocus}
+                    showEstimate
+                    estimateEditRequest={estimateEditRequest}
+                    onEditRequestHandled={() => setEstimateEditRequest(null)}
+                    onAdvance={() => setEstimateEditRequest(null)}
                   />
                 );
               }
@@ -1240,7 +1346,7 @@ export function ActivitiesView({ views, runCommand, busy, runningFocusTaskId = n
             {views.completedTasks.length === 0 && (
               <div className="empty">已完成子任务保留在所属任务下，可在批量模式中选择。</div>
             )}
-            {views.completedTasks.map((task) => (
+            {views.completedTasks.filter((task) => !liveMergeMemberIds.has(task.id)).map((task) => (
               <div key={task.id} className="completed-row-item">
                 <div className="completed-row-head">
                   <span className="completed-done-name">

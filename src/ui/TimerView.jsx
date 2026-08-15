@@ -6,10 +6,12 @@ import {
   completeTaskFromPomodoro,
   captureTriageTask,
   discardFocus,
+  completeMergeGroup,
   dissolveMergeGroup,
   endMergeGroupRound,
   endWorkAfterFocus,
   markMergeGroupLimitReached,
+  settleMergeGroupRound,
   recordEnergy,
   recordInterrupt,
   resolveRecoveryInterval,
@@ -22,7 +24,7 @@ import {
 import { Icon } from './Icon';
 import { EmptyState } from './EmptyState';
 import { ListScrollRegion } from './ActivitiesView';
-import { canAdjustTaskEstimate } from './taskViewModel';
+import { canAdjustTaskEstimate, canStartMergeGroup } from './taskViewModel';
 import {
   canWriteStandardSession,
   canCaptureTriage,
@@ -196,29 +198,49 @@ function TimerRoundDots({ completedFocusCount, longBreakEvery }) {
 }
 
 /**
- * 本次专注涉及的任务。
- *
- * 计时页**不再展示任何任务的子母层级关系**：这张卡片只在合并场景出现，列出合并组
- * 成员；普通单任务专注（taskIds 长度为 1）整张卡片不展示。
- *
- * 成员之间完全平等、互相独立——合并只表示"这几件事各自都占不满一个番茄"，不表示
- * 它们属于同一件事，因此这里既不分层也不按任何上层归属分组。
+ * 计时页上的合并组：和清单同一套父行 + 缩进成员。
+ * 进行中只能勾当前成员，用来切开这一轮的时间分段。
  */
-function TimerMergeMembers({ tasks }) {
+function TimerMergeMembers({
+  title,
+  tasks,
+  currentTaskId = null,
+  sessionId = null,
+  busy = false,
+  command = null,
+  interactive = false,
+}) {
   if (tasks.length === 0) return null;
   return (
-    <div className="card timer-merge-card">
-      <div className="card-title"><span>本次一起做 · {tasks.length} 件小事</span></div>
-      <div className="merge-members">
+    <div className="timer-merge-tree">
+      <div className="activity-tree-row atr-group">
+        <span className="atr-bullet" aria-hidden="true"/>
+        <span className="atr-name">{title}</span>
+      </div>
+      <div className="task-subtree">
         {tasks.map((task) => {
           const completed = task.status === 'completed';
+          const isCurrent = task.id === currentTaskId && !completed;
+          const canCheck = interactive && isCurrent && sessionId && command;
           return (
-            <div key={task.id} className={`merge-member ${completed ? 'is-completed' : ''}`}>
-              <span
-                className={`timer-merge-member-check ${completed ? 'is-done' : ''}`}
-                aria-hidden="true"
-              />
-              <span className="merge-member-name">{task.title}</span>
+            <div
+              key={task.id}
+              className={`activity-tree-row atr-item ${completed ? 'is-completed' : ''} ${isCurrent ? 'is-current' : ''}`}
+            >
+              {canCheck ? (
+                <button
+                  className="atr-check"
+                  disabled={busy}
+                  title="这一件做完了"
+                  onClick={() => command((time) => completeTaskFromPomodoro({
+                    ...time, sessionId, taskId: task.id,
+                  }))}
+                />
+              ) : (
+                <span className={`atr-check ${completed ? 'is-done' : ''}`} aria-hidden="true"/>
+              )}
+              <span className="atr-name">{task.title}</span>
+              {isCurrent && <span className="merge-now">正在做</span>}
             </div>
           );
         })}
@@ -237,30 +259,47 @@ function TimerMergeMembers({ tasks }) {
  * 三轮用满或已做满 7 个番茄仍未全部完成时是**强阻断**（关键规则 6）：不再提供
  * 「追加预估」，只能移出剩余成员或整组解散；提示本身不解除阻塞。
  */
-function MergeRoundChoice({ group, members, busy, command }) {
+function MergeRoundChoice({ group, members, sessionId, busy, command }) {
+  if (group.status === 'completed' || group.status === 'dissolved') return null;
   const options = mergeRoundChoiceOptions(group, members);
   if (options === null) return null;
-  const { unfinishedCount, blocked, canExtend, canDissolve } = options;
+  const { unfinishedCount, blocked, canEnd, canComplete, canExtend, canDissolve } = options;
+  const copy = unfinishedCount === 0
+    ? '这几件小事都做完了。确认这一组结束，还是继续留着以后再加？'
+    : unfinishedCount === 1
+      ? '只剩 1 件没做完。它不够再开一轮合并，可以结束合并，或确认整组完成。'
+      : blocked
+        ? '这些零碎事项已经占满一个多番茄的量，建议拆开单独处理，不要继续合并。'
+        : `还剩 ${unfinishedCount} 件没做完。要就此结束，再追加一个番茄，还是确认整组完成？`;
   return (
     <div className="card" style={{ padding: 18 }}>
       <div className="section-h" style={{ marginBottom: 10 }}>
         <h3>这一轮结束了</h3>
       </div>
-      <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
-        还剩 {unfinishedCount} 件没做完
-        {blocked
-          ? '。这些零碎事项已经占满一个多番茄的量，建议拆开单独处理，不要继续合并。'
-          : '。要就此结束，还是再追加一个番茄？'}
-      </p>
+      <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>{copy}</p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button
-          className="btn primary"
-          style={{ flex: 1, justifyContent: 'center' }}
-          disabled={busy}
-          onClick={() => command((time) => endMergeGroupRound({ ...time, mergeGroupId: group.id }))}
-        >
-          结束（没做完的回到今日待办）
-        </button>
+        {canComplete && sessionId && (
+          <button
+            className="btn primary"
+            style={{ flex: 1, justifyContent: 'center' }}
+            disabled={busy}
+            onClick={() => command((time) => completeMergeGroup({
+              ...time, mergeGroupId: group.id, sessionId,
+            }))}
+          >
+            {unfinishedCount === 0 ? '这一组做完了' : '确认整组完成'}
+          </button>
+        )}
+        {canEnd && (
+          <button
+            className={canComplete ? 'btn ghost' : 'btn primary'}
+            style={{ flex: 1, justifyContent: 'center' }}
+            disabled={busy}
+            onClick={() => command((time) => endMergeGroupRound({ ...time, mergeGroupId: group.id }))}
+          >
+            结束（没做完的回到待办）
+          </button>
+        )}
         {canExtend && (
           <button
             className="btn ghost"
@@ -295,18 +334,18 @@ function TaskPicker({ tasks, mergeGroups = [], selectedTaskId, onSelect, disable
         <h3>今日任务</h3>
       </div>
       <ListScrollRegion className={`timer-today-list ${tasks.length === 0 && mergeGroups.length === 0 ? 'is-empty' : ''}`}>
-        {mergeGroups.map(({ group, members }) => (
+        {mergeGroups.map(({ group }) => (
           <button
             key={group.id}
             className={`timer-today-item ${selectedTaskId === `merge:${group.id}` ? 'current' : ''}`}
             disabled={disabled || group.status === 'limitReached'}
             title={group.status === 'limitReached'
-              ? '这个合并卡片已达上限，先处理掉里面没做完的事'
-              : '一起做这几件小事'}
+              ? '这个合并组已达上限，先处理掉里面没做完的事'
+              : group.title}
             onClick={() => onSelect(`merge:${group.id}`)}
           >
             <span className="timer-today-name">
-              一起做 · {members.map((task) => task.title).join('、')}
+              {group.title}
             </span>
             <span className="timer-today-pomo mono">{group.estimatedPomodoros}</span>
           </button>
@@ -801,14 +840,20 @@ export function TimerView({
   const limitCheckedGroupId = React.useRef(null);
   const selectedTask = activeTasks.find((task) => task.id === selectedTaskId) ?? null;
   const displayTask = timerDisplayTask(activeSession, snapshot.activeTask, selectedTask);
-  const displayMergeMembers = timerMergeMembers(snapshot.activeSessionTasks ?? []);
+  const displayMergeMembers = timerMergeMembers(
+    snapshot.activeSessionTasks ?? [],
+    snapshot.activeMergeGroup,
+  );
 
   /*
    * 选中项失效时回退到第一个可选任务。选中的可能是一个合并组（key 形如 `merge:<id>`），
    * 它不在 activeTasks 里，所以要单独认一下——否则刚点中的合并卡会被立刻重置掉。
    */
   const selectableMergeKeys = new Set(
-    (taskViews.mergeGroups ?? []).map((group) => `merge:${group.id}`),
+    (taskViews.mergeGroups ?? []).flatMap((group) => {
+      const members = taskViews.mergeGroupMembersById?.[group.id] ?? [];
+      return canStartMergeGroup(group, members) ? [`merge:${group.id}`] : [];
+    }),
   );
   React.useEffect(() => {
     const stillValid = activeTasks.some((task) => task.id === selectedTaskId)
@@ -845,11 +890,17 @@ export function TimerView({
       || completedFocusId.current === activeSession.id
     ) return;
     completedFocusId.current = activeSession.id;
-    activeSessionCommand((time) => completeFocus({
-      ...time,
-      sessionId: activeSession.id,
-      actualDuration: activeSession.plannedDuration ?? 0,
-    })).then((result) => {
+    activeSessionCommand(async (time) => {
+      const result = await completeFocus({
+        ...time,
+        sessionId: activeSession.id,
+        actualDuration: activeSession.plannedDuration ?? 0,
+      });
+      if (result && activeSession.mergeGroupId) {
+        await settleMergeGroupRound({ ...time, mergeGroupId: activeSession.mergeGroupId });
+      }
+      return result;
+    }).then((result) => {
       if (result) {
         setPendingEnergyPrompt({
           sessionId: activeSession.id,
@@ -941,9 +992,10 @@ export function TimerView({
         ?? (pendingEnergyPrompt.taskTitle
           ? { id: pendingEnergyPrompt.taskId, title: pendingEnergyPrompt.taskTitle }
           : null);
-    const completedMergeMembers = timerMergeMembers(snapshot.pendingBreakTasks ?? []);
-    // 合并场景下不走单任务的完成确认：成员各自的完成语义（completionSource、
-    // validFocusCountAtCompletion）尚未定案，不在这里替产品拍板。
+    const completedMergeMembers = timerMergeMembers(
+      snapshot.pendingBreakTasks ?? [],
+      snapshot.pendingBreakMergeGroup,
+    );
     const completionCheckDue = snapshot.pendingBreakMergeGroup === null
       && shouldOfferTaskCompletionCheck(taskViews, completedTask);
     const completedTaskFocusCount = completedTask === null
@@ -958,7 +1010,9 @@ export function TimerView({
           <div className="timer-main">
             <div className="timer-task">
               <div className="label">本次专注任务</div>
-              <div className="name">{completedTask?.title ?? '计时完成'}</div>
+              <div className="name">
+                {snapshot.pendingBreakMergeGroup?.title ?? completedTask?.title ?? '计时完成'}
+              </div>
             </div>
             <TimerCircle
               remaining={0}
@@ -995,6 +1049,7 @@ export function TimerView({
               <MergeRoundChoice
                 group={snapshot.pendingBreakMergeGroup}
                 members={snapshot.pendingBreakTasks ?? []}
+                sessionId={snapshot.pendingBreakFocus?.id ?? pendingEnergyPrompt.focusSessionId}
                 busy={busy}
                 command={command}
               />
@@ -1007,7 +1062,10 @@ export function TimerView({
               onSubmit={submitEnergy(pendingEnergyPrompt.source, pendingEnergyPrompt.sessionId)}
               onSkip={() => setPendingEnergyPrompt(null)}
             />
-            <TimerMergeMembers tasks={completedMergeMembers}/>
+            <TimerMergeMembers
+              title={snapshot.pendingBreakMergeGroup?.title ?? '合并组'}
+              tasks={completedMergeMembers}
+            />
             <TaskPicker
               tasks={activeTasks}
               selectedTaskId={completedTask?.id ?? selectedTaskId}
@@ -1183,11 +1241,15 @@ export function TimerView({
               <MergeRoundChoice
                 group={snapshot.pendingBreakMergeGroup}
                 members={snapshot.pendingBreakTasks ?? []}
+                sessionId={snapshot.pendingBreakFocus?.id}
                 busy={busy}
                 command={command}
               />
             )}
-            <TimerMergeMembers tasks={timerMergeMembers(snapshot.pendingBreakTasks ?? [])}/>
+            <TimerMergeMembers
+              title={snapshot.pendingBreakMergeGroup?.title ?? '合并组'}
+              tasks={timerMergeMembers(snapshot.pendingBreakTasks ?? [], snapshot.pendingBreakMergeGroup)}
+            />
             <TaskPicker
               tasks={activeTasks}
               selectedTaskId={selectedTaskId}
@@ -1204,8 +1266,7 @@ export function TimerView({
     const [energyTitle, energyDetail] = sourceLabel(standaloneEnergySource);
     const startableGroups = (taskViews.mergeGroups ?? []).flatMap((group) => {
       const members = taskViews.mergeGroupMembersById?.[group.id] ?? [];
-      // 组内全部做完就没有可开的下一轮了，不再出现在可选列表里。
-      return members.some((task) => task.status !== 'completed') ? [{ group, members }] : [];
+      return canStartMergeGroup(group, members) ? [{ group, members }] : [];
     });
     const selectedGroupEntry = startableGroups.find(
       ({ group }) => `merge:${group.id}` === selectedTaskId,
@@ -1215,7 +1276,7 @@ export function TimerView({
       : selectedTask === null && selectedGroupEntry === null
         ? '请先选择任务'
         : selectedGroupEntry?.group.status === 'limitReached'
-          ? '这个合并卡片已达上限'
+          ? '这个合并组已达上限'
           : busy
             ? '正在处理'
             : null;
@@ -1247,7 +1308,7 @@ export function TimerView({
               <div className="label">准备开始</div>
               <div className="name">
                 {selectedGroupEntry
-                  ? `一起做 · ${selectedGroupEntry.members.length} 件小事`
+                  ? selectedGroupEntry.group.title
                   : selectedTask?.title ?? '先从今日待办选择任务'}
               </div>
             </div>
@@ -1273,7 +1334,10 @@ export function TimerView({
                 onSubmit={submitEnergy(standaloneEnergySource)}
               />
             )}
-            <TimerMergeMembers tasks={selectedGroupEntry?.members ?? []}/>
+            <TimerMergeMembers
+              title={selectedGroupEntry?.group.title ?? '合并组'}
+              tasks={selectedGroupEntry?.members ?? []}
+            />
             <TaskPicker
               tasks={activeTasks}
               mergeGroups={startableGroups}
@@ -1315,11 +1379,13 @@ export function TimerView({
       <div className="timer-stage">
         <div className="timer-main">
           <div className="timer-task">
-            <div className="label">{isFocus ? '当前任务' : '刚才的任务'}</div>
+            <div className="label">
+              {snapshot.activeMergeGroup
+                ? snapshot.activeMergeGroup.title
+                : isFocus ? '当前任务' : '刚才的任务'}
+            </div>
             <div className="name">
-              {displayMergeMembers.length > 0
-                ? `一起做 · ${displayMergeMembers.length} 件小事`
-                : snapshot.activeTask?.title ?? (isFocus ? '专注' : '休息')}
+              {snapshot.activeTask?.title ?? (isFocus ? '专注' : '休息')}
             </div>
           </div>
           <TimerCircle session={activeSession} remaining={remaining}/>
@@ -1436,11 +1502,19 @@ export function TimerView({
                   title="作废本次专注"
                   aria-label="作废本次专注"
                   disabled={busy}
-                  onClick={() => activeSessionCommand((time) => discardFocus({
-                    ...time,
-                    sessionId: activeSession.id,
-                    actualDuration: Math.min(elapsed, activeSession.plannedDuration ?? elapsed),
-                  }))}
+                  onClick={() => activeSessionCommand(async (time) => {
+                    const result = await discardFocus({
+                      ...time,
+                      sessionId: activeSession.id,
+                      actualDuration: Math.min(elapsed, activeSession.plannedDuration ?? elapsed),
+                    });
+                    if (result && activeSession.mergeGroupId) {
+                      await settleMergeGroupRound({
+                        ...time, mergeGroupId: activeSession.mergeGroupId,
+                      });
+                    }
+                    return result;
+                  })}
                 >
                   <Icon name="x" size={21}/>
                 </button>
@@ -1518,7 +1592,15 @@ export function TimerView({
               </div>
             </>
           )}
-          <TimerMergeMembers tasks={displayMergeMembers}/>
+          <TimerMergeMembers
+            title={snapshot.activeMergeGroup?.title ?? '合并组'}
+            tasks={displayMergeMembers}
+            currentTaskId={snapshot.activeTask?.id ?? null}
+            sessionId={activeSession.id}
+            busy={busy}
+            command={activeSessionCommand}
+            interactive={isFocus}
+          />
           <TaskPicker
             tasks={activeTasks}
             selectedTaskId={displayTask?.id ?? selectedTaskId}
