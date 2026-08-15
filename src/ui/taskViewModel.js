@@ -138,6 +138,29 @@ export function hasRetainedChildren(views, taskId) {
     || views.archivedTasks.some((task) => task.parentId === taskId);
 }
 
+/**
+ * 整组在今日 / 活动清单之间搬迁时要动哪些成员。
+ * 加入今日只带还没排进今日的未完成成员；移回清单带走组里所有已在今日的成员。
+ */
+export function mergeGroupMoveTaskIds(members, dayPlanTaskIds, direction) {
+  const today = new Set(dayPlanTaskIds ?? []);
+  return (members ?? []).flatMap((task) => {
+    const onToday = today.has(task.id);
+    if (direction === 'today') {
+      if (onToday) return [];
+      if (task.status !== 'active' && task.status !== 'splitNeeded') return [];
+      return [task.id];
+    }
+    return onToday ? [task.id] : [];
+  });
+}
+
+/** 批量模式下，这个合并组里哪些成员属于当前动作的候选。 */
+export function mergeGroupBatchTaskIds(members, candidates) {
+  const allowed = new Set((candidates ?? []).map(({ id }) => id));
+  return (members ?? []).filter((task) => allowed.has(task.id)).map((task) => task.id);
+}
+
 export function batchCandidates(views, action) {
   if (action === 'addToToday') return views.activeTasks;
   if (action === 'moveToList') return splitTodayTasks(views.todayTasks).activeTasks;

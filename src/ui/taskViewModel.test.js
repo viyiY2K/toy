@@ -13,6 +13,8 @@ import {
   currentPlanMetrics,
   dayPlanIndexOf,
   dropInsertIndex,
+  mergeGroupBatchTaskIds,
+  mergeGroupMoveTaskIds,
   canStartMergeGroup,
   completedOnlyMergeRows,
   currentMergeMember,
@@ -314,5 +316,16 @@ describe('合并番茄钟视图模型', () => {
     expect(leftover).toHaveLength(1);
     expect(leftover[0].key).toBe('g1');
     expect(completedOnlyMergeRows([{ kind: 'merge', key: 'g1' }], doneViews)).toEqual([]);
+  });
+
+  it('整组搬迁：加入今日只带未排期的未完成成员，移回带走已在今日的', () => {
+    const members = [
+      member('a'),
+      member('b', { status: 'completed' }),
+      member('d'),
+    ];
+    expect(mergeGroupMoveTaskIds(members, ['d'], 'today')).toEqual(['a']);
+    expect(mergeGroupMoveTaskIds(members, ['a', 'b', 'd'], 'list')).toEqual(['a', 'b', 'd']);
+    expect(mergeGroupBatchTaskIds(members, [{ id: 'a' }, { id: 'x' }])).toEqual(['a']);
   });
 });

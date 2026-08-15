@@ -53,6 +53,8 @@ import {
   isMergeMemberLocked,
   isTaskRunningFocus,
   mergeCardSummary,
+  mergeGroupBatchTaskIds,
+  mergeGroupMoveTaskIds,
   mergeIneligibleReason,
   reconcileBatchSelection,
   splitLineagePresentation,
@@ -522,6 +524,11 @@ function MergeGroupBlock({
   estimateEditRequest,
   onEditRequestHandled,
   onAdvance,
+  batchCheckbox = null,
+  onMoveToToday = null,
+  onMoveToList = null,
+  canMoveToToday = false,
+  canMoveToList = false,
 }) {
   const summary = mergeCardSummary(group, members, remaining);
   const sessionActive = isMergeGroupSessionActive(group, runningFocus);
@@ -552,7 +559,7 @@ function MergeGroupBlock({
         onDragEnd={dragProps.onDragEnd}
         onDrop={dragProps.onDrop}
       >
-        <span className="atr-bullet" aria-hidden="true"/>
+        {batchCheckbox ?? <span className="atr-bullet" aria-hidden="true"/>}
         <EditableTitle
           value={group.title}
           disabled={busy}
@@ -579,6 +586,16 @@ function MergeGroupBlock({
               />
             </span>
           )}
+          {canMoveToToday && (
+            <button
+              className="icon-btn"
+              disabled={busy}
+              title="整组加入今日待办"
+              onClick={onMoveToToday}
+            >
+              <Icon name="arrow-day" size={12}/>
+            </button>
+          )}
           {latestSessionId && (
             <button
               className="icon-btn"
@@ -591,6 +608,16 @@ function MergeGroupBlock({
               <Icon name="check" size={12}/>
             </button>
           )}
+          {canMoveToList && (
+            <button
+              className="icon-btn"
+              disabled={busy}
+              title="整组移回活动清单"
+              onClick={onMoveToList}
+            >
+              <Icon name="x" size={11}/>
+            </button>
+          )}
           <button
             className="icon-btn"
             disabled={busy || sessionActive}
@@ -601,7 +628,7 @@ function MergeGroupBlock({
               ...time, mergeGroupId: group.id,
             }))}
           >
-            <Icon name="x" size={12}/>
+            {canMoveToList ? '↤' : <Icon name="x" size={12}/>}
           </button>
         </span>
       </div>
@@ -796,6 +823,40 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
       onChange={() => toggleBatchTask(task.id)}
     />
   ) : <span className="atr-bullet"/>;
+  const toggleBatchTasks = (taskIds) => {
+    if (taskIds.length === 0) return;
+    setSelectedBatchIds((current) => {
+      const next = new Set(current);
+      const allOn = taskIds.every((taskId) => next.has(taskId));
+      for (const taskId of taskIds) {
+        if (allOn) next.delete(taskId);
+        else next.add(taskId);
+      }
+      return next;
+    });
+  };
+  const mergeBatchCheckbox = (group, members) => {
+    const ids = mergeGroupBatchTaskIds(members, batchTasks);
+    if (!batchAction || ids.length === 0) return null;
+    const allOn = ids.every((taskId) => selectedBatchIds.has(taskId));
+    return (
+      <input
+        className="batch-checkbox"
+        type="checkbox"
+        aria-label={`选择 ${group.title}`}
+        checked={allOn}
+        disabled={busy}
+        onChange={() => toggleBatchTasks(ids)}
+      />
+    );
+  };
+  const moveMergeGroup = (members, direction) => {
+    const taskIds = mergeGroupMoveTaskIds(members, views.dayPlan.taskIds, direction);
+    if (taskIds.length === 0) return;
+    command((time) => (direction === 'today'
+      ? batchAddTasksToToday({ ...time, taskIds })
+      : batchMoveTasksToList({ ...time, taskIds })));
+  };
 
   const parseDrag = (event) => {
     try { return JSON.parse(event.dataTransfer.getData('application/json')); }
@@ -869,11 +930,20 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
       });
   };
 
-  /** 整张合并卡片作为落点：往上拖任务 = 加入这个组。卡片本身不参与列表排序。 */
-  const mergeCardDragProps = (group) => ({
-    draggable: false,
-    className: rowDragClass(`merge-${group.id}`),
-    onDragStart: undefined,
+  /** 父行可整组拖到另一栏；同时仍是「拖进来加入本组」的落点。 */
+  const mergeCardDragProps = (group, members, surface) => ({
+    draggable: !busy && !batchAction,
+    className: `draggable ${rowDragClass(`merge-${group.id}`)}`,
+    onDragStart: (event) => {
+      const direction = surface === 'list' ? 'today' : 'list';
+      setDrag(event, {
+        from: surface === 'list' ? 'listMerge' : 'todayMerge',
+        mergeGroupId: group.id,
+        taskIds: mergeGroupMoveTaskIds(members, views.dayPlan.taskIds, direction),
+      });
+      setDraggingKey(`merge-${group.id}`);
+      setDraggedTaskId(null);
+    },
     onDragEnd: clearDrag,
     onDragOver: (event) => {
       event.preventDefault();
@@ -1050,6 +1120,8 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
             const drag = parseDrag(event);
             if (drag?.from === 'today') {
               command((time) => removeTaskFromToday({ ...time, taskId: drag.taskId }));
+            } else if (drag?.from === 'todayMerge' && Array.isArray(drag.taskIds) && drag.taskIds.length > 0) {
+              command((time) => batchMoveTasksToList({ ...time, taskIds: drag.taskIds }));
             }
           }}
         >
@@ -1085,11 +1157,14 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
                         busy={busy}
                         command={command}
                         onOpen={setDetailTaskId}
-                        dragProps={mergeCardDragProps(row.group)}
+                        dragProps={mergeCardDragProps(row.group, row.members, 'list')}
                         memberDrag={memberDragProps(row.group)}
                         runningFocus={runningFocus}
                         renameRequested={renameGroupId === row.group.id}
                         onRenameRequestHandled={() => setRenameGroupId(null)}
+                        batchCheckbox={mergeBatchCheckbox(row.group, row.members)}
+                        canMoveToToday={mergeGroupMoveTaskIds(row.members, views.dayPlan.taskIds, 'today').length > 0}
+                        onMoveToToday={() => moveMergeGroup(row.members, 'today')}
                       />
                     );
                   }
@@ -1115,6 +1190,12 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
                       event.preventDefault();
                       event.stopPropagation();
                       mergeInto(drag.taskId, task);
+                      return;
+                    }
+                    if (drag?.from === 'todayMerge' && Array.isArray(drag.taskIds) && drag.taskIds.length > 0) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      command((time) => batchMoveTasksToList({ ...time, taskIds: drag.taskIds }));
                       return;
                     }
                     const reorder = activityReorderPayload(drag, index, position);
@@ -1198,6 +1279,8 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
             const drag = parseDrag(event);
             if (drag?.from === 'list') {
               command((time) => addTaskToToday({ ...time, taskId: drag.taskId, source: 'drag' }));
+            } else if (drag?.from === 'listMerge' && Array.isArray(drag.taskIds) && drag.taskIds.length > 0) {
+              command((time) => batchAddTasksToToday({ ...time, taskIds: drag.taskIds }));
             }
           }}
         >
@@ -1234,11 +1317,14 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
                     busy={busy}
                     command={command}
                     onOpen={setDetailTaskId}
-                    dragProps={mergeCardDragProps(row.group)}
+                    dragProps={mergeCardDragProps(row.group, row.members, 'today')}
                     memberDrag={memberDragProps(row.group)}
                     runningFocus={runningFocus}
                     renameRequested={renameGroupId === row.group.id}
                     onRenameRequestHandled={() => setRenameGroupId(null)}
+                    batchCheckbox={mergeBatchCheckbox(row.group, row.members)}
+                    canMoveToList={mergeGroupMoveTaskIds(row.members, views.dayPlan.taskIds, 'list').length > 0}
+                    onMoveToList={() => moveMergeGroup(row.members, 'list')}
                     showEstimate
                     estimateEditRequest={estimateEditRequest}
                     onEditRequestHandled={() => setEstimateEditRequest(null)}
@@ -1279,6 +1365,8 @@ export function ActivitiesView({ views, runCommand, busy, runningFocus = null })
                       command((time) => addTaskToToday({
                         ...time, taskId: drag.taskId, source: 'drag', addedAtIndex,
                       }));
+                    } else if (drag?.from === 'listMerge' && Array.isArray(drag.taskIds) && drag.taskIds.length > 0) {
+                      command((time) => batchAddTasksToToday({ ...time, taskIds: drag.taskIds }));
                     } else if (drag?.from === 'today') {
                       const toIndex = dropInsertIndex(drag.index, dayPlanIndex, position);
                       if (toIndex !== drag.index) {
