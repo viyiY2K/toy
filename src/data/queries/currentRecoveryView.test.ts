@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  completeTaskFromPomodoro,
   createManualTask,
+  createMergeGroup,
   detectRecoveryInterval,
   loadCurrentTimerViews,
   resolveRecoveryInterval,
   startFocus,
+  startMergeGroupFocus,
 } from '../index';
 import { loadCurrentRecoveryView } from './currentRecoveryView';
 
@@ -49,5 +52,36 @@ describe('Phase 2 S2a current recovery view', () => {
     expect((await loadCurrentTimerViews({
       now: '2027-03-09T08:09:00+08:00', timezone: TIMEZONE,
     })).pendingRecovery).toBeNull();
+  });
+
+  it('uses the current unfinished merge member as sourceTask, not taskIds[0]', async () => {
+    const [a, b] = [
+      await createManualTask({
+        now: '2027-03-09T09:00:00+08:00', timezone: TIMEZONE,
+        title: '恢复合并A', destination: 'today',
+      }),
+      await createManualTask({
+        now: '2027-03-09T09:01:00+08:00', timezone: TIMEZONE,
+        title: '恢复合并B', destination: 'today',
+      }),
+    ];
+    const group = (await createMergeGroup({
+      now: '2027-03-09T09:02:00+08:00', timezone: TIMEZONE,
+      taskIds: [a.value.id, b.value.id],
+    })).value;
+    const focus = await startMergeGroupFocus({
+      now: '2027-03-09T09:03:00+08:00', timezone: TIMEZONE, mergeGroupId: group.id,
+    });
+    await completeTaskFromPomodoro({
+      now: '2027-03-09T09:04:00+08:00', timezone: TIMEZONE,
+      sessionId: focus.value.id, taskId: a.value.id,
+    });
+    await detectRecoveryInterval({
+      now: '2027-03-09T09:08:00+08:00', timezone: TIMEZONE, source: 'appReopened',
+    });
+    expect(await loadCurrentRecoveryView()).toMatchObject({
+      sourceSession: { id: focus.value.id, taskIds: [a.value.id, b.value.id] },
+      sourceTask: { id: b.value.id },
+    });
   });
 });

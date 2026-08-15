@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { dataStore, EVENT_STORE, STORE } from '../dataStore';
 import type { EnergyRecord, Event, Session } from '../schema';
 import { createManualTask } from './taskCommands';
-import { completeBreak, completeFocus, startBreak, startFocus } from './timerCommands';
+import { createMergeGroup } from './mergeGroupCommands';
+import {
+  completeBreak,
+  completeFocus,
+  skipPendingBreak,
+  startBreak,
+  startFocus,
+  startMergeGroupFocus,
+} from './timerCommands';
 import { recordEnergy, recordInterrupt } from './awarenessCommands';
 
 const TIMEZONE = 'Asia/Shanghai';
@@ -146,6 +154,35 @@ describe('S13a-3 awareness commands', () => {
       kind: 'internal', offsetSeconds: 30,
     })).rejects.toThrow(/active focus/);
     expect(await dataStore.getAll<Event>(EVENT_STORE)).toHaveLength(eventCount);
+  });
+
+  it('records merge-focus interrupts with taskId null', async () => {
+    for (const session of await dataStore.getAll<Session>(STORE.sessions)) {
+      if (session.type === 'focus' && session.status === 'completed') {
+        await skipPendingBreak({
+          now: at(39), timezone: TIMEZONE, sourceFocusSessionId: session.id,
+        }).catch(() => undefined);
+      }
+    }
+    const [a, b] = [
+      await createManualTask({ now: at(40), timezone: TIMEZONE, title: '合并打扰A', destination: 'today' }),
+      await createManualTask({ now: at(41), timezone: TIMEZONE, title: '合并打扰B', destination: 'today' }),
+    ];
+    const group = (await createMergeGroup({
+      now: at(42), timezone: TIMEZONE, taskIds: [a.value.id, b.value.id],
+    })).value;
+    const focus = await startMergeGroupFocus({
+      now: at(43), timezone: TIMEZONE, mergeGroupId: group.id,
+    });
+    const interrupt = await recordInterrupt({
+      now: at(44), timezone: TIMEZONE, sessionId: focus.value.id,
+      kind: 'external', offsetSeconds: 8,
+    });
+    expect(interrupt.value).toMatchObject({
+      type: 'interrupt.external',
+      sessionId: focus.value.id,
+      taskId: null,
+    });
   });
 });
 

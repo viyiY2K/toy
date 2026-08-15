@@ -393,7 +393,7 @@ export const EVENT_ASSOCIATION_SCHEMAS = {
   'break.started': a(['sessionId'], ['dayPlanId']), 'break.completed': a(['sessionId'], ['dayPlanId']), 'break.skipped': a(['sessionId'], ['dayPlanId']),
   'restItem.shown': a(['sessionId', 'settingsId']), 'restItem.shuffled': a(['sessionId', 'settingsId']), 'restItem.selected': a(['sessionId', 'settingsId']), 'restItem.selectionChanged': a(['sessionId', 'settingsId']),
   'restItem.created': a(['settingsId']), 'restItem.updated': a(['settingsId']), 'restItem.disabled': a(['settingsId']), 'restItem.enabled': a(['settingsId']), 'restItem.deleted': a(['settingsId']), 'restItem.reordered': a(['settingsId']),
-  'interrupt.internal': a(['sessionId', 'taskId'], ['dayPlanId']), 'interrupt.external': a(['sessionId', 'taskId'], ['dayPlanId']),
+  'interrupt.internal': a(['sessionId'], ['taskId', 'dayPlanId']), 'interrupt.external': a(['sessionId'], ['taskId', 'dayPlanId']),
   'energy.recorded': a(['energyRecordId'], ['sessionId', 'taskId', 'dayPlanId']),
   'triage.captured': a(['taskId', 'sessionId'], ['dayPlanId']), 'triage.movedToToday': a(['taskId', 'dayPlanId']), 'triage.movedToList': a(['taskId']), 'triage.dismissed': a(['taskId']),
   'interval.detected': a(['unresolvedIntervalId'], ['sessionId', 'taskId', 'dayPlanId']), 'interval.sessionResolved': a(['unresolvedIntervalId', 'sessionId'], ['taskId', 'dayPlanId']),
@@ -756,7 +756,16 @@ async function validateEntityConsistency(
     if (type === 'interrupt.internal' || type === 'interrupt.external') {
       checkSame(session.type, 'focus', 'event.session.type', 'sessionId', collector);
       checkSame(session.status, 'active', 'event.session.status', 'sessionId', collector);
-      checkTaskAssociation(session, event.taskId, 'event.session.taskId', collector);
+      if (session.mergeGroupId) {
+        collector.check(
+          event.taskId === null,
+          'event.interrupt.mergeTaskId',
+          'taskId',
+          '合并专注的打扰必须 taskId 为 null',
+        );
+      } else {
+        checkTaskAssociation(session, event.taskId, 'event.session.taskId', collector);
+      }
       checkSame(session.dayPlanId, event.dayPlanId, 'event.session.dayPlanId', 'dayPlanId', collector);
     }
     if (type === 'triage.captured') {

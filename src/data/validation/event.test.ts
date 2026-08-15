@@ -116,6 +116,9 @@ function validEvent<T extends EventType>(type: T, payload: EventPayloadMap[T]): 
   const event = { ...base, type, payload } as unknown as Record<string, unknown>;
   for (const key of associations.required) event[key] = ID;
   for (const key of associations.optional ?? []) event[key] = null;
+  if (type === 'interrupt.internal' || type === 'interrupt.external') {
+    event.taskId = ID;
+  }
   if (type === 'prompt.shown' || type === 'prompt.dismissed') {
     const prompt = payload as EventPayloadMap['prompt.shown'];
     if (prompt.promptType === 'taskCompletionCheck') {
@@ -206,7 +209,14 @@ function contextFor(event: Event): ValidationContext {
       sourceFocusSessionId: payload.sourceFocusSessionId ?? ID_2,
     };
   } else if (event.type.startsWith('interrupt.')) {
-    session = { id: event.sessionId, type: 'focus', status: 'active', taskIds: [event.taskId], dayPlanId: event.dayPlanId };
+    session = {
+      id: event.sessionId,
+      type: 'focus',
+      status: 'active',
+      taskIds: event.taskId === null ? [ID] : [event.taskId],
+      mergeGroupId: event.taskId === null ? ID_2 : null,
+      dayPlanId: event.dayPlanId,
+    };
   } else if (event.type === 'triage.captured') {
     session = { id: event.sessionId, type: 'focus', status: 'active', taskIds: [ID_2], dayPlanId: event.dayPlanId };
   } else if (event.type === 'restItem.shown' || event.type === 'restItem.shuffled' || event.type === 'restItem.selected' || event.type === 'restItem.selectionChanged') {
@@ -430,6 +440,21 @@ describe('validateEvent (S7b, v4 §3.4/§7)', () => {
 
     const interrupt = validEvent('interrupt.internal', VALID_PAYLOADS['interrupt.internal']);
     expect(await codes(interrupt, { ...contextFor(interrupt), getSession: async () => ({ type: 'focus', status: 'completed', taskId: interrupt.taskId, dayPlanId: interrupt.dayPlanId }) as never })).toContain('event.session.status');
+    const mergeSession = {
+      type: 'focus',
+      status: 'active',
+      taskIds: [ID, ID_2],
+      mergeGroupId: ID_2,
+      dayPlanId: interrupt.dayPlanId,
+    };
+    expect(await codes(interrupt, {
+      ...contextFor(interrupt),
+      getSession: async () => mergeSession as never,
+    })).toContain('event.interrupt.mergeTaskId');
+    expect(await codes({ ...interrupt, taskId: null }, {
+      ...contextFor({ ...interrupt, taskId: null } as Event),
+      getSession: async () => mergeSession as never,
+    })).not.toContain('event.interrupt.mergeTaskId');
 
     const classified = validEvent('interval.classified', VALID_PAYLOADS['interval.classified']);
     expect(await codes(classified, { ...contextFor(classified), getSession: async () => ({ type: 'extraRest', status: 'completed', originIntervalId: ID_2, taskId: null, dayPlanId: classified.dayPlanId }) as never })).toContain('event.session.originIntervalId');

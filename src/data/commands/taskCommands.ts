@@ -8,7 +8,11 @@ import {
   executeAtomicWrite,
   type ValidatedAtomicWriteTransaction,
 } from '../writes/executeAtomicWrite';
-import { activeFocusSession, assertTaskNotLocked } from './mergeMemberLock';
+import {
+  activeFocusSession,
+  assertNotActiveMergeParticipant,
+  assertTaskNotLocked,
+} from './mergeMemberLock';
 
 export interface TaskCommandResult<T> {
   value: T;
@@ -901,10 +905,7 @@ export async function uncompleteTask(
       if (!task || task.status !== 'completed') {
         throw new Error('只有尚未归档的 completed Task 可以取消完成');
       }
-      const activeFocus = await activeFocusSession(transaction);
-      if (activeFocus?.mergeGroupId && activeFocus.taskIds.includes(input.taskId)) {
-        throw new Error('合并专注进行中不能取消成员完成');
-      }
+      await assertNotActiveMergeParticipant(transaction, input.taskId, '无法取消完成');
       const active: Task = {
         ...task,
         status: 'active',
@@ -936,7 +937,7 @@ export async function archiveCompletedTask(
   const initialized = await ensureCurrentAppDateInitialized(input);
   return executeAtomicWrite(
     {
-      storeNames: [STORE.tasks, STORE.dayPlans, EVENT_STORE],
+      storeNames: [STORE.tasks, STORE.dayPlans, STORE.sessions, EVENT_STORE],
       now: input.now,
       timezone: input.timezone,
       diagnosticContext: { entityType: 'Task', entityId: input.taskId, operation: 'update' },
@@ -949,6 +950,7 @@ export async function archiveCompletedTask(
       if (!task || task.status !== 'completed') {
         throw new Error('只有 completed Task 可以完成归档');
       }
+      await assertNotActiveMergeParticipant(transaction, input.taskId, '无法归档');
       const archived: Task = {
         ...task,
         status: 'archived',

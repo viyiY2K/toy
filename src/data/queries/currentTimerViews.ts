@@ -2,6 +2,7 @@ import { dataStore, EVENT_STORE, STORE } from '../dataStore';
 import type { EnergyRecord, Event, MergeGroup, Session, Task } from '../schema';
 import { deriveAppDate } from '../time';
 import type { InitializationClock } from '../initialization/currentAppDate';
+import { isExecutableMergeMember } from '../commands/mergeMemberLock';
 import { loadCurrentTaskViews, type CurrentTaskViews } from './currentTaskViews';
 import { loadCurrentRecoveryView, type CurrentRecoveryView } from './currentRecoveryView';
 
@@ -50,7 +51,7 @@ function referencedTaskId(
   if (focus.mergeGroupId === null) return focus.taskIds[0] ?? null;
   for (const taskId of focus.taskIds) {
     const task = taskById.get(taskId);
-    if (task && task.status !== 'completed') return taskId;
+    if (task && isExecutableMergeMember(task)) return taskId;
   }
   return null;
 }

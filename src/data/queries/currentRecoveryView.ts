@@ -1,4 +1,5 @@
 import { dataStore, EVENT_STORE, STORE } from '../dataStore';
+import { isExecutableMergeMember } from '../commands/mergeMemberLock';
 import type { Event, Session, Task, UnresolvedInterval } from '../schema';
 
 export interface CurrentRecoveryView {
@@ -35,16 +36,20 @@ export async function loadCurrentRecoveryView(): Promise<CurrentRecoveryView | n
   if (!sourceSession || !isActiveStandard(sourceSession)) {
     throw new Error('pending interval 的原 Session 不再是 active 标准 Session');
   }
-  /*
-   * 恢复流程只展示"这段计时当时在做什么"，单任务场景取唯一成员即可；合并 Session
-   * 有多个成员，这里取第一个作代表展示（不参与任何统计口径）。
-   */
-  const sourceTaskId = sourceSession.type === 'focus'
-    ? sourceSession.taskIds[0] ?? null
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const focus = sourceSession.type === 'focus'
+    ? sourceSession
     : sourceSession.sourceFocusSessionId === null
       ? null
-      : sessionById.get(sourceSession.sourceFocusSessionId)?.taskIds[0] ?? null;
-  const taskById = new Map(tasks.map((task) => [task.id, task]));
+      : sessionById.get(sourceSession.sourceFocusSessionId) ?? null;
+  const sourceTaskId = !focus
+    ? null
+    : focus.mergeGroupId === null
+      ? focus.taskIds[0] ?? null
+      : focus.taskIds.find((taskId) => {
+          const task = taskById.get(taskId);
+          return task !== undefined && isExecutableMergeMember(task);
+        }) ?? null;
   return {
     interval,
     detectionEvent,

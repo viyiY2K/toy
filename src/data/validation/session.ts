@@ -538,6 +538,19 @@ export async function collectSessionValidationIssues(
   }
 
   const previous = await validateCreationFacts(session, context, collector);
+  if (
+    previous?.status === 'active' &&
+    session.mergeGroupId != null &&
+    (session.status === 'completed' || session.status === 'discarded')
+  ) {
+    const segments = Array.isArray(session.taskSegments) ? session.taskSegments : [];
+    collector.check(
+      segments.length > 0,
+      'session.taskSegments.requiredOnTerminate',
+      'taskSegments',
+      '当前版本终结合并 Session 必须写入成员分段',
+    );
+  }
   await validateReferences(session, context, collector);
   await validateRestKeys(session, context, collector);
   if (!previous) await validateNewStandardSession(session, context, collector);

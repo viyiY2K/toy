@@ -280,3 +280,14 @@ read as, a reconstruction of the lost atomic S0–S5 commit history.
 - Review: Implementer 自审 `PASS`。独立 Reviewer 原 verdict 为 `BLOCKED`，所列 11 条均已在本提交关闭。
 - Findings and resolution: 见独立审查记录；本提交按建议方向全部落地，并补对应测试。
 - Residual risk or user decision: UI 仍未按新语义重接，但数据层锁定与查询洞已补上，可以开始 UI 重接。`markMergeGroupLimitReached` 软删 Session 计数口径仍未统一。未跟踪的 `docs/ui-handoff-empty-states-and-beyond.md` 仍不纳入。
+
+### 合并番茄钟 v4.3.2 复审缺陷修复
+
+- Status: `PASS`（Implementer 自审；关闭独立 Reviewer 对 `c7e0d75`..`931f99d` 的 `NEEDS FIX`）。
+- Scope: 当前成员只认 `active`/`splitNeeded`；活动合并快照成员禁止归档/取消完成；合并打扰 `taskId` 固定 null；恢复视图取当前未完成成员；`active →` 终态写入拒绝空 `taskSegments`。不含 UI。
+- Commit: 本原子提交（subject：`fix(data): 关闭 v4.3.2 复审的归档与打扰关联`）。
+- Specification: v4.3.2 §3.3 关键规则 13/14、§3.8 关键规则 11、§7.8 合并打扰 `taskId=null`。
+- Verification: `npm run test:run` → 65 files / 543 tests passed；`npm run typecheck` → passed；`npm run build` → 144 modules built；`git diff --check` → passed。仓库未提供 lint 命令。未做浏览器验证：本轮仍无 UI 改动。
+- Review: Implementer 自审 `PASS`。复审 2 个 bug 与 2 个 suggestion 均已关闭。
+- Findings and resolution: （1）归档中途完成的成员会让当前成员判定回跳；（2）合并打扰误写 `taskIds[0]`；（3）恢复视图仍用字面队首；（4）第一次终结写入空分段会被当成历史记录放行。均已按建议方向修复并补测试。
+- Residual risk or user decision: UI 仍未按新语义重接。`markMergeGroupLimitReached` 软删 Session 计数口径仍未统一。未跟踪的 `docs/ui-handoff-empty-states-and-beyond.md` 仍不纳入。

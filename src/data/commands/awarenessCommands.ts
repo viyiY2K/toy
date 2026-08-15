@@ -158,8 +158,8 @@ export async function recordInterrupt(
       await assertSessionHasNoPendingRecovery(transaction, session.id);
       const common = {
         ...eventFields(input, transaction.correlationId),
-        // §7.8 interrupt 是一条按 Session 记的事件，不按合并成员拆条；取首个成员作关联。
-        taskId: session.taskIds[0]!,
+        // §7.8：独立 focus 关联那个 Task；合并 focus 打扰不针对某个成员，taskId 固定 null。
+        taskId: session.mergeGroupId === null ? session.taskIds[0]! : null,
         sessionId: session.id,
         dayPlanId: session.dayPlanId,
         payload: { offsetSeconds: input.offsetSeconds, note: input.note ?? null },

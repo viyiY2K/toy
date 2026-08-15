@@ -10,6 +10,7 @@ import { dataStore, STORE } from '../dataStore';
 import type { Session, Task } from '../schema';
 import {
   adjustTaskEstimate,
+  archiveCompletedTask,
   completeTaskManually,
   createManualTask,
   deleteActiveTask,
@@ -134,6 +135,12 @@ describe('活动 focus 锁定当前执行对象（§3.3 关键规则 14）', () 
 
     await completeTaskFromPomodoro({ ...clock(), sessionId: session.id, taskId: a.id });
     await expect(uncompleteTask({ ...clock(), taskId: a.id }))
-      .rejects.toThrow('合并专注进行中不能取消成员完成');
+      .rejects.toThrow('仍在本轮合并专注快照中');
+    await expect(archiveCompletedTask({ ...clock(), taskId: a.id }))
+      .rejects.toThrow('仍在本轮合并专注快照中');
+    const next = await completeTaskFromPomodoro({
+      ...clock(), sessionId: session.id, taskId: b.id,
+    });
+    expect(next.value.id).toBe(b.id);
   });
 });

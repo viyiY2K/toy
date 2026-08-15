@@ -23,8 +23,13 @@ export async function activeFocusSession(
   return sessions.find((session) => session.type === 'focus' && session.status === 'active') ?? null;
 }
 
+/** 合并轮里仍可被推进的成员：已完成 / 已归档 / 已删除都不算当前执行对象。 */
+export function isExecutableMergeMember(task: Pick<Task, 'status'>): boolean {
+  return task.status === 'active' || task.status === 'splitNeeded';
+}
+
 /**
- * 本轮的**当前成员**：按推进顺序第一个尚未完成的参与成员。
+ * 本轮的**当前成员**：按推进顺序第一个仍可执行的参与成员。
  *
  * 不能用字面上的 `taskIds[0]` —— 本轮中途被勾完成的成员仍然留在快照里（它们要拿自己
  * 那段时间），队首很可能已经是个完成态的历史成员了。
@@ -35,7 +40,7 @@ export async function currentMergeMemberId(
 ): Promise<string | null> {
   for (const taskId of session.taskIds) {
     const task = await transaction.get<Task>(STORE.tasks, taskId);
-    if (task && task.status !== 'completed') return taskId;
+    if (task && isExecutableMergeMember(task)) return taskId;
   }
   return null;
 }
@@ -66,5 +71,17 @@ export async function assertTaskNotLocked(
 ): Promise<void> {
   if ((await lockedTaskId(transaction)) === taskId) {
     throw new Error(`${action}：该任务正在计时中，请先作废当前番茄或等它到点`);
+  }
+}
+
+/** 活动合并快照里的成员不能走清单上的状态改写（归档、取消完成等）。 */
+export async function assertNotActiveMergeParticipant(
+  transaction: ReadableTransaction,
+  taskId: string,
+  action: string,
+): Promise<void> {
+  const session = await activeFocusSession(transaction);
+  if (session?.mergeGroupId && session.taskIds.includes(taskId)) {
+    throw new Error(`${action}：该任务仍在本轮合并专注快照中`);
   }
 }

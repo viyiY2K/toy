@@ -22,7 +22,7 @@ import {
   type ValidatedAtomicWriteTransaction,
 } from '../writes/executeAtomicWrite';
 import type { TaskCommandResult } from './taskCommands';
-import { currentMergeMemberId } from './mergeMemberLock';
+import { currentMergeMemberId, isExecutableMergeMember } from './mergeMemberLock';
 import { MERGE_GROUP_TITLE_MAX_LENGTH } from '../schema/mergeGroup';
 
 /** 合并组进行中的两种在用状态；`dissolved` 之外都还挂着成员。 */
@@ -495,7 +495,7 @@ async function unfinishedMembers(
   const unfinished: string[] = [];
   for (const taskId of group.taskIds) {
     const task = await transaction.get<Task>(STORE.tasks, taskId);
-    if (task && task.status !== 'completed') unfinished.push(taskId);
+    if (task && isExecutableMergeMember(task)) unfinished.push(taskId);
   }
   return unfinished;
 }

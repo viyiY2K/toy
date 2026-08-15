@@ -281,9 +281,25 @@ describe('validateSession (S6b, v4 §3.3)', () => {
       mergeGroupId,
       taskSegments: [],
     });
-    await expect(validateSession(historical, {
+    const mergeContext = {
       ...context(),
-      getMergeGroup: async (id) => (id === mergeGroupId ? { id: mergeGroupId } as never : undefined),
-    })).resolves.toBe(historical);
+      getMergeGroup: async (id: string) => (id === mergeGroupId ? { id: mergeGroupId } as never : undefined),
+    };
+    await expect(validateSession(historical, mergeContext)).resolves.toBe(historical);
+    const previousActive = {
+      ...historical,
+      status: 'active' as const,
+      endedAt: null,
+      actualDuration: null,
+      taskSegments: [],
+    };
+    await expectCode(
+      historical,
+      'session.taskSegments.requiredOnTerminate',
+      {
+        ...mergeContext,
+        getSession: async (id: string) => (id === historical.id ? previousActive : undefined),
+      },
+    );
   });
 });
