@@ -1,4 +1,3 @@
-import type { StorageAdapter } from './storage/storageAdapter';
 import { IndexedDbStorageAdapter } from './storage/indexedDbAdapter';
 import { newId } from './id';
 import type {
@@ -49,6 +48,10 @@ export interface InternalDataStore extends DataStore {
     stores: readonly StoreName[],
     work: (transaction: AtomicDataTransaction) => Promise<T>,
   ): Promise<T>;
+  /**
+   * 仅供 §7.14 本地备份恢复。不是通用物理删除入口。
+   */
+  replaceAllForImport(records: Readonly<Record<StoreName, readonly unknown[]>>): Promise<void>;
 }
 
 export interface AtomicEventRecord {
@@ -89,7 +92,7 @@ export interface AtomicDataTransaction {
   ): Promise<SyncableEntityMap[S]>;
 }
 
-const adapter: StorageAdapter = new IndexedDbStorageAdapter();
+const adapter = new IndexedDbStorageAdapter();
 const syncableStores = new Set<StoreName>(SYNCABLE_STORE_NAMES);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -158,6 +161,9 @@ export const internalDataStore: InternalDataStore = {
   appendEvent<T>(value: T): Promise<void> {
     // insert 语义：同 id 重复写入会失败，保证 Event 不可覆盖。
     return adapter.add<T>(EVENT_STORE, value);
+  },
+  replaceAllForImport(records: Readonly<Record<StoreName, readonly unknown[]>>): Promise<void> {
+    return adapter.replaceAllForImport(records);
   },
   async runAtomic<T>(
     stores: readonly StoreName[],

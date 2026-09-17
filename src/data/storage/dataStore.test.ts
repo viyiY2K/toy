@@ -75,5 +75,6 @@ describe('dataStore over IndexedDB (S1 skeleton)', () => {
     expect(surface.delete).toBeUndefined();
     expect(surface.clear).toBeUndefined();
     expect(surface.remove).toBeUndefined();
+    expect(surface.replaceAllForImport).toBeUndefined();
   });
 });

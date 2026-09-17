@@ -13,6 +13,7 @@ import { SettingsView } from './SettingsView';
 import { StatsView } from './StatsView';
 import { TimerView } from './TimerView';
 import { APP_VERSION } from './version';
+import { startAutoBackupLoop } from './backupRuntime';
 import { SYNC_POLL_INTERVAL_MS } from './syncViewModel';
 import {
   shouldDetectAppReopened,
@@ -118,6 +119,8 @@ export function App() {
       .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setBusy(false));
   }, [reload]);
+
+  React.useEffect(() => startAutoBackupLoop(), []);
 
   // 多端同步（S7）：完全独立于上面的计时器/恢复逻辑，未配置 Supabase 时这整段直接跳过，
   // 不影响纯本地使用。未登录时只订阅登录状态、不发任何同步请求——本地记录的 user_id

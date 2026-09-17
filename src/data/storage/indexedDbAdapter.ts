@@ -1,6 +1,6 @@
 import { migrateRecords } from './migrations';
 import type { AtomicStorageTransaction, StorageAdapter } from './storageAdapter';
-import { DB_NAME, DB_VERSION, PRIMARY_KEY, STORE_NAMES } from './stores';
+import { DB_NAME, DB_VERSION, EVENT_STORE, PRIMARY_KEY, STORE_NAMES } from './stores';
 
 /**
  * 打开（必要时升级）IndexedDB 数据库，按 stores.ts 建齐 8 个 objectStore。
@@ -54,8 +54,8 @@ function transactionCompletion(transaction: IDBTransaction): Promise<void> {
  * 基于 IndexedDB 的 StorageAdapter 实现（v4 §2.1）。
  *
  * 实现 `get` / `getAll` / `put`（覆盖写）/ `add`（append-only insert，同主键失败）。
- * 端口本身已无物理删除原语（v4 §2.4、红线 12：可同步实体禁止物理删除、Event 不可删除），
- * 故此处**绝不**包装 IDBObjectStore.delete / .clear。删除一律走软删，由 S9 落地。
+ * 端口本身不暴露通用物理删除原语（v4 §2.4、红线 12：可同步实体禁止物理删除、Event 不可删除）。
+ * 业务删除一律走软删。唯一例外是 §7.14 `data.imported` 整库恢复：见 `replaceAllForImport`。
  *
  * 单 store 方法保留为基础能力；S8 的 `runAtomic` 负责跨 store 的实体 + Event 原子提交。
  */
@@ -185,5 +185,25 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
     keepAlive = false;
     await completion;
     return result;
+  }
+
+  /**
+   * 仅供 §7.14 本地备份恢复：在一个事务里清空全部 objectStore 再写入快照。
+   * 不是通用删除 API，不得从业务 command / UI 直接调用。
+   */
+  async replaceAllForImport(records: Readonly<Record<string, readonly unknown[]>>): Promise<void> {
+    const db = await this.db();
+    const transaction = db.transaction([...STORE_NAMES], 'readwrite');
+    const completion = transactionCompletion(transaction);
+    for (const name of STORE_NAMES) {
+      const objectStore = transaction.objectStore(name);
+      objectStore.clear();
+      const values = records[name] ?? [];
+      for (const value of values) {
+        if (name === EVENT_STORE) objectStore.add(value);
+        else objectStore.put(value);
+      }
+    }
+    await completion;
   }
 }

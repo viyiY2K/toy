@@ -829,6 +829,20 @@ input[type="checkbox"]:checked::before {
 }
 .sync-account-row > input.boxed { width: 100%; min-width: 0; }
 .sync-account-row > .sync-result { grid-column: 1 / -1; }
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.backup-confirm {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(188, 91, 64, .35);
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
 /* 自由时长：可用时段减扣除后的上下文事实，不是可选项，横排一行低调呈现。 */
 .budget-free {
   margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
@@ -1132,6 +1146,9 @@ input[type="checkbox"]:checked::before {
 .btn.danger {
   margin-right: auto;
   color: var(--accent-ink);
+}
+.backup-confirm .btn.danger {
+  margin-right: 0;
 }
 .detached-card {
   display: flex;
