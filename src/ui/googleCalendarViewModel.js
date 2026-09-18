@@ -15,3 +15,8 @@ export function formatGoogleCalendarStatus(prefs, { configured } = { configured:
   if (prefs.lastSuccessAt) return `已连接。上次写入：${formatGoogleCalendarClock(prefs.lastSuccessAt)}`;
   return `已连接。专注结束或作废后会自动${target}`;
 }
+
+export function formatGoogleCalendarQueue(queueLength) {
+  if (!Number.isInteger(queueLength) || queueLength <= 0) return null;
+  return `还有 ${queueLength} 条没写出`;
+}

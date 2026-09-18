@@ -48,6 +48,8 @@ jobs:
           # 应用自动以纯本地模式运行。
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # 网页 OAuth 客户端 ID，会打进前端包；未配置时设置页显示未配置，不影响本地计时。
+          VITE_GOOGLE_CALENDAR_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CALENDAR_CLIENT_ID }}
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6

@@ -1,7 +1,9 @@
 import {
   calendarDraftsFromCommandResult,
+  clearCalendarAccessToken,
   enqueueCalendarDrafts,
   ensureFocusCalendar,
+  getCalendarAccessToken,
   getCalendarPreferences,
   getGoogleCalendarClientId,
   GOOGLE_CALENDAR_SCOPE,
@@ -9,6 +11,7 @@ import {
   peekCalendarQueue,
   recordCalendarQueueError,
   removeCalendarQueueItems,
+  saveCalendarAccessToken,
   updateCalendarPreferences,
   upsertCalendarEvent,
 } from '../data/index';
@@ -37,8 +40,25 @@ export function subscribeGoogleCalendarRuntime(listener) {
   return () => listeners.delete(listener);
 }
 
+function rememberToken(token, expiresAt) {
+  accessToken = token;
+  tokenExpiresAt = expiresAt;
+  saveCalendarAccessToken(token, expiresAt);
+}
+
+function restoreToken() {
+  const stored = getCalendarAccessToken();
+  if (!stored) return false;
+  accessToken = stored.accessToken;
+  tokenExpiresAt = stored.expiresAt;
+  return true;
+}
+
 function tokenValid() {
-  return typeof accessToken === 'string' && accessToken.length > 0 && Date.now() < tokenExpiresAt;
+  if (typeof accessToken === 'string' && accessToken.length > 0 && Date.now() < tokenExpiresAt) {
+    return true;
+  }
+  return restoreToken();
 }
 
 function loadGis() {
@@ -76,9 +96,11 @@ function requestAccessToken({ interactive }) {
           reject(new Error(response.error_description || response.error));
           return;
         }
-        accessToken = response.access_token;
         const expiresIn = Number(response.expires_in ?? 3600);
-        tokenExpiresAt = Date.now() + Math.max(30, expiresIn - 60) * 1000;
+        rememberToken(
+          response.access_token,
+          Date.now() + Math.max(30, expiresIn - 60) * 1000,
+        );
         resolve(accessToken);
       },
       error_callback: (error) => {
@@ -166,6 +188,7 @@ export async function disconnectGoogleCalendar() {
   }
   accessToken = null;
   tokenExpiresAt = 0;
+  clearCalendarAccessToken();
   updateCalendarPreferences({
     connected: false,
     enabled: false,
@@ -192,10 +215,25 @@ export async function syncFocusSessionsToGoogleCalendar(result) {
     const drafts = await calendarDraftsFromCommandResult(result);
     if (drafts.length === 0) return;
     enqueueCalendarDrafts(drafts, clockIso());
+    notifyGoogleCalendarRuntime();
     await enqueueFlush();
   } catch (cause) {
     rememberError(cause instanceof Error ? cause.message : String(cause));
   }
+}
+
+export async function retryGoogleCalendarWrites() {
+  if (!isGoogleCalendarConfigured()) {
+    throw new Error('还没有配置 Google 日历网页客户端');
+  }
+  const prefs = getCalendarPreferences();
+  if (!prefs.connected) throw new Error('还没连接 Google 日历');
+  await getAccessToken({ interactive: true });
+  await enqueueFlush();
+  const leftover = peekCalendarQueue().length;
+  const error = getCalendarPreferences().lastError;
+  if (error) throw new Error(error);
+  if (leftover > 0) throw new Error(`还有 ${leftover} 条没写出`);
 }
 
 export function startGoogleCalendarRetryLoop() {

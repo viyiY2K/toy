@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatGoogleCalendarStatus } from './googleCalendarViewModel';
+import { formatGoogleCalendarQueue, formatGoogleCalendarStatus } from './googleCalendarViewModel';
 
 const prefs = {
   connected: false,
@@ -23,5 +23,10 @@ describe('formatGoogleCalendarStatus', () => {
       enabled: true,
       lastError: 'invalid_grant',
     })).toContain('invalid_grant');
+  });
+
+  it('only mentions a pending queue when there are items', () => {
+    expect(formatGoogleCalendarQueue(0)).toBeNull();
+    expect(formatGoogleCalendarQueue(2)).toBe('还有 2 条没写出');
   });
 });

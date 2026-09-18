@@ -2,6 +2,7 @@ import {
   getBackupPreferences,
   getCalendarPreferences,
   isGoogleCalendarConfigured,
+  peekCalendarQueue,
   MAX_BACKUP_INTERVAL_MINUTES,
   MIN_BACKUP_INTERVAL_MINUTES,
   parseLocalBackup,
@@ -28,10 +29,11 @@ import {
 import {
   connectGoogleCalendar,
   disconnectGoogleCalendar,
+  retryGoogleCalendarWrites,
   setGoogleCalendarWriteEnabled,
   subscribeGoogleCalendarRuntime,
 } from './googleCalendarRuntime';
-import { formatGoogleCalendarStatus } from './googleCalendarViewModel';
+import { formatGoogleCalendarQueue, formatGoogleCalendarStatus } from './googleCalendarViewModel';
 import { formatSyncStatusText, hasSyncErrors } from './syncViewModel';
 
 const React = window.React;
@@ -432,10 +434,14 @@ function BackupCard({ busy, runCommand }) {
 function GoogleCalendarCard() {
   const configured = isGoogleCalendarConfigured();
   const [prefs, setPrefs] = React.useState(() => getCalendarPreferences());
+  const [queueLength, setQueueLength] = React.useState(() => peekCalendarQueue().length);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState(null);
 
-  React.useEffect(() => subscribeGoogleCalendarRuntime(setPrefs), []);
+  React.useEffect(() => subscribeGoogleCalendarRuntime((next) => {
+    setPrefs(next);
+    setQueueLength(peekCalendarQueue().length);
+  }), []);
 
   const run = async (work) => {
     if (busy) return;
@@ -448,6 +454,7 @@ function GoogleCalendarCard() {
     } finally {
       setBusy(false);
       setPrefs(getCalendarPreferences());
+      setQueueLength(peekCalendarQueue().length);
     }
   };
 
@@ -460,12 +467,22 @@ function GoogleCalendarCard() {
 
       <div className="backup-actions">
         {prefs.connected ? (
-          <button
-            type="button"
-            className="btn sm ghost"
-            disabled={busy}
-            onClick={() => run(disconnectGoogleCalendar)}
-          >断开</button>
+          <>
+            {(prefs.lastError || queueLength > 0) && (
+              <button
+                type="button"
+                className="btn sm"
+                disabled={busy}
+                onClick={() => run(retryGoogleCalendarWrites)}
+              >立即重试</button>
+            )}
+            <button
+              type="button"
+              className="btn sm ghost"
+              disabled={busy}
+              onClick={() => run(disconnectGoogleCalendar)}
+            >断开</button>
+          </>
         ) : (
           <button
             type="button"
@@ -501,7 +518,10 @@ function GoogleCalendarCard() {
       )}
 
       <div className="sub" style={{ marginTop: 12 }}>
-        {formatGoogleCalendarStatus(prefs, { configured })}
+        <div>{formatGoogleCalendarStatus(prefs, { configured })}</div>
+        {formatGoogleCalendarQueue(queueLength) && (
+          <div style={{ marginTop: 6 }}>{formatGoogleCalendarQueue(queueLength)}</div>
+        )}
       </div>
       {notice && <div className="sub" style={{ marginTop: 8 }}>{notice}</div>}
     </div>

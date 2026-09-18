@@ -93,6 +93,12 @@ export {
 } from './calendar/calendarPreferences';
 export type { CalendarPreferences } from './calendar/calendarPreferences';
 export {
+  clearCalendarAccessToken,
+  getCalendarAccessToken,
+  saveCalendarAccessToken,
+} from './calendar/calendarAccessToken';
+export type { CalendarAccessToken } from './calendar/calendarAccessToken';
+export {
   enqueueCalendarDrafts,
   peekCalendarQueue,
   recordCalendarQueueError,
