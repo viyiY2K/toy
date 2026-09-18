@@ -75,3 +75,40 @@ export {
   resolveLifetimePomodoroBaselineConflict,
 } from './sync/syncEngine';
 export type { SyncRunResult, SyncState } from './sync/syncEngine';
+
+export {
+  addSecondsToIso,
+  calendarEventUid,
+  formatInvestedDuration,
+  mapSessionToCalendarEvents,
+} from './calendar/mapSessionToCalendarEvents';
+export type {
+  CalendarEventDraft,
+  CalendarEventTitleLookup,
+} from './calendar/mapSessionToCalendarEvents';
+export {
+  DEFAULT_CALENDAR_PREFERENCES,
+  getCalendarPreferences,
+  updateCalendarPreferences,
+} from './calendar/calendarPreferences';
+export type { CalendarPreferences } from './calendar/calendarPreferences';
+export {
+  enqueueCalendarDrafts,
+  peekCalendarQueue,
+  recordCalendarQueueError,
+  removeCalendarQueueItems,
+} from './calendar/calendarQueue';
+export type { CalendarQueueItem } from './calendar/calendarQueue';
+export { collectSessionsFromCommandResult } from './calendar/collectSessionsFromCommandResult';
+export { calendarDraftsFromCommandResult } from './calendar/draftsForCommandResult';
+export { loadTaskTitles } from './calendar/loadTaskTitles';
+export {
+  getGoogleCalendarClientId,
+  isGoogleCalendarConfigured,
+} from './calendar/googleCalendarEnv';
+export {
+  GOOGLE_CALENDAR_SCOPE,
+  GOOGLE_FOCUS_CALENDAR_SUMMARY,
+  ensureFocusCalendar,
+  upsertCalendarEvent,
+} from './calendar/googleCalendarApi';

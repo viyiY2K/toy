@@ -1,5 +1,7 @@
 import {
   getBackupPreferences,
+  getCalendarPreferences,
+  isGoogleCalendarConfigured,
   MAX_BACKUP_INTERVAL_MINUTES,
   MIN_BACKUP_INTERVAL_MINUTES,
   parseLocalBackup,
@@ -23,6 +25,13 @@ import {
   formatBackupStatus,
   suggestedManualBackupFileName,
 } from './backupViewModel';
+import {
+  connectGoogleCalendar,
+  disconnectGoogleCalendar,
+  setGoogleCalendarWriteEnabled,
+  subscribeGoogleCalendarRuntime,
+} from './googleCalendarRuntime';
+import { formatGoogleCalendarStatus } from './googleCalendarViewModel';
 import { formatSyncStatusText, hasSyncErrors } from './syncViewModel';
 
 const React = window.React;
@@ -420,6 +429,85 @@ function BackupCard({ busy, runCommand }) {
   );
 }
 
+function GoogleCalendarCard() {
+  const configured = isGoogleCalendarConfigured();
+  const [prefs, setPrefs] = React.useState(() => getCalendarPreferences());
+  const [busy, setBusy] = React.useState(false);
+  const [notice, setNotice] = React.useState(null);
+
+  React.useEffect(() => subscribeGoogleCalendarRuntime(setPrefs), []);
+
+  const run = async (work) => {
+    if (busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await work();
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+      setPrefs(getCalendarPreferences());
+    }
+  };
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-title"><span>Google 日历</span></div>
+      <div className="sub" style={{ marginBottom: 12 }}>
+        连上之后，每次专注结束或中途作废，都会按每件事的实际投入时间写入专用日历「番茄专注」。休息不写，合并番茄也不会写成一整块。
+      </div>
+
+      <div className="backup-actions">
+        {prefs.connected ? (
+          <button
+            type="button"
+            className="btn sm ghost"
+            disabled={busy}
+            onClick={() => run(disconnectGoogleCalendar)}
+          >断开</button>
+        ) : (
+          <button
+            type="button"
+            className="btn sm"
+            disabled={busy || !configured}
+            onClick={() => run(connectGoogleCalendar)}
+          >连接 Google 日历</button>
+        )}
+      </div>
+
+      {prefs.connected && (
+        <div className="planner-row" style={{ marginTop: 12 }}>
+          <span className="planner-l">结束后写入</span>
+          <div className="range-tabs" role="radiogroup" aria-label="结束后写入日历">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!prefs.enabled}
+              className={`range-tab ${prefs.enabled ? '' : 'on'}`}
+              disabled={busy}
+              onClick={() => setGoogleCalendarWriteEnabled(false)}
+            >暂停</button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={prefs.enabled}
+              className={`range-tab ${prefs.enabled ? 'on' : ''}`}
+              disabled={busy}
+              onClick={() => setGoogleCalendarWriteEnabled(true)}
+            >自动写</button>
+          </div>
+        </div>
+      )}
+
+      <div className="sub" style={{ marginTop: 12 }}>
+        {formatGoogleCalendarStatus(prefs, { configured })}
+      </div>
+      {notice && <div className="sub" style={{ marginTop: 8 }}>{notice}</div>}
+    </div>
+  );
+}
+
 export function SettingsView({ settings, runCommand, busy, syncAuthState, lastSyncResult }) {
   const command = (work) => runCommand(() => work(clock()));
 
@@ -428,7 +516,7 @@ export function SettingsView({ settings, runCommand, busy, syncAuthState, lastSy
       <header className="main-head">
         <div>
           <h1>设置</h1>
-          <div className="sub">调整计时参数，校正累计番茄基数，或备份本地数据。</div>
+          <div className="sub">调整计时参数，校正累计番茄基数，备份本地数据，或把专注写入 Google 日历。</div>
         </div>
       </header>
 
@@ -456,6 +544,8 @@ export function SettingsView({ settings, runCommand, busy, syncAuthState, lastSy
       <SyncCard syncAuthState={syncAuthState} lastSyncResult={lastSyncResult}/>
 
       <BackupCard busy={busy} runCommand={runCommand}/>
+
+      <GoogleCalendarCard/>
     </div>
   );
 }

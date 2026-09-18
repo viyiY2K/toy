@@ -14,6 +14,10 @@ import { StatsView } from './StatsView';
 import { TimerView } from './TimerView';
 import { APP_VERSION } from './version';
 import { startAutoBackupLoop } from './backupRuntime';
+import {
+  startGoogleCalendarRetryLoop,
+  syncFocusSessionsToGoogleCalendar,
+} from './googleCalendarRuntime';
 import { SYNC_POLL_INTERVAL_MS } from './syncViewModel';
 import {
   shouldDetectAppReopened,
@@ -121,6 +125,7 @@ export function App() {
   }, [reload]);
 
   React.useEffect(() => startAutoBackupLoop(), []);
+  React.useEffect(() => startGoogleCalendarRetryLoop(), []);
 
   // 多端同步（S7）：完全独立于上面的计时器/恢复逻辑，未配置 Supabase 时这整段直接跳过，
   // 不影响纯本地使用。未登录时只订阅登录状态、不发任何同步请求——本地记录的 user_id
@@ -170,6 +175,7 @@ export function App() {
     try {
       const result = await work();
       if (result !== undefined && onSuccess) onSuccess(result);
+      void syncFocusSessionsToGoogleCalendar(result);
       await reload();
       return result;
     } catch (cause) {

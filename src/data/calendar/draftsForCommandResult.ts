@@ -1,0 +1,21 @@
+import { collectSessionsFromCommandResult } from './collectSessionsFromCommandResult';
+import { loadTaskTitles } from './loadTaskTitles';
+import {
+  mapSessionToCalendarEvents,
+  type CalendarEventDraft,
+} from './mapSessionToCalendarEvents';
+
+export async function calendarDraftsFromCommandResult(
+  result: unknown,
+): Promise<CalendarEventDraft[]> {
+  const sessions = collectSessionsFromCommandResult(result);
+  const drafts: CalendarEventDraft[] = [];
+  for (const session of sessions) {
+    const taskIds = session.taskSegments.length > 0
+      ? session.taskSegments.map((segment) => segment.taskId)
+      : session.taskIds;
+    const titles = await loadTaskTitles(taskIds);
+    drafts.push(...mapSessionToCalendarEvents(session, titles));
+  }
+  return drafts;
+}
