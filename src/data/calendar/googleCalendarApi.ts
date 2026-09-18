@@ -55,17 +55,13 @@ interface CalendarListResponse {
   items?: CalendarResource[];
 }
 
-interface EventListResponse {
-  items?: Array<{ id?: string }>;
-}
-
 function eventBody(draft: CalendarEventDraft) {
   return {
+    id: draft.eventId,
     summary: draft.title,
     description: draft.description,
     start: { dateTime: draft.start, timeZone: draft.timeZone },
     end: { dateTime: draft.end, timeZone: draft.timeZone },
-    iCalUID: draft.uid,
     extendedProperties: {
       private: {
         sessionId: draft.sessionId,
@@ -118,6 +114,7 @@ export async function upsertCalendarEvent(
   fetchImpl: FetchLike = fetch,
 ): Promise<void> {
   const encodedCalendarId = encodeURIComponent(calendarId);
+  const encodedEventId = encodeURIComponent(draft.eventId);
   const inserted = await googleJson<unknown>(
     fetchImpl,
     accessToken,
@@ -127,19 +124,10 @@ export async function upsertCalendarEvent(
   if (inserted.ok) return;
   if (inserted.status !== 409) throw new Error(inserted.message);
 
-  const listed = await googleJson<EventListResponse>(
-    fetchImpl,
-    accessToken,
-    `/calendars/${encodedCalendarId}/events?iCalUID=${encodeURIComponent(draft.uid)}`,
-  );
-  const eventId = listed.ok ? listed.body.items?.[0]?.id : undefined;
-  if (!listed.ok || typeof eventId !== 'string') {
-    throw new Error(listed.ok ? '找不到已存在的日历日程' : listed.message);
-  }
   const updated = await googleJson<unknown>(
     fetchImpl,
     accessToken,
-    `/calendars/${encodedCalendarId}/events/${encodeURIComponent(eventId)}?sendUpdates=none`,
+    `/calendars/${encodedCalendarId}/events/${encodedEventId}?sendUpdates=none`,
     { method: 'PUT', body: JSON.stringify(eventBody(draft)) },
   );
   if (!updated.ok) throw new Error(updated.message);

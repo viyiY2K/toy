@@ -22,6 +22,7 @@ function memoryStorage(initial: Record<string, string> = {}) {
 function draft(uid: string): CalendarEventDraft {
   return {
     uid,
+    eventId: 'session1task1',
     sessionId: 'session-1',
     taskId: 'task-1',
     title: '写周报',

@@ -12,6 +12,8 @@ export const CALENDAR_EVENT_UID_HOST = 'toy.viyi.cc';
 
 export interface CalendarEventDraft {
   uid: string;
+  /** Google Calendar event.id：仅允许 0-9 / a-v，同一 session+task 稳定，不同 session 不重复。 */
+  eventId: string;
   sessionId: string;
   taskId: string;
   title: string;
@@ -54,6 +56,16 @@ export function calendarEventUid(sessionId: string, taskId: string): string {
   return `focus-${sessionId}-${taskId}@${CALENDAR_EVENT_UID_HOST}`;
 }
 
+/** Google 事件 id 只允许 base32hex（0-9、a-v）。UUID 去掉连字符后天然合法。 */
+export function googleCalendarEventId(sessionId: string, taskId: string): string {
+  const compact = `${sessionId}${taskId}`.toLowerCase().replace(/[^0-9a-v]/g, '');
+  if (compact.length >= 5) return compact.slice(0, 1024);
+  const fallback = calendarEventUid(sessionId, taskId)
+    .toLowerCase()
+    .replace(/[^0-9a-v]/g, '');
+  return (fallback + '0'.repeat(5)).slice(0, 1024);
+}
+
 export function formatInvestedDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
@@ -77,6 +89,7 @@ function draftFromSlice(
   const discarded = session.status === 'discarded';
   return {
     uid: calendarEventUid(session.id, taskId),
+    eventId: googleCalendarEventId(session.id, taskId),
     sessionId: session.id,
     taskId,
     title: titles[taskId]?.trim() || '未命名任务',

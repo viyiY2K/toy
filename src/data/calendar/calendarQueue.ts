@@ -3,7 +3,10 @@
  */
 
 import type { DeviceIdentityStorage } from '../sync/deviceIdentity';
-import type { CalendarEventDraft } from './mapSessionToCalendarEvents';
+import {
+  googleCalendarEventId,
+  type CalendarEventDraft,
+} from './mapSessionToCalendarEvents';
 
 const STORAGE_KEY = 'pomodoro:googleCalendarQueue';
 const MAX_QUEUE_LENGTH = 200;
@@ -35,6 +38,13 @@ function isDraft(value: unknown): value is CalendarEventDraft {
     && typeof record.actualDuration === 'number';
 }
 
+function normalizeDraft(draft: CalendarEventDraft): CalendarEventDraft {
+  return {
+    ...draft,
+    eventId: draft.eventId || googleCalendarEventId(draft.sessionId, draft.taskId),
+  };
+}
+
 function readQueue(storage: DeviceIdentityStorage): CalendarQueueItem[] {
   const raw = storage.getItem(STORAGE_KEY);
   if (raw === null) return [];
@@ -47,7 +57,7 @@ function readQueue(storage: DeviceIdentityStorage): CalendarQueueItem[] {
       if (typeof record.uid !== 'string' || !isDraft(record.draft)) return [];
       return [{
         uid: record.uid,
-        draft: record.draft,
+        draft: normalizeDraft(record.draft),
         enqueuedAt: typeof record.enqueuedAt === 'string' ? record.enqueuedAt : record.draft.start,
         attempts: Number.isInteger(record.attempts) ? Number(record.attempts) : 0,
         lastError: typeof record.lastError === 'string' ? record.lastError : null,
@@ -81,7 +91,7 @@ export function enqueueCalendarDrafts(
     const existing = byUid.get(draft.uid);
     byUid.set(draft.uid, {
       uid: draft.uid,
-      draft,
+      draft: normalizeDraft(draft),
       enqueuedAt: existing?.enqueuedAt ?? now,
       attempts: existing?.attempts ?? 0,
       lastError: existing?.lastError ?? null,

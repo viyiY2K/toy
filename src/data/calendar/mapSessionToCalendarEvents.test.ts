@@ -4,6 +4,7 @@ import {
   addSecondsToIso,
   calendarEventUid,
   formatInvestedDuration,
+  googleCalendarEventId,
   mapSessionToCalendarEvents,
 } from './mapSessionToCalendarEvents';
 
@@ -55,6 +56,7 @@ describe('mapSessionToCalendarEvents', () => {
     expect(mapSessionToCalendarEvents(session, { [TASK_A]: '写周报' })).toEqual([
       {
         uid: calendarEventUid('session-independent', TASK_A),
+        eventId: googleCalendarEventId('session-independent', TASK_A),
         sessionId: 'session-independent',
         taskId: TASK_A,
         title: '写周报',
@@ -123,6 +125,14 @@ describe('mapSessionToCalendarEvents', () => {
     ]);
     expect(events.some((event) => event.taskId === TASK_C)).toBe(false);
     expect(events.some((event) => event.title.includes('合并'))).toBe(false);
+  });
+
+  it('gives the same task a different calendar event id in a later session', () => {
+    const first = googleCalendarEventId('0197bbbbbbbbbbbbbbbbbbbbbbbbb1', TASK_A);
+    const second = googleCalendarEventId('0197bbbbbbbbbbbbbbbbbbbbbbbbb2', TASK_A);
+    expect(first).not.toBe(second);
+    expect(first).toMatch(/^[0-9a-v]+$/);
+    expect(second).toMatch(/^[0-9a-v]+$/);
   });
 
   it('maps extraFocus the same way as an independent task', () => {

@@ -11,6 +11,7 @@ function jsonResponse(status: number, body: unknown): Response {
 
 const draft: CalendarEventDraft = {
   uid: 'focus-s1-t1@toy.viyi.cc',
+  eventId: 's1t1aaaa',
   sessionId: 's1',
   taskId: 't1',
   title: '写周报',
@@ -46,17 +47,22 @@ describe('ensureFocusCalendar', () => {
 });
 
 describe('upsertCalendarEvent', () => {
-  it('inserts a new event and updates on iCalUID conflict', async () => {
+  it('inserts a new event and updates the same event id on conflict', async () => {
     let inserted = 0;
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = String(input);
       if (url.includes('/events?sendUpdates=none') && init?.method === 'POST') {
         inserted += 1;
-        if (inserted === 1) return jsonResponse(200, { id: 'evt-1' });
+        if (inserted === 1) {
+          expect(JSON.parse(String(init.body)).id).toBe('s1t1aaaa');
+          expect(JSON.parse(String(init.body)).iCalUID).toBeUndefined();
+          return jsonResponse(200, { id: 's1t1aaaa' });
+        }
         return jsonResponse(409, { error: { message: 'The requested identifier already exists.' } });
       }
-      if (url.includes('iCalUID=')) return jsonResponse(200, { items: [{ id: 'evt-1' }] });
-      if (url.includes('/events/evt-1') && init?.method === 'PUT') return jsonResponse(200, { id: 'evt-1' });
+      if (url.includes('/events/s1t1aaaa') && init?.method === 'PUT') {
+        return jsonResponse(200, { id: 's1t1aaaa' });
+      }
       throw new Error(`unexpected ${url}`);
     };
     await upsertCalendarEvent('token', 'calendar-focus', draft, fetchImpl);

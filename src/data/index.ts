@@ -80,6 +80,7 @@ export {
   addSecondsToIso,
   calendarEventUid,
   formatInvestedDuration,
+  googleCalendarEventId,
   mapSessionToCalendarEvents,
 } from './calendar/mapSessionToCalendarEvents';
 export type {

@@ -125,8 +125,7 @@ function rememberError(message) {
 async function flushCalendarQueue() {
   const prefs = getCalendarPreferences();
   if (!prefs.connected || !prefs.enabled) return;
-  const queued = peekCalendarQueue();
-  if (queued.length === 0) return;
+  if (peekCalendarQueue().length === 0) return;
 
   const token = await getAccessToken({ interactive: false });
   const calendarId = await ensureFocusCalendar(token, prefs.calendarId);
@@ -134,22 +133,32 @@ async function flushCalendarQueue() {
     updateCalendarPreferences({ calendarId });
   }
 
-  const succeeded = [];
   let lastError = null;
-  for (const item of queued) {
-    try {
-      await upsertCalendarEvent(token, calendarId, item.draft);
-      succeeded.push(item.uid);
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      lastError = message;
-      recordCalendarQueueError(item.uid, message);
+  let anySuccess = false;
+  for (let round = 0; round < 20; round += 1) {
+    const queued = peekCalendarQueue();
+    if (queued.length === 0) break;
+    const snapshot = new Set(queued.map((item) => item.uid));
+    const succeeded = [];
+    for (const item of queued) {
+      try {
+        await upsertCalendarEvent(token, calendarId, item.draft);
+        succeeded.push(item.uid);
+        anySuccess = true;
+      } catch (cause) {
+        lastError = cause instanceof Error ? cause.message : String(cause);
+        recordCalendarQueueError(item.uid, lastError);
+      }
     }
+    if (succeeded.length > 0) removeCalendarQueueItems(succeeded);
+    const leftover = peekCalendarQueue();
+    const arrivedDuringFlush = leftover.some((item) => !snapshot.has(item.uid));
+    if (!arrivedDuringFlush) break;
   }
-  if (succeeded.length > 0) removeCalendarQueueItems(succeeded);
+
   updateCalendarPreferences({
-    lastSuccessAt: succeeded.length > 0 ? clockIso() : prefs.lastSuccessAt,
-    lastError,
+    lastSuccessAt: anySuccess ? clockIso() : prefs.lastSuccessAt,
+    lastError: peekCalendarQueue().length > 0 ? lastError : null,
   });
   notifyGoogleCalendarRuntime();
 }
