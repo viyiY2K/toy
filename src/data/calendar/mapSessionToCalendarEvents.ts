@@ -29,6 +29,16 @@ export interface CalendarEventTitleLookup {
   readonly [taskId: string]: string | undefined;
 }
 
+export interface CalendarInterruptCounts {
+  readonly internal: number;
+  readonly external: number;
+}
+
+export const ZERO_INTERRUPT_COUNTS: CalendarInterruptCounts = {
+  internal: 0,
+  external: 0,
+};
+
 function offsetMinutesFromIso(iso: string): number {
   if (iso.endsWith('Z')) return 0;
   const match = iso.match(/([+-])(\d{2}):(\d{2})$/);
@@ -74,9 +84,22 @@ export function formatInvestedDuration(seconds: number): string {
   return `${minutes} 分 ${rest} 秒`;
 }
 
-function descriptionFor(actualDuration: number, discarded: boolean): string {
-  const invested = `实际投入 ${formatInvestedDuration(actualDuration)}`;
-  return discarded ? `作废\n${invested}` : invested;
+function formatInterruptCount(kind: '内部打扰' | '外部打扰', count: number): string {
+  return `${kind} ${count} 次`;
+}
+
+function descriptionFor(
+  actualDuration: number,
+  discarded: boolean,
+  interrupts: CalendarInterruptCounts,
+): string {
+  const lines = [
+    ...(discarded ? ['作废'] : []),
+    `实际投入 ${formatInvestedDuration(actualDuration)}`,
+    formatInterruptCount('内部打扰', interrupts.internal),
+    formatInterruptCount('外部打扰', interrupts.external),
+  ];
+  return lines.join('\n');
 }
 
 function draftFromSlice(
@@ -85,6 +108,7 @@ function draftFromSlice(
   startedAt: string,
   actualDuration: number,
   titles: CalendarEventTitleLookup,
+  interrupts: CalendarInterruptCounts,
 ): CalendarEventDraft {
   const discarded = session.status === 'discarded';
   return {
@@ -93,7 +117,7 @@ function draftFromSlice(
     sessionId: session.id,
     taskId,
     title: titles[taskId]?.trim() || '未命名任务',
-    description: descriptionFor(actualDuration, discarded),
+    description: descriptionFor(actualDuration, discarded, interrupts),
     start: startedAt,
     end: addSecondsToIso(startedAt, actualDuration),
     timeZone: session.timezone,
@@ -113,6 +137,7 @@ function isFocusSession(session: Session): boolean {
 export function mapSessionToCalendarEvents(
   session: Session,
   titles: CalendarEventTitleLookup = {},
+  interrupts: CalendarInterruptCounts = ZERO_INTERRUPT_COUNTS,
 ): CalendarEventDraft[] {
   if (session.deletedAt != null) return [];
   if (!isFocusSession(session)) return [];
@@ -128,11 +153,12 @@ export function mapSessionToCalendarEvents(
         segment.startedAt,
         segment.actualDuration,
         titles,
+        interrupts,
       ));
   }
 
   if (session.taskIds.length !== 1) return [];
   const taskId = session.taskIds[0];
   if (taskId === undefined) return [];
-  return [draftFromSlice(session, taskId, session.startedAt, session.actualDuration, titles)];
+  return [draftFromSlice(session, taskId, session.startedAt, session.actualDuration, titles, interrupts)];
 }

@@ -1,5 +1,5 @@
 import { collectSessionsFromCommandResult } from './collectSessionsFromCommandResult';
-import { loadTaskTitles } from './loadTaskTitles';
+import { loadSessionInterruptCounts, loadTaskTitles } from './loadTaskTitles';
 import {
   mapSessionToCalendarEvents,
   type CalendarEventDraft,
@@ -14,8 +14,11 @@ export async function calendarDraftsFromCommandResult(
     const taskIds = session.taskSegments.length > 0
       ? session.taskSegments.map((segment) => segment.taskId)
       : session.taskIds;
-    const titles = await loadTaskTitles(taskIds);
-    drafts.push(...mapSessionToCalendarEvents(session, titles));
+    const [titles, interrupts] = await Promise.all([
+      loadTaskTitles(taskIds),
+      loadSessionInterruptCounts(session.id),
+    ]);
+    drafts.push(...mapSessionToCalendarEvents(session, titles, interrupts));
   }
   return drafts;
 }

@@ -86,7 +86,9 @@ export {
 export type {
   CalendarEventDraft,
   CalendarEventTitleLookup,
+  CalendarInterruptCounts,
 } from './calendar/mapSessionToCalendarEvents';
+export { loadSessionInterruptCounts } from './calendar/loadTaskTitles';
 export {
   DEFAULT_CALENDAR_PREFERENCES,
   getCalendarPreferences,

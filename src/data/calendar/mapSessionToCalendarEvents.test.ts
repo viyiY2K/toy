@@ -60,7 +60,7 @@ describe('mapSessionToCalendarEvents', () => {
         sessionId: 'session-independent',
         taskId: TASK_A,
         title: '写周报',
-        description: '实际投入 25 分钟',
+        description: '实际投入 25 分钟\n内部打扰 0 次\n外部打扰 0 次',
         start: STARTED,
         end: '2026-05-24T10:25:00+08:00',
         timeZone: TZ,
@@ -79,7 +79,7 @@ describe('mapSessionToCalendarEvents', () => {
     const [event] = mapSessionToCalendarEvents(session, { [TASK_A]: '写周报' });
     expect(event).toMatchObject({
       title: '写周报',
-      description: '作废\n实际投入 8 分钟',
+      description: '作废\n实际投入 8 分钟\n内部打扰 0 次\n外部打扰 0 次',
       start: STARTED,
       end: '2026-05-24T10:08:00+08:00',
       discarded: true,
@@ -176,6 +176,20 @@ describe('mapSessionToCalendarEvents', () => {
       mergeGroupId: 'merge-old',
       taskSegments: [],
     }))).toEqual([]);
+  });
+
+  it('puts interrupt counts into the calendar description', () => {
+    const session = focusSession({
+      id: 'session-interrupts',
+      status: 'discarded',
+      actualDuration: 143,
+    });
+    const [event] = mapSessionToCalendarEvents(
+      session,
+      { [TASK_A]: '写周报' },
+      { internal: 2, external: 1 },
+    );
+    expect(event?.description).toBe('作废\n实际投入 2 分 23 秒\n内部打扰 2 次\n外部打扰 1 次');
   });
 
   it('falls back to a placeholder title when the task is missing', () => {
