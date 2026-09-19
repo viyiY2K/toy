@@ -1,5 +1,6 @@
 import {
   getBackupPreferences,
+  getCalendarAccessToken,
   getCalendarPreferences,
   isGoogleCalendarConfigured,
   peekCalendarQueue,
@@ -435,13 +436,17 @@ function GoogleCalendarCard() {
   const configured = isGoogleCalendarConfigured();
   const [prefs, setPrefs] = React.useState(() => getCalendarPreferences());
   const [queueLength, setQueueLength] = React.useState(() => peekCalendarQueue().length);
+  const [authorized, setAuthorized] = React.useState(() => getCalendarAccessToken() != null);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState(null);
 
-  React.useEffect(() => subscribeGoogleCalendarRuntime((next) => {
-    setPrefs(next);
+  const refreshCalendarState = (nextPrefs = getCalendarPreferences()) => {
+    setPrefs(nextPrefs);
     setQueueLength(peekCalendarQueue().length);
-  }), []);
+    setAuthorized(getCalendarAccessToken() != null);
+  };
+
+  React.useEffect(() => subscribeGoogleCalendarRuntime(refreshCalendarState), []);
 
   const run = async (work) => {
     if (busy) return;
@@ -453,8 +458,7 @@ function GoogleCalendarCard() {
       setNotice(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
-      setPrefs(getCalendarPreferences());
-      setQueueLength(peekCalendarQueue().length);
+      refreshCalendarState();
     }
   };
 
@@ -468,7 +472,7 @@ function GoogleCalendarCard() {
       <div className="backup-actions">
         {prefs.connected ? (
           <>
-            {(prefs.lastError || queueLength > 0) && (
+            {(prefs.lastError || queueLength > 0 || !authorized) && (
               <button
                 type="button"
                 className="btn sm"
@@ -518,7 +522,7 @@ function GoogleCalendarCard() {
       )}
 
       <div className="sub" style={{ marginTop: 12 }}>
-        <div>{formatGoogleCalendarStatus(prefs, { configured })}</div>
+        <div>{formatGoogleCalendarStatus(prefs, { configured, authorized })}</div>
         {formatGoogleCalendarQueue(queueLength) && (
           <div style={{ marginTop: 6 }}>{formatGoogleCalendarQueue(queueLength)}</div>
         )}

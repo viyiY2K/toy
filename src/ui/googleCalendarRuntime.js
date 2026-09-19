@@ -86,7 +86,19 @@ function loadGis() {
   return gisPromise;
 }
 
-function requestAccessToken({ interactive }) {
+const REAUTH_MESSAGE = '授权已过期。打开设置，点「立即重试」即可，平时结束专注不会再弹 Google 窗口。';
+
+function isAuthFailure(message) {
+  return /401|invalid.?credentials|unauth|insufficient.?permissions|invalid_grant/i.test(message);
+}
+
+function tokenLifetimeMs(expiresInRaw) {
+  const expiresIn = Number(expiresInRaw);
+  const lifetimeSec = Number.isFinite(expiresIn) && expiresIn > 120 ? expiresIn : 3600;
+  return (lifetimeSec - 60) * 1000;
+}
+
+function requestAccessToken({ prompt }) {
   const clientId = getGoogleCalendarClientId();
   if (!clientId) throw new Error('还没有配置 Google 日历网页客户端');
   return new Promise((resolve, reject) => {
@@ -98,10 +110,9 @@ function requestAccessToken({ interactive }) {
           reject(new Error(response.error_description || response.error));
           return;
         }
-        const expiresIn = Number(response.expires_in ?? 3600);
         rememberToken(
           response.access_token,
-          Date.now() + Math.max(30, expiresIn - 60) * 1000,
+          Date.now() + tokenLifetimeMs(response.expires_in),
         );
         resolve(accessToken);
       },
@@ -109,14 +120,28 @@ function requestAccessToken({ interactive }) {
         reject(new Error(error?.message || 'Google 授权已取消'));
       },
     });
-    tokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+    tokenClient.requestAccessToken({ prompt });
   });
 }
 
-async function getAccessToken({ interactive = false } = {}) {
-  if (tokenValid()) return accessToken;
+function getStoredAccessToken() {
+  return tokenValid() ? accessToken : null;
+}
+
+async function requestGoogleAccessToken({ forceConsent = false } = {}) {
   await loadGis();
-  return requestAccessToken({ interactive });
+  if (forceConsent) return requestAccessToken({ prompt: 'consent' });
+  try {
+    return await requestAccessToken({ prompt: '' });
+  } catch {
+    return requestAccessToken({ prompt: 'consent' });
+  }
+}
+
+function clearStoredAccessToken() {
+  accessToken = null;
+  tokenExpiresAt = 0;
+  clearCalendarAccessToken();
 }
 
 function rememberError(message) {
@@ -129,7 +154,11 @@ async function flushCalendarQueue() {
   if (!prefs.connected || !prefs.enabled) return;
   if (peekCalendarQueue().length === 0) return;
 
-  const token = await getAccessToken({ interactive: false });
+  const token = getStoredAccessToken();
+  if (!token) {
+    rememberError(REAUTH_MESSAGE);
+    return;
+  }
   const calendarId = await ensureFocusCalendar(token, prefs.calendarId);
   if (calendarId !== prefs.calendarId) {
     updateCalendarPreferences({ calendarId });
@@ -153,6 +182,11 @@ async function flushCalendarQueue() {
       } catch (cause) {
         lastError = cause instanceof Error ? cause.message : String(cause);
         recordCalendarQueueError(item.uid, lastError);
+        if (isAuthFailure(lastError)) {
+          clearStoredAccessToken();
+          lastError = REAUTH_MESSAGE;
+          break;
+        }
       }
     }
     if (succeeded.length > 0) removeCalendarQueueItems(succeeded);
@@ -180,6 +214,7 @@ function enqueueFlush() {
       if (
         pending.length > 0
         && pending.every((item) => item.attempts === 0)
+        && getStoredAccessToken()
         && getCalendarPreferences().connected
         && getCalendarPreferences().enabled
       ) {
@@ -193,7 +228,9 @@ export async function connectGoogleCalendar() {
   if (!isGoogleCalendarConfigured()) {
     throw new Error('还没有配置 Google 日历网页客户端');
   }
-  const token = await getAccessToken({ interactive: true });
+  await requestGoogleAccessToken({ forceConsent: false });
+  const token = getStoredAccessToken();
+  if (!token) throw new Error('没有拿到 Google 授权');
   const calendarId = await ensureFocusCalendar(token, getCalendarPreferences().calendarId);
   updateCalendarPreferences({
     connected: true,
@@ -209,9 +246,7 @@ export async function disconnectGoogleCalendar() {
   if (accessToken && window.google?.accounts?.oauth2?.revoke) {
     window.google.accounts.oauth2.revoke(accessToken, () => {});
   }
-  accessToken = null;
-  tokenExpiresAt = 0;
-  clearCalendarAccessToken();
+  clearStoredAccessToken();
   updateCalendarPreferences({
     connected: false,
     enabled: false,
@@ -251,7 +286,9 @@ export async function retryGoogleCalendarWrites() {
   }
   const prefs = getCalendarPreferences();
   if (!prefs.connected) throw new Error('还没连接 Google 日历');
-  await getAccessToken({ interactive: true });
+  if (!getStoredAccessToken()) {
+    await requestGoogleAccessToken({ forceConsent: false });
+  }
   await enqueueFlush();
   const leftover = peekCalendarQueue().length;
   const error = getCalendarPreferences().lastError;

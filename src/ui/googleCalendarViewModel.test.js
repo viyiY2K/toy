@@ -17,6 +17,10 @@ describe('formatGoogleCalendarStatus', () => {
   it('distinguishes connected, paused, and last write', () => {
     expect(formatGoogleCalendarStatus(prefs)).toBe('还没连接 Google 日历');
     expect(formatGoogleCalendarStatus({ ...prefs, connected: true, enabled: false })).toContain('已暂停');
+    expect(formatGoogleCalendarStatus(
+      { ...prefs, connected: true, enabled: true },
+      { configured: true, authorized: false },
+    )).toContain('授权过期');
     expect(formatGoogleCalendarStatus({
       ...prefs,
       connected: true,
