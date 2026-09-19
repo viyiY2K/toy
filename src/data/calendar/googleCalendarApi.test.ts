@@ -47,25 +47,27 @@ describe('ensureFocusCalendar', () => {
 });
 
 describe('upsertCalendarEvent', () => {
-  it('inserts a new event and updates the same event id on conflict', async () => {
-    let inserted = 0;
+  it('lets Google assign event ids and updates with the remembered id', async () => {
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = String(input);
       if (url.includes('/events?sendUpdates=none') && init?.method === 'POST') {
-        inserted += 1;
-        if (inserted === 1) {
-          expect(JSON.parse(String(init.body)).id).toBe('s1t1aaaa');
-          expect(JSON.parse(String(init.body)).iCalUID).toBeUndefined();
-          return jsonResponse(200, { id: 's1t1aaaa' });
-        }
-        return jsonResponse(409, { error: { message: 'The requested identifier already exists.' } });
+        const payload = JSON.parse(String(init.body));
+        expect(payload.id).toBeUndefined();
+        expect(payload.iCalUID).toBeUndefined();
+        return jsonResponse(200, { id: 'google-evt-1' });
       }
-      if (url.includes('/events/s1t1aaaa') && init?.method === 'PUT') {
-        return jsonResponse(200, { id: 's1t1aaaa' });
+      if (url.includes('/events/google-evt-1') && init?.method === 'PUT') {
+        const payload = JSON.parse(String(init.body));
+        expect(payload.id).toBeUndefined();
+        return jsonResponse(200, { id: 'google-evt-1' });
       }
       throw new Error(`unexpected ${url}`);
     };
-    await upsertCalendarEvent('token', 'calendar-focus', draft, fetchImpl);
-    await upsertCalendarEvent('token', 'calendar-focus', draft, fetchImpl);
+    await expect(upsertCalendarEvent('token', 'calendar-focus', draft, { fetchImpl }))
+      .resolves.toBe('google-evt-1');
+    await expect(upsertCalendarEvent('token', 'calendar-focus', draft, {
+      knownGoogleEventId: 'google-evt-1',
+      fetchImpl,
+    })).resolves.toBe('google-evt-1');
   });
 });

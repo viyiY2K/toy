@@ -6,9 +6,11 @@ import {
   getCalendarAccessToken,
   getCalendarPreferences,
   getGoogleCalendarClientId,
+  getGoogleEventIdForUid,
   GOOGLE_CALENDAR_SCOPE,
   isGoogleCalendarConfigured,
   peekCalendarQueue,
+  rememberGoogleEventId,
   recordCalendarQueueError,
   removeCalendarQueueItems,
   saveCalendarAccessToken,
@@ -142,7 +144,10 @@ async function flushCalendarQueue() {
     const succeeded = [];
     for (const item of queued) {
       try {
-        await upsertCalendarEvent(token, calendarId, item.draft);
+        const googleEventId = await upsertCalendarEvent(token, calendarId, item.draft, {
+          knownGoogleEventId: getGoogleEventIdForUid(item.uid),
+        });
+        rememberGoogleEventId(item.uid, googleEventId);
         succeeded.push(item.uid);
         anySuccess = true;
       } catch (cause) {
@@ -171,6 +176,15 @@ function enqueueFlush() {
     })
     .finally(() => {
       flushPromise = null;
+      const pending = peekCalendarQueue();
+      if (
+        pending.length > 0
+        && pending.every((item) => item.attempts === 0)
+        && getCalendarPreferences().connected
+        && getCalendarPreferences().enabled
+      ) {
+        enqueueFlush();
+      }
     });
   return flushPromise;
 }

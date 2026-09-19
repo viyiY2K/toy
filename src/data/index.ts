@@ -105,6 +105,10 @@ export {
   recordCalendarQueueError,
   removeCalendarQueueItems,
 } from './calendar/calendarQueue';
+export {
+  getGoogleEventIdForUid,
+  rememberGoogleEventId,
+} from './calendar/calendarEventIndex';
 export type { CalendarQueueItem } from './calendar/calendarQueue';
 export { collectSessionsFromCommandResult } from './calendar/collectSessionsFromCommandResult';
 export { calendarDraftsFromCommandResult } from './calendar/draftsForCommandResult';

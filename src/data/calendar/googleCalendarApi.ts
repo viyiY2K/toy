@@ -23,7 +23,7 @@ async function readGoogleError(response: Response): Promise<string> {
   } catch {
     // Fall through to status text.
   }
-  return response.statusText || `Google 日历请求失败（${response.status}）`;
+  return `Google 日历 ${response.status}：${response.statusText || '请求失败'}`;
 }
 
 async function googleJson<T>(
@@ -40,7 +40,12 @@ async function googleJson<T>(
     },
   });
   if (!response.ok) {
-    return { ok: false, status: response.status, message: await readGoogleError(response) };
+    const detail = await readGoogleError(response);
+    return {
+      ok: false,
+      status: response.status,
+      message: detail.startsWith('Google 日历 ') ? detail : `Google 日历 ${response.status}：${detail}`,
+    };
   }
   if (response.status === 204) return { ok: true, status: 204, body: undefined as T };
   return { ok: true, status: response.status, body: await response.json() as T };
@@ -57,7 +62,6 @@ interface CalendarListResponse {
 
 function eventBody(draft: CalendarEventDraft) {
   return {
-    id: draft.eventId,
     summary: draft.title,
     description: draft.description,
     start: { dateTime: draft.start, timeZone: draft.timeZone },
@@ -111,24 +115,32 @@ export async function upsertCalendarEvent(
   accessToken: string,
   calendarId: string,
   draft: CalendarEventDraft,
-  fetchImpl: FetchLike = fetch,
-): Promise<void> {
+  options: { knownGoogleEventId?: string | null; fetchImpl?: FetchLike } = {},
+): Promise<string> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const knownGoogleEventId = options.knownGoogleEventId ?? null;
   const encodedCalendarId = encodeURIComponent(calendarId);
-  const encodedEventId = encodeURIComponent(draft.eventId);
-  const inserted = await googleJson<unknown>(
+  const body = JSON.stringify(eventBody(draft));
+
+  if (knownGoogleEventId) {
+    const updated = await googleJson<{ id?: string }>(
+      fetchImpl,
+      accessToken,
+      `/calendars/${encodedCalendarId}/events/${encodeURIComponent(knownGoogleEventId)}?sendUpdates=none`,
+      { method: 'PUT', body },
+    );
+    if (updated.ok) return updated.body.id ?? knownGoogleEventId;
+    if (updated.status !== 404) throw new Error(updated.message);
+  }
+
+  const inserted = await googleJson<{ id?: string }>(
     fetchImpl,
     accessToken,
     `/calendars/${encodedCalendarId}/events?sendUpdates=none`,
-    { method: 'POST', body: JSON.stringify(eventBody(draft)) },
+    { method: 'POST', body },
   );
-  if (inserted.ok) return;
-  if (inserted.status !== 409) throw new Error(inserted.message);
-
-  const updated = await googleJson<unknown>(
-    fetchImpl,
-    accessToken,
-    `/calendars/${encodedCalendarId}/events/${encodedEventId}?sendUpdates=none`,
-    { method: 'PUT', body: JSON.stringify(eventBody(draft)) },
-  );
-  if (!updated.ok) throw new Error(updated.message);
+  if (!inserted.ok || typeof inserted.body.id !== 'string') {
+    throw new Error(inserted.ok ? 'Google 没有返回日程编号' : inserted.message);
+  }
+  return inserted.body.id;
 }
