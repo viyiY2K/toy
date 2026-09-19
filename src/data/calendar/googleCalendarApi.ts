@@ -87,6 +87,8 @@ export async function ensureFocusCalendar(
       `/calendars/${encodeURIComponent(existingId)}`,
     );
     if (existing.ok && typeof existing.body.id === 'string') return existing.body.id;
+    if (!existing.ok && existing.status !== 404) throw new Error(existing.message);
+    if (existing.ok) throw new Error('Google 没有返回日历编号');
   }
 
   const list = await googleJson<CalendarListResponse>(
@@ -97,7 +99,10 @@ export async function ensureFocusCalendar(
   if (list.ok) {
     const found = (list.body.items ?? []).find((item) => item.summary === GOOGLE_FOCUS_CALENDAR_SUMMARY);
     if (typeof found?.id === 'string') return found.id;
+  } else if (list.status !== 403 || !/insufficient.*(?:scope|permission)/i.test(list.message)) {
+    throw new Error(list.message);
   }
+  // calendar.app.created 不包含 calendarList.list 权限；仅此权限不足可回退到创建。
 
   const created = await googleJson<CalendarResource>(
     fetchImpl,
@@ -111,6 +116,42 @@ export async function ensureFocusCalendar(
   return created.body.id;
 }
 
+interface EventResource {
+  id?: string;
+  status?: string;
+  extendedProperties?: { private?: { sessionId?: string; taskId?: string } };
+}
+
+async function findCalendarEvent(
+  fetchImpl: FetchLike,
+  accessToken: string,
+  calendarId: string,
+  draft: CalendarEventDraft,
+): Promise<string | null> {
+  let pageToken: string | undefined;
+  do {
+    const query = new URLSearchParams({
+      privateExtendedProperty: `sessionId=${draft.sessionId}`,
+      showDeleted: 'false',
+    });
+    if (pageToken) query.set('pageToken', pageToken);
+    const result = await googleJson<{ items?: EventResource[]; nextPageToken?: string }>(
+      fetchImpl, accessToken, `/calendars/${calendarId}/events?${query}`,
+    );
+    // 查询失败不等于不存在；保留队列，避免在结果未知时盲目新增。
+    if (!result.ok) throw new Error(result.message);
+    const found = (result.body.items ?? []).find((event) => (
+      typeof event.id === 'string'
+      && event.status !== 'cancelled'
+      && event.extendedProperties?.private?.sessionId === draft.sessionId
+      && event.extendedProperties.private.taskId === draft.taskId
+    ));
+    if (found?.id) return found.id;
+    pageToken = result.body.nextPageToken;
+  } while (pageToken);
+  return null;
+}
+
 export async function upsertCalendarEvent(
   accessToken: string,
   calendarId: string,
@@ -122,15 +163,28 @@ export async function upsertCalendarEvent(
   const encodedCalendarId = encodeURIComponent(calendarId);
   const body = JSON.stringify(eventBody(draft));
 
-  if (knownGoogleEventId) {
+  async function updateEvent(eventId: string): Promise<string | null> {
     const updated = await googleJson<{ id?: string }>(
       fetchImpl,
       accessToken,
-      `/calendars/${encodedCalendarId}/events/${encodeURIComponent(knownGoogleEventId)}?sendUpdates=none`,
+      `/calendars/${encodedCalendarId}/events/${encodeURIComponent(eventId)}?sendUpdates=none`,
       { method: 'PUT', body },
     );
-    if (updated.ok) return updated.body.id ?? knownGoogleEventId;
+    if (updated.ok) return updated.body.id ?? eventId;
     if (updated.status !== 404) throw new Error(updated.message);
+    return null;
+  }
+
+  if (knownGoogleEventId) {
+    const updatedId = await updateEvent(knownGoogleEventId);
+    if (updatedId) return updatedId;
+  }
+
+  // POST 已成功但响应丢失时，本机尚未记住 Google id。用原有事实标识找回日程。
+  const recoveredId = await findCalendarEvent(fetchImpl, accessToken, encodedCalendarId, draft);
+  if (recoveredId) {
+    const updatedId = await updateEvent(recoveredId);
+    if (updatedId) return updatedId;
   }
 
   const inserted = await googleJson<{ id?: string }>(

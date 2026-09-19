@@ -302,3 +302,14 @@ read as, a reconstruction of the lost atomic S0–S5 commit history.
 - Review: Implementer 自审 `PASS`。第三轮唯一 bug 已关闭。
 - Findings and resolution: `splitTask` 可在 Session 仍 active 时把当前执行对象或合并成员归档。已拒绝 `mergeGroupId != null`，并对独立专注加锁定。
 - Residual risk or user decision: UI 仍未按新语义重接。`markMergeGroupLimitReached` 软删 Session 计数口径仍未统一。未跟踪的 `docs/ui-handoff-empty-states-and-beyond.md` 仍不纳入。
+
+### Google 日历写入异常恢复（2026-09-19，Phase 1 后独立修复）
+
+- Status: `PASS`（Implementer 自审，范围内两条已复现问题关闭；类型检查与真实账号验收限制见下）。
+- Scope: 用户明确授权修复 `feat/google-calendar-sync` 基线 `e1c023f` 的授权失败连续重试、POST 已成功但响应丢失导致重复日程。属于既有日历功能的独立修复单元，不映射历史 Phase 1 S 步，也不重开已封板阶段。仅修改 Google API、日历 runtime 与对应测试；保留原有未跟踪文档。
+- Commit: 本原子提交（subject：`fix(calendar): 停止失败连重试并找回响应丢失的日程`）。
+- Specification / acceptance: v4.3 §3.3、§3.4、§8.1 和 checklist D/H 作为不变约束：不改 Session/Event、actualDuration、统计或实体写入路径；不新增字段、事件、依赖、权限或 UI 布局。Google 日历只是已有事实的外部投影。本次直接验收连续三次专注、授权拒绝后停止请求、手动续授权补写、定时重试、断网恢复、响应丢失后刷新页面再补写、分页查重及查重失败保留队列。
+- Findings and resolution: （1）日历读取失败原先继续尝试创建日历，随后 runtime 的 finally 因队列 attempts 仍为 0 而立即再跑。现读取日历仅 404 可继续寻找/创建；全局授权失败清除 token，任何未完成的 flush 不再触发立即重跑。保留 app-created scope 无 calendarList.list 权限时的首次创建回退。（2）本机未保存 Google id 时，新增前按已存在的 private sessionId 查询并分页，以 sessionId + taskId 精确匹配且忽略取消日程；匹配后更新并记住 Google id，查询失败直接留队列。继续让 Google 生成 id/iCalUID，不恢复此前有问题的自带编号写法。
+- Verification: 使用 bundled Node 直接执行项目脚本对应入口：日历专项 10 files / 47 tests passed；全量 Vitest 80 files / 610 tests passed；进一步补强刷新恢复和定时重试断言后 runtime 7 tests passed；Vite build 162 modules passed（既存单包 >500 kB 提示）；`git diff --check` passed。`tsc --noEmit` 已尝试但长时间无输出后终止；`@types/node/index.d.ts`、`typescript/lib/lib.es2022.d.ts` 等依赖为 iCloud `dataless` 占位文件，类型检查未取得结果，不能记通过。仓库没有 lint 脚本。
+- Review: Implementer 自审未发现新的范围内 Blocking/Major。无真实 Google 账号写入；测试使用真实 API/队列/本地存储/runtime 与模拟 Google 响应。查后写不提供多个浏览器并发新增的原子保证，也未自动清理此前已有的重复日程。建议合并前在真实账号完成连续专注与续授权补写验收，并在依赖齐备的环境补跑 typecheck。
+- API references: [Events.list](https://developers.google.com/workspace/calendar/api/v3/reference/events/list)、[Extended properties](https://developers.google.com/workspace/calendar/api/guides/extended-properties)、[CalendarList.list scopes](https://developers.google.com/workspace/calendar/api/v3/reference/calendarList/list)。查询只传单一 sessionId 约束，再本地核对 taskId，避免依赖重复 privateExtendedProperty 参数的组合语义。

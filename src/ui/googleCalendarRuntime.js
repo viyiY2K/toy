@@ -89,7 +89,7 @@ function loadGis() {
 const REAUTH_MESSAGE = '授权已过期。打开设置，点「立即重试」即可，平时结束专注不会再弹 Google 窗口。';
 
 function isAuthFailure(message) {
-  return /401|invalid.?credentials|unauth|insufficient.?permissions|invalid_grant/i.test(message);
+  return /401|invalid.?credentials|unauth|insufficient.*(?:permissions|scopes)|invalid_grant/i.test(message);
 }
 
 function tokenLifetimeMs(expiresInRaw) {
@@ -204,15 +204,26 @@ async function flushCalendarQueue() {
 
 function enqueueFlush() {
   if (flushPromise) return flushPromise;
+  let completed = false;
   flushPromise = flushCalendarQueue()
+    .then(() => {
+      completed = true;
+    })
     .catch((cause) => {
-      rememberError(cause instanceof Error ? cause.message : String(cause));
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (isAuthFailure(message)) {
+        clearStoredAccessToken();
+        rememberError(REAUTH_MESSAGE);
+      } else {
+        rememberError(message);
+      }
     })
     .finally(() => {
       flushPromise = null;
       const pending = peekCalendarQueue();
       if (
-        pending.length > 0
+        completed
+        && pending.length > 0
         && pending.every((item) => item.attempts === 0)
         && getStoredAccessToken()
         && getCalendarPreferences().connected
