@@ -5,8 +5,9 @@
  * 快照包含软删 tombstone，恢复后历史删除事实仍在。
  */
 
-import { dataStore, EVENT_STORE, STORE, STORE_NAMES, type StoreName } from '../dataStore';
+import { internalDataStore, STORE, STORE_NAMES, type StoreName } from '../dataStore';
 import { CURRENT_SCHEMA_VERSION } from '../schemaVersion';
+import { ValidationCollector, validateIsoDateTime } from '../validation/primitives';
 
 export const LOCAL_BACKUP_KIND = 'toy.localBackup';
 export const LOCAL_BACKUP_FORMAT = 'json';
@@ -31,16 +32,7 @@ export function countBackupRecords(records: LocalBackupRecords): number {
 }
 
 export async function createLocalBackupSnapshot(exportedAt: string): Promise<LocalBackupFile> {
-  const records = {
-    [STORE.tasks]: await dataStore.getAllIncludingDeleted(STORE.tasks),
-    [STORE.dayPlans]: await dataStore.getAllIncludingDeleted(STORE.dayPlans),
-    [STORE.sessions]: await dataStore.getAllIncludingDeleted(STORE.sessions),
-    [STORE.energyRecords]: await dataStore.getAllIncludingDeleted(STORE.energyRecords),
-    [STORE.unresolvedIntervals]: await dataStore.getAllIncludingDeleted(STORE.unresolvedIntervals),
-    [STORE.settings]: await dataStore.getAllIncludingDeleted(STORE.settings),
-    [STORE.mergeGroups]: await dataStore.getAllIncludingDeleted(STORE.mergeGroups),
-    [EVENT_STORE]: await dataStore.getAll(EVENT_STORE),
-  } as LocalBackupRecords;
+  const records = await internalDataStore.readAllForBackup();
   const totalRecords = countBackupRecords(records);
   return {
     kind: LOCAL_BACKUP_KIND,
@@ -66,24 +58,32 @@ export function parseLocalBackup(jsonText: string): LocalBackupFile {
   if (!isRecord(parsed)) throw new Error('备份文件格式不正确');
   if (parsed.kind !== LOCAL_BACKUP_KIND) throw new Error('这不是本应用的备份文件');
   if (parsed.format !== LOCAL_BACKUP_FORMAT) throw new Error('目前只支持 JSON 备份');
-  if (parsed.schemaVersion !== String(CURRENT_SCHEMA_VERSION)) {
+  if (!['1', '2', String(CURRENT_SCHEMA_VERSION)].includes(String(parsed.schemaVersion))
+    || typeof parsed.schemaVersion !== 'string') {
     throw new Error(
       `这份备份的数据版本是 ${String(parsed.schemaVersion)}，当前应用是 ${CURRENT_SCHEMA_VERSION}，还不能自动升级后导入`,
     );
   }
-  if (typeof parsed.exportedAt !== 'string' || parsed.exportedAt.length === 0) {
-    throw new Error('备份文件缺少导出时间');
+  const timeIssues = new ValidationCollector();
+  if (typeof parsed.exportedAt !== 'string'
+    || !validateIsoDateTime(parsed.exportedAt, 'exportedAt', timeIssues)) {
+    throw new Error('备份文件缺少有效的导出时间');
   }
   if (!isRecord(parsed.records)) throw new Error('备份文件缺少 records');
 
   const records = {} as Record<StoreName, unknown[]>;
   for (const store of STORE_NAMES) {
-    const values = parsed.records[store];
+    // v1 尚未引入 MergeGroup；其余表始终必须存在。
+    const values = parsed.records[store]
+      ?? (parsed.schemaVersion === '1' && store === STORE.mergeGroups ? [] : undefined);
     if (!Array.isArray(values)) throw new Error(`备份文件缺少 ${store} 记录`);
+    const ids = new Set<string>();
     for (const value of values) {
       if (!isRecord(value) || typeof value.id !== 'string' || value.id.length === 0) {
         throw new Error(`备份文件中 ${store} 有记录缺少 id`);
       }
+      if (ids.has(value.id)) throw new Error(`备份文件中 ${store} 有重复 id`);
+      ids.add(value.id);
     }
     records[store] = values;
   }

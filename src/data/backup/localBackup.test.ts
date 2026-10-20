@@ -35,12 +35,24 @@ describe('local backup file format', () => {
     expect(parseLocalBackup(serializeLocalBackup(backup))).toEqual(backup);
   });
 
-  it('rejects random JSON, the wrong kind, and a mismatched schema version', () => {
+  it('rejects random JSON, the wrong kind, and an unknown schema version', () => {
     expect(() => parseLocalBackup('not-json')).toThrow(/不是有效的 JSON/);
     expect(() => parseLocalBackup(JSON.stringify({ kind: 'other' }))).toThrow(/不是本应用的备份文件/);
-    expect(() => parseLocalBackup(serializeLocalBackup(validBackup({ schemaVersion: '1' })))).toThrow(
-      /数据版本是 1/,
+    expect(() => parseLocalBackup(serializeLocalBackup(validBackup({ schemaVersion: '99' })))).toThrow(
+      /数据版本是 99/,
     );
+  });
+
+  it('rejects duplicate ids and an invalid export date', () => {
+    const backup = validBackup();
+    expect(() => parseLocalBackup(serializeLocalBackup({
+      ...backup,
+      records: { ...backup.records, settings: [...backup.records.settings, ...backup.records.settings] },
+      totalRecords: 2,
+    }))).toThrow(/重复 id/);
+    expect(() => parseLocalBackup(serializeLocalBackup({
+      ...backup, exportedAt: '2026-02-30T12:00:00Z',
+    }))).toThrow(/导出时间/);
   });
 
   it('rejects a missing store, a record without id, and a lying totalRecords', () => {

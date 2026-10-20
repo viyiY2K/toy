@@ -9,6 +9,7 @@
     "build": "vite build",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:e2e:backup": "node scripts/backup-e2e.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -6,7 +6,7 @@ import {
   peekCalendarQueue,
   MAX_BACKUP_INTERVAL_MINUTES,
   MIN_BACKUP_INTERVAL_MINUTES,
-  parseLocalBackup,
+  prepareLocalBackup,
   requestMagicLink,
   runSync,
   updateLifetimePomodoroBaseline,
@@ -249,9 +249,9 @@ function BackupCard({ busy, runCommand }) {
 
   return (
     <div className="card" style={{ marginTop: 16 }}>
-      <div className="card-title"><span>本地备份</span></div>
+      <div className="card-title"><span>数据导入与导出</span></div>
       <div className="sub" style={{ marginBottom: 12 }}>
-        数据只存在当前这个浏览器。导出一份文件后，换浏览器、换电脑或清理站点数据时可以再导回来。
+        导出当前浏览器中的全部任务、计时记录和设置为 JSON 备份。导入备份会覆盖当前本地数据。
       </div>
 
       <div className="backup-actions">
@@ -272,10 +272,11 @@ function BackupCard({ busy, runCommand }) {
             setConfirmingImport(false);
             fileInputRef.current?.click();
           }}
-        >从备份恢复</button>
+        >导入数据</button>
         <input
           ref={fileInputRef}
           type="file"
+          aria-label="选择数据备份文件"
           accept="application/json,.json"
           hidden
           onChange={(event) => {
@@ -284,8 +285,11 @@ function BackupCard({ busy, runCommand }) {
             if (!file) return;
             runBackup(async () => {
               const jsonText = await file.text();
-              parseLocalBackup(jsonText);
-              setConfirmingImport({ jsonText, name: file.name });
+              const backup = await prepareLocalBackup(jsonText);
+              setConfirmingImport({
+                jsonText, name: file.name,
+                totalRecords: backup.totalRecords, exportedAt: backup.exportedAt,
+              });
             });
           }}
         />
@@ -293,6 +297,7 @@ function BackupCard({ busy, runCommand }) {
 
       {confirmingImport && (
         <div className="backup-confirm" role="alert">
+          <div>备份时间：{new Date(confirmingImport.exportedAt).toLocaleString()} · 共 {confirmingImport.totalRecords} 条记录</div>
           <div>恢复「{confirmingImport.name}」会覆盖当前浏览器里的全部数据，而且不能撤销。</div>
           <div className="backup-actions" style={{ marginTop: 10 }}>
             <button
@@ -300,7 +305,11 @@ function BackupCard({ busy, runCommand }) {
               className="btn sm danger"
               disabled={locked}
               onClick={() => runBackup(async () => {
-                const result = await runCommand(() => restoreBackupFromText(confirmingImport.jsonText));
+                const result = await runCommand(
+                  () => restoreBackupFromText(confirmingImport.jsonText),
+                  null,
+                  { detectSource: 'appReopened', resetRuntimeSessions: true },
+                );
                 if (!result) return;
                 setConfirmingImport(false);
                 setNotice('已从备份恢复');
@@ -427,7 +436,7 @@ function BackupCard({ busy, runCommand }) {
           </div>
         )}
       </div>
-      {notice && <div className="sub" style={{ marginTop: 8 }}>{notice}</div>}
+      {notice && <div className="sub" role="status" style={{ marginTop: 8 }}>{notice}</div>}
     </div>
   );
 }

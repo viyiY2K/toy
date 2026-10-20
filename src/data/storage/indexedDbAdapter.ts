@@ -1,6 +1,6 @@
 import { migrateRecords } from './migrations';
 import type { AtomicStorageTransaction, StorageAdapter } from './storageAdapter';
-import { DB_NAME, DB_VERSION, EVENT_STORE, PRIMARY_KEY, STORE_NAMES } from './stores';
+import { DB_NAME, DB_VERSION, PRIMARY_KEY, STORE, STORE_NAMES, type StoreName } from './stores';
 
 /**
  * 打开（必要时升级）IndexedDB 数据库，按 stores.ts 建齐 8 个 objectStore。
@@ -188,6 +188,22 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
   }
 
   /**
+   * 全量备份的所有表必须共享同一读取事务，不能把实体与 Event 读成不同时间点。
+   * 保留原始记录（含 tombstone），只供备份使用。
+   */
+  async readAllForBackup(): Promise<Record<StoreName, unknown[]>> {
+    const db = await this.db();
+    const transaction = db.transaction([...STORE_NAMES], 'readonly');
+    const completion = transactionCompletion(transaction);
+    const reads = STORE_NAMES.map(async (name) => [
+      name,
+      await requestResult(transaction.objectStore(name).getAll()),
+    ] as const);
+    const [entries] = await Promise.all([Promise.all(reads), completion]);
+    return Object.fromEntries(entries) as Record<StoreName, unknown[]>;
+  }
+
+  /**
    * 仅供 §7.14 本地备份恢复：在一个事务里清空全部 objectStore 再写入快照。
    * 不是通用删除 API，不得从业务 command / UI 直接调用。
    */
@@ -195,14 +211,30 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
     const db = await this.db();
     const transaction = db.transaction([...STORE_NAMES], 'readwrite');
     const completion = transactionCompletion(transaction);
-    for (const name of STORE_NAMES) {
-      const objectStore = transaction.objectStore(name);
-      objectStore.clear();
-      const values = records[name] ?? [];
-      for (const value of values) {
-        if (name === EVENT_STORE) objectStore.add(value);
-        else objectStore.put(value);
+    void completion.catch(() => undefined);
+    try {
+      // 与覆盖同事务检查，避免另一标签页在预检查之后启动计时却被覆盖掉。
+      const sessions = await requestResult(transaction.objectStore(STORE.sessions).getAll());
+      if (sessions.some((session) => session.deletedAt === null && session.status === 'active')) {
+        throw new Error('请先结束当前计时，再恢复备份');
       }
+      for (const name of STORE_NAMES) {
+        const objectStore = transaction.objectStore(name);
+        objectStore.clear();
+        for (const value of records[name] ?? []) {
+          // 全库恢复也不能用 put 静默吞掉重复 ID。
+          objectStore.add(value);
+        }
+      }
+    } catch (error) {
+      // DataError / DataCloneError 可能同步抛出，必须回滚已排队的 clear/add。
+      try {
+        transaction.abort();
+      } catch {
+        // 请求失败可能已触发 abort，保留最初的错误。
+      }
+      await completion.catch(() => undefined);
+      throw error;
     }
     await completion;
   }

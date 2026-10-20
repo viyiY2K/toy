@@ -1,21 +1,22 @@
 import {
   createLocalBackupSnapshot,
-  parseLocalBackup,
   type LocalBackupFile,
 } from '../backup/localBackup';
-import { EVENT_STORE, STORE, STORE_NAMES, dataStore, internalDataStore } from '../dataStore';
+import { prepareLocalBackup } from '../backup/prepareLocalBackup';
+import { EVENT_STORE, STORE_NAMES, internalDataStore } from '../dataStore';
 import { newId } from '../id';
 import {
   ensureCurrentAppDateInitialized,
   type InitializationClock,
 } from '../initialization/currentAppDate';
-import { makeEvent, type Event, type Session } from '../schema';
+import { makeEvent, type Event } from '../schema';
 import { CURRENT_SCHEMA_VERSION } from '../schemaVersion';
 import { validateEvent } from '../validation';
 import { executeAtomicWrite } from '../writes/executeAtomicWrite';
 import type { TaskCommandResult } from './taskCommands';
 
 export { createLocalBackupSnapshot, parseLocalBackup, serializeLocalBackup } from '../backup/localBackup';
+export { prepareLocalBackup } from '../backup/prepareLocalBackup';
 export type { LocalBackupFile } from '../backup/localBackup';
 
 export async function exportLocalBackup(input: InitializationClock): Promise<LocalBackupFile> {
@@ -58,13 +59,7 @@ export async function recordLocalBackupExported(
 export async function importLocalBackup(
   input: InitializationClock & { jsonText: string },
 ): Promise<TaskCommandResult<{ totalRecords: number }>> {
-  const backup = parseLocalBackup(input.jsonText);
-  const activeSession = (await dataStore.getAll<Session>(STORE.sessions)).find(
-    (session) => session.status === 'active',
-  );
-  if (activeSession) {
-    throw new Error('请先结束当前计时，再恢复备份');
-  }
+  const backup = await prepareLocalBackup(input.jsonText);
 
   const correlationId = newId();
   const importedEvent = makeEvent({
@@ -85,6 +80,21 @@ export async function importLocalBackup(
     records[store] = [...backup.records[store]];
   }
   records[EVENT_STORE] = [...records[EVENT_STORE], importedEvent];
+  if (Number(backup.schemaVersion) < CURRENT_SCHEMA_VERSION) {
+    const migrationEvent = makeEvent({
+      now: input.now,
+      timezone: input.timezone,
+      type: 'data.migrationCompleted',
+      correlationId,
+      payload: {
+        fromSchemaVersion: backup.schemaVersion,
+        toSchemaVersion: String(CURRENT_SCHEMA_VERSION),
+        durationMs: null,
+      },
+    });
+    await validateEvent(migrationEvent);
+    records[EVENT_STORE].push(migrationEvent);
+  }
 
   await internalDataStore.replaceAllForImport(records);
   return { value: { totalRecords: backup.totalRecords }, correlationId };

@@ -109,6 +109,55 @@ describe('local backup export / import', () => {
       }),
     ).rejects.toThrow(/先结束当前计时/);
 
+    await internalDataStore.put(STORE.sessions, {
+      id: '01900000-0000-7000-8000-00000000ace1',
+      status: 'discarded',
+      deletedAt: null,
+    });
     await internalDataStore.replaceAllForImport(snapshot.records);
+  });
+
+  it('rejects damaged records before replacing any local data or events', async () => {
+    const snapshot = await exportLocalBackup({ now: at(10), timezone: TIMEZONE });
+    const before = JSON.stringify(snapshot.records);
+    const broken = {
+      ...snapshot,
+      records: {
+        ...snapshot.records,
+        settings: [{ id: (snapshot.records.settings[0] as { id: string }).id }],
+      },
+    };
+    await expect(importLocalBackup({
+      now: at(11), timezone: TIMEZONE, jsonText: JSON.stringify(broken),
+    })).rejects.toThrow(/备份文件/);
+    const { internalDataStore } = await import('../dataStore');
+    expect(JSON.stringify(await internalDataStore.readAllForBackup())).toBe(before);
+  });
+
+  it('imports an older file with atomic import and migration audit events', async () => {
+    const snapshot = await exportLocalBackup({ now: at(12), timezone: TIMEZONE });
+    const old = JSON.parse(JSON.stringify(snapshot));
+    old.schemaVersion = '2';
+    for (const [store, records] of Object.entries(old.records)) {
+      for (const value of records as Record<string, unknown>[]) {
+        value.schemaVersion = 2;
+        if (store === STORE.sessions) delete value.taskSegments;
+      }
+    }
+    const result = await importLocalBackup({
+      now: at(13), timezone: TIMEZONE, jsonText: JSON.stringify(old),
+    });
+    const events = (await dataStore.getAll<Event>(EVENT_STORE))
+      .filter((event) => event.correlationId === result.correlationId);
+    expect(events).toMatchObject([
+      { type: 'data.imported', payload: { sourceSchemaVersion: '2', totalRecords: snapshot.totalRecords } },
+      { type: 'data.migrationCompleted', payload: { fromSchemaVersion: '2', toSchemaVersion: '3' } },
+    ]);
+    const { internalDataStore } = await import('../dataStore');
+    // A restored file must itself remain exportable/importable, including the old Event versions.
+    const restored = await internalDataStore.readAllForBackup();
+    for (const event of old.records.events) {
+      expect(restored.events).toContainEqual(event);
+    }
   });
 });

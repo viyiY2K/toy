@@ -52,6 +52,8 @@ export interface InternalDataStore extends DataStore {
    * 仅供 §7.14 本地备份恢复。不是通用物理删除入口。
    */
   replaceAllForImport(records: Readonly<Record<StoreName, readonly unknown[]>>): Promise<void>;
+  /** 单一只读事务导出全部表，保留 tombstone 与历史 Event。 */
+  readAllForBackup(): Promise<Record<StoreName, unknown[]>>;
 }
 
 export interface AtomicEventRecord {
@@ -164,6 +166,9 @@ export const internalDataStore: InternalDataStore = {
   },
   replaceAllForImport(records: Readonly<Record<StoreName, readonly unknown[]>>): Promise<void> {
     return adapter.replaceAllForImport(records);
+  },
+  readAllForBackup(): Promise<Record<StoreName, unknown[]>> {
+    return adapter.readAllForBackup();
   },
   async runAtomic<T>(
     stores: readonly StoreName[],

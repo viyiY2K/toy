@@ -57,7 +57,9 @@ export function App() {
   const initialLoad = React.useRef(true);
   const runtimeSessionIds = React.useRef(new Set());
 
-  const reload = React.useCallback(async ({ detectSource = null } = {}) => {
+  const reload = React.useCallback(async ({ detectSource = null, resetRuntimeSessions = false } = {}) => {
+    // 导入的同 ID Session 也属于历史快照，不能继承本页曾启动过它的运行资格。
+    if (resetRuntimeSessions) runtimeSessionIds.current.clear();
     let next = await loadCurrentTimerViews(clock());
     if (
       detectSource !== null
@@ -168,7 +170,7 @@ export function App() {
     };
   }, [syncAuthState.status, reload]);
 
-  const runCommand = async (work, onSuccess = null) => {
+  const runCommand = async (work, onSuccess = null, reloadOptions = {}) => {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -176,7 +178,7 @@ export function App() {
       const result = await work();
       if (result !== undefined && onSuccess) onSuccess(result);
       void syncFocusSessionsToGoogleCalendar(result);
-      await reload();
+      await reload(reloadOptions);
       return result;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));

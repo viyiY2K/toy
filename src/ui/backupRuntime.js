@@ -87,22 +87,22 @@ async function writeTextToDirectory(handle, filename, text) {
   await writable.close();
 }
 
-export async function saveBackupTextToUserFile(filename, text) {
-  if (typeof window.showSaveFilePicker === 'function') {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: [{ description: 'JSON 备份', accept: { 'application/json': ['.json'] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(text);
-      await writable.close();
-      return 'saved';
-    } catch (error) {
-      if (error && error.name === 'AbortError') return 'cancelled';
-      throw error;
+async function writeBackupFile(handle, text) {
+  const writable = await handle.createWritable();
+  try {
+    await writable.write(text);
+    await writable.close();
+  } catch (error) {
+    // 失败时释放临时文件与写入锁，不把未完成的文件当成成功备份。
+    if (typeof writable.abort === 'function') {
+      await writable.abort().catch(() => undefined);
     }
+    throw error;
   }
+  return 'saved';
+}
+
+export async function saveBackupTextToUserFile(filename, text) {
   const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -111,14 +111,30 @@ export async function saveBackupTextToUserFile(filename, text) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // 给浏览器下载导航留出消费 Blob URL 的时间。
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
   return 'downloaded';
 }
 
 export async function exportBackupToUserFile(filename) {
+  let handle = null;
+  if (typeof window.showSaveFilePicker === 'function') {
+    try {
+      // 必须在点击的用户激活仍有效时打开，不要先等待整个数据库读取完。
+      handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: 'JSON 备份', accept: { 'application/json': ['.json'] } }],
+      });
+    } catch (error) {
+      if (error && error.name === 'AbortError') return 'cancelled';
+      throw error;
+    }
+  }
   const snapshot = await exportLocalBackup(clock());
-  const outcome = await saveBackupTextToUserFile(filename, serializeLocalBackup(snapshot));
-  if (outcome === 'cancelled') return outcome;
+  const text = serializeLocalBackup(snapshot);
+  const outcome = handle
+    ? await writeBackupFile(handle, text)
+    : await saveBackupTextToUserFile(filename, text);
   await recordLocalBackupExported({ ...clock(), totalRecords: snapshot.totalRecords });
   return outcome;
 }
